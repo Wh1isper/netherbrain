@@ -21,7 +21,7 @@ test: ## Test the code with pytest
 	@uv run python -m pytest tests
 
 .PHONY: build
-build: clean-build ## Build wheel file
+build: clean-build build-ui ## Build wheel file (includes UI)
 	@echo "Creating wheel file"
 	@uvx --from build pyproject-build --installer uv
 
@@ -39,12 +39,50 @@ publish: ## Publish a release to PyPI.
 build-and-publish: build publish ## Build and publish.
 
 .PHONY: run-agent
-run-agent: ## Run agent-runtime dev server with auto-reload
+run-agent: build-ui ## Run agent-runtime dev server with auto-reload
 	@uv run netherbrain agent --reload
 
 .PHONY: run-gateway
 run-gateway: ## Run im-gateway
 	@uv run netherbrain gateway
+
+# --- UI ---
+
+.PHONY: install-ui
+install-ui: ## Install UI dependencies
+	@echo "Installing UI dependencies"
+	@cd ui && npm install
+
+.PHONY: dev-ui
+dev-ui: ## Run UI dev server with hot-reload (proxies API to agent-runtime)
+	@cd ui && npm run dev
+
+.PHONY: build-ui
+build-ui: ## Build UI for production
+	@echo "Building UI"
+	@cd ui && npm run build
+
+.PHONY: check-ui
+check-ui: ## Run UI linting and formatting checks
+	@echo "Linting UI"
+	@cd ui && npm run lint
+	@echo "Checking UI formatting"
+	@cd ui && npm run fmt:check
+
+.PHONY: fix-ui
+fix-ui: ## Fix UI lint and formatting issues
+	@cd ui && npm run lint:fix
+	@cd ui && npm run fmt
+
+.PHONY: dev
+dev: ## Run agent-runtime and UI dev server concurrently
+	@echo "Starting agent-runtime and UI dev server..."
+	@echo "Agent Runtime: http://localhost:8000"
+	@echo "UI Dev Server: http://localhost:5173"
+	@trap 'kill 0' EXIT; \
+		$(MAKE) run-agent & \
+		$(MAKE) dev-ui & \
+		wait
 
 .PHONY: help
 help:

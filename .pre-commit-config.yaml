@@ -9,7 +9,7 @@ repos:
       - id: check-json
         exclude: ^.devcontainer/devcontainer.json
       - id: pretty-format-json
-        exclude: ^.devcontainer/devcontainer.json
+        exclude: ^(.devcontainer/devcontainer.json|ui/)
         args: [--autofix]
       - id: end-of-file-fixer
       - id: trailing-whitespace
@@ -26,3 +26,19 @@ repos:
       - id: ruff
         args: [--exit-non-zero-on-fix]
       - id: ruff-format
+  - repo: local
+    hooks:
+      - id: ui-lint
+        name: ui-lint
+        entry: bash -c 'cd ui && npm run lint'
+        language: system
+        files: ^ui/src/
+        types_or: [ts, tsx, javascript, jsx]
+        pass_filenames: false
+      - id: ui-fmt-check
+        name: ui-fmt-check
+        entry: bash -c 'cd ui && npm run fmt:check'
+        language: system
+        files: ^ui/src/
+        types_or: [ts, tsx, css, html]
+        pass_filenames: false

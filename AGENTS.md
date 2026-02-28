@@ -4,15 +4,16 @@
 
 Netherbrain is a general agent service for homelab use, with IM integration. The project consists of two main components:
 
-- **agent-runtime**: A FastAPI-based service that hosts the agent logic.
+- **agent-runtime**: A FastAPI-based service that hosts the agent logic, with a built-in web UI for configuration (admin) and chat.
 - **im-gateway**: A gateway that connects IM bots (e.g. Telegram, Discord) to the agent-runtime.
 
 ## Architecture
 
 ```mermaid
 graph LR
+    UI[Web UI] --> RT[agent-runtime]
     IM[IM Platform] --> GW[im-gateway]
-    GW --> RT[agent-runtime]
+    GW --> RT
     RT --> LLM[LLM Provider]
 ```
 
@@ -23,9 +24,16 @@ netherbrain/
   __init__.py
   cli.py               # Unified click CLI (netherbrain agent / netherbrain gateway)
   agent_runtime/       # FastAPI service
-    app.py             # FastAPI application
+    app.py             # FastAPI application (serves API + static UI)
   im_gateway/          # IM bot gateway
     gateway.py         # Gateway logic
+ui/                    # Frontend (Vite + React + TypeScript)
+  src/
+    pages/
+      Chat.tsx         # Conversation interface
+      Config.tsx       # Agent preset management
+    App.tsx            # Root component with routing
+    main.tsx           # Entry point
 tests/
   test_agent_runtime.py
   test_im_gateway.py
@@ -40,6 +48,8 @@ tests/
 - HTTP client: httpx
 - Linting: ruff, pyright
 - Testing: pytest
+- Frontend: Vite + React + TypeScript
+- Frontend linting: eslint, prettier
 
 ## CLI Commands
 
@@ -55,6 +65,30 @@ tests/
 - `make run-agent` - Run agent-runtime with auto-reload
 - `make run-gateway` - Run im-gateway
 
+## Documentation Conventions
+
+### docs/
+
+Usage documentation: how-to guides, API usage examples, integration instructions.
+
+### spec/
+
+Design specification for this project: architecture diagrams, flowcharts, swimlane diagrams, pseudocode flows.
+
+- Use mermaid for all diagrams.
+- Keep documents concise and elegant; focus on high-level design only.
+- Create UML diagrams only when necessary.
+- Do not include code implementation details or code examples.
+
+### API Style
+
+- **RPC-style** (not RESTful): actions are expressed in URL paths, not HTTP methods.
+- Use **GET** for reads (queries, get-by-id) and **POST** for all writes (create, update, delete, actions).
+- Example: `POST /sessions/{id}/cancel`, not `DELETE /sessions/{id}`.
+- Branch: `main`
+- Commit messages: imperative English, prefixed (`feat:`, `fix:`, `refactor:`, `docs:`)
+- Do not auto-commit.
+
 ## Docker
 
 Single image: `ghcr.io/wh1isper/netherbrain`
@@ -68,6 +102,21 @@ Tags:
 
 - `dev` - Built on every push to main
 - `latest` + version tag - Built on release
+
+## Web UI
+
+The agent-runtime serves a built-in web UI with two sections:
+
+- **Admin**: Agent preset management (create, edit, delete presets)
+- **Chat**: Conversation interface (create conversations, send messages, view streaming responses)
+
+The UI is part of the agent-runtime package and served by FastAPI at the root path. When modifying agent-runtime APIs, always consider corresponding UI changes.
+
+## CI/CD
+
+- Push to main: quality checks, tests, then build and push `dev` image
+- Release: publish to PyPI, build and push tagged + `latest` image
+  nt-runtime package and served by FastAPI at the root path. When modifying agent-runtime APIs, always consider corresponding UI changes.
 
 ## CI/CD
 
