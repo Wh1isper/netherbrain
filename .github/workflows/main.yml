@@ -46,8 +46,6 @@ jobs:
         run: uv run pyright
 
   push-dev-image:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [quality, tests-and-type-check]
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -75,5 +73,5 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           file: ./Dockerfile
-          push: true
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ghcr.io/wh1isper/netherbrain:dev

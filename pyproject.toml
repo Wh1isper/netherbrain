@@ -21,9 +21,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://wh1isper.github.io/netherbrain/"
 Repository = "https://github.com/wh1isper/netherbrain"
-Documentation = "https://wh1isper.github.io/netherbrain/"
 
 [project.scripts]
 netherbrain = "netherbrain.cli:main"
