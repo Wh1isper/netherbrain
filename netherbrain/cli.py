@@ -7,37 +7,40 @@ def main() -> None:
 
 
 @main.command()
-@click.option("--host", default="0.0.0.0", help="Bind host.")  # noqa: S104
-@click.option("--port", default=8000, type=int, help="Bind port.")
+@click.option("--host", default=None, help="Bind host (default: from NETHER_HOST or 0.0.0.0).")
+@click.option("--port", default=None, type=int, help="Bind port (default: from NETHER_PORT or 8000).")
 @click.option("--reload", is_flag=True, default=False, help="Enable auto-reload for development.")
-def agent(host: str, port: int, reload: bool) -> None:
+def agent(host: str | None, port: int | None, reload: bool) -> None:
     """Start the Agent Runtime server."""
     import uvicorn
 
+    from netherbrain.agent_runtime.settings import NetherSettings
+
+    settings = NetherSettings()
+
     uvicorn.run(
         "netherbrain.agent_runtime.app:app",
-        host=host,
-        port=port,
+        host=host or settings.host,
+        port=port or settings.port,
         reload=reload,
+        log_level="warning",  # uvicorn's own logging is intercepted by loguru
     )
 
 
 @main.command()
 @click.option("--runtime-url", default="http://localhost:8000", help="Agent Runtime service URL.")
-@click.option(
-    "--log-level",
-    default="INFO",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
-    help="Log level.",
-)
-def gateway(runtime_url: str, log_level: str) -> None:
+def gateway(runtime_url: str) -> None:
     """Start the IM Gateway."""
     import asyncio
-    import logging
+
+    from netherbrain.agent_runtime.log import setup_logging
+    from netherbrain.agent_runtime.settings import NetherSettings
+
+    settings = NetherSettings()
+    setup_logging(settings.log_level)
 
     from netherbrain.im_gateway.gateway import IMGateway
 
-    logging.basicConfig(level=getattr(logging, log_level.upper()))
     gw = IMGateway(runtime_url=runtime_url)
     asyncio.run(gw.start())
 

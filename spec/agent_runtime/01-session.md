@@ -80,14 +80,15 @@ A conversation is a logical collection of sessions sharing a `conversation_id`. 
 
 ### Conversation Index
 
-| Field             | Type      | Mutable | Description          |
-| ----------------- | --------- | ------- | -------------------- |
-| conversation_id   | string    | No      | Primary key          |
-| title             | string?   | Yes     | Conversation title   |
-| default_preset_id | string?   | Yes     | Default agent preset |
-| status            | enum      | Yes     | active / archived    |
-| created_at        | timestamp | No      | Creation time        |
-| updated_at        | timestamp | Yes     | Last activity time   |
+| Field             | Type      | Mutable | Description                                 |
+| ----------------- | --------- | ------- | ------------------------------------------- |
+| conversation_id   | string    | No      | Primary key                                 |
+| title             | string?   | Yes     | Conversation title                          |
+| default_preset_id | string?   | Yes     | Default agent preset                        |
+| metadata          | JSONB     | Yes     | Client-defined metadata (opaque to runtime) |
+| status            | enum      | Yes     | active / archived                           |
+| created_at        | timestamp | No      | Creation time                               |
+| updated_at        | timestamp | Yes     | Last activity time                          |
 
 | Aspect      | Scope                                                             |
 | ----------- | ----------------------------------------------------------------- |

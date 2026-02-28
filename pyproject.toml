@@ -18,6 +18,10 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "httpx>=0.28.0",
+    "loguru>=0.7.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "ya-agent-sdk>=0.1.0",
 ]
 
 [project.urls]
@@ -95,3 +99,6 @@ ignore = [
 
 [tool.ruff.format]
 preview = true
+
+[tool.deptry]
+per_rule_ignores = {DEP002 = ["httpx", "ya-agent-sdk"]}

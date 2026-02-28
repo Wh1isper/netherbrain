@@ -92,15 +92,16 @@ Delete a preset. Returns 409 if preset is referenced by active conversations.
 
 Main entry point. Create a new conversation or continue an existing one.
 
-| Field             | Type    | Required | Description                                                |
-| ----------------- | ------- | -------- | ---------------------------------------------------------- |
-| conversation_id   | string? | No       | Existing conversation to continue. Null = new conversation |
-| preset_id         | string? | No       | Agent preset. Required for new conversation                |
-| config_override   | JSON?   | No       | Per-request overrides (model, toolsets)                    |
-| input             | JSON?   | Cond.    | User input (content parts)                                 |
-| user_interactions | JSON?   | Cond.    | HITL approval feedback                                     |
-| tool_results      | JSON?   | Cond.    | External tool execution results                            |
-| transport         | enum    | No       | `sse` (default) / `stream`                                 |
+| Field             | Type    | Required | Description                                                          |
+| ----------------- | ------- | -------- | -------------------------------------------------------------------- |
+| conversation_id   | string? | No       | Existing conversation to continue. Null = new conversation           |
+| preset_id         | string? | No       | Agent preset. Required for new conversation                          |
+| metadata          | JSON?   | No       | Client-defined metadata (new conversation only, ignored on continue) |
+| config_override   | JSON?   | No       | Per-request overrides (model, toolsets)                              |
+| input             | JSON?   | Cond.    | User input (content parts)                                           |
+| user_interactions | JSON?   | Cond.    | HITL approval feedback                                               |
+| tool_results      | JSON?   | Cond.    | External tool execution results                                      |
+| transport         | enum    | No       | `sse` (default) / `stream`                                           |
 
 At least one of `input`, `user_interactions`, `tool_results` must be provided.
 
@@ -180,11 +181,14 @@ Stream-to-SSE bridge for the active agent session. Supports `Last-Event-ID` for 
 
 List conversations ordered by last activity.
 
-| Query Param | Type  | Description               |
-| ----------- | ----- | ------------------------- |
-| status      | enum? | Filter: active / archived |
-| limit       | int?  | Page size (default: 20)   |
-| offset      | int?  | Page offset               |
+| Query Param | Type  | Description                                        |
+| ----------- | ----- | -------------------------------------------------- |
+| status      | enum? | Filter: active / archived                          |
+| metadata    | JSON? | Filter by metadata containment (PG `@>` semantics) |
+| limit       | int?  | Page size (default: 20)                            |
+| offset      | int?  | Page offset                                        |
+
+Metadata query uses JSON containment: `?metadata={"platform":"discord"}` matches any conversation whose metadata contains that key-value pair.
 
 ### GET /api/conversations/{conversation_id}/get
 
@@ -196,6 +200,7 @@ Get conversation state: metadata, latest session, active execution, mailbox summ
   "status": "active",
   "title": "Fix auth tests",
   "default_preset_id": "coding-agent",
+  "metadata": {"platform": "discord", "thread_id": "123456"},
   "created_at": "...",
   "updated_at": "...",
   "latest_session": {
@@ -235,11 +240,12 @@ Query mailbox messages with delivery status.
 
 Update mutable conversation metadata.
 
-| Field             | Type    | Required | Description           |
-| ----------------- | ------- | -------- | --------------------- |
-| title             | string? | No       | Update title          |
-| default_preset_id | string? | No       | Update default preset |
-| status            | enum?   | No       | active / archived     |
+| Field             | Type    | Required | Description                            |
+| ----------------- | ------- | -------- | -------------------------------------- |
+| title             | string? | No       | Update title                           |
+| default_preset_id | string? | No       | Update default preset                  |
+| metadata          | JSON?   | No       | Merge into existing metadata (shallow) |
+| status            | enum?   | No       | active / archived                      |
 
 ## Sessions
 
