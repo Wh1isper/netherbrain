@@ -136,13 +136,14 @@ At least one of `input`, `user_interactions`, `tool_results` must be provided.
 
 Fork a new conversation from a session in this conversation.
 
-| Field           | Type    | Required | Description                                   |
-| --------------- | ------- | -------- | --------------------------------------------- |
-| preset_id       | string  | Yes      | Agent preset                                  |
-| input           | JSON    | Yes      | User input                                    |
-| from_session_id | string? | No       | Fork point. Default: latest committed session |
-| config_override | JSON?   | No       | Per-request overrides                         |
-| transport       | enum    | No       | `sse` (default) / `stream`                    |
+| Field           | Type    | Required | Description                                      |
+| --------------- | ------- | -------- | ------------------------------------------------ |
+| preset_id       | string  | Yes      | Agent preset                                     |
+| input           | JSON    | Yes      | User input                                       |
+| from_session_id | string? | No       | Fork point. Default: latest committed session    |
+| metadata        | JSON?   | No       | Client-defined metadata for the new conversation |
+| config_override | JSON?   | No       | Per-request overrides                            |
+| transport       | enum    | No       | `sse` (default) / `stream`                       |
 
 Creates a new conversation (`conversation_id = new session_id`).
 
@@ -246,6 +247,8 @@ Update mutable conversation metadata.
 | default_preset_id | string? | No       | Update default preset                  |
 | metadata          | JSON?   | No       | Merge into existing metadata (shallow) |
 | status            | enum?   | No       | active / archived                      |
+
+Metadata merge semantics: keys with `null` values are removed from existing metadata. Pass top-level `metadata: null` to clear all metadata.
 
 ## Sessions
 

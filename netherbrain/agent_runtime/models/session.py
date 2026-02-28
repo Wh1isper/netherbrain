@@ -73,6 +73,7 @@ class ConversationIndex(BaseModel):
     conversation_id: str
     title: str | None = None
     default_preset_id: str | None = None
+    metadata: dict | None = None
     status: ConversationStatus = ConversationStatus.ACTIVE
     created_at: datetime | None = None
     updated_at: datetime | None = None
