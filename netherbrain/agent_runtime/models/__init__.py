@@ -2,9 +2,12 @@
 
 from netherbrain.agent_runtime.models.api import (
     ConversationResponse,
+    ConversationUpdate,
     PresetCreate,
     PresetResponse,
     PresetUpdate,
+    SessionDetailResponse,
+    SessionResponse,
     WorkspaceCreate,
     WorkspaceResponse,
     WorkspaceUpdate,
@@ -47,6 +50,7 @@ __all__ = [
     "ConversationResponse",
     # Enums
     "ConversationStatus",
+    "ConversationUpdate",
     "EnvironmentSpec",
     "EventType",
     "MailboxMessage",
@@ -58,8 +62,10 @@ __all__ = [
     # Events
     "ProtocolEvent",
     "RunSummary",
+    "SessionDetailResponse",
     "SessionIndex",
     "SessionMetadata",
+    "SessionResponse",
     "SessionState",
     "SessionStatus",
     "SessionType",

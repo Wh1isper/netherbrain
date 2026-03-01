@@ -97,12 +97,19 @@ Create a named workspace.
 | workspace_id | string       | Yes      | Unique slug identifier               |
 | name         | string?      | No       | Display name                         |
 | projects     | list[string] | Yes      | Ordered project_ids, first = default |
+| metadata     | JSON?        | No       | Client-defined metadata (opaque)     |
 
 Project directories are auto-created under `PROJECTS_ROOT` on first access.
 
 ### GET /api/workspaces/list
 
-List all workspaces.
+List workspaces with optional metadata filter.
+
+| Query Param | Type  | Description                                        |
+| ----------- | ----- | -------------------------------------------------- |
+| metadata    | JSON? | Filter by metadata containment (PG `@>` semantics) |
+| limit       | int?  | Page size (default: 50)                            |
+| offset      | int?  | Page offset                                        |
 
 ### GET /api/workspaces/{workspace_id}/get
 
@@ -112,10 +119,11 @@ Get a single workspace by ID.
 
 Update a workspace.
 
-| Field    | Type          | Required | Description         |
-| -------- | ------------- | -------- | ------------------- |
-| name     | string?       | No       | Update display name |
-| projects | list[string]? | No       | Update project list |
+| Field    | Type          | Required | Description                      |
+| -------- | ------------- | -------- | -------------------------------- |
+| name     | string?       | No       | Update display name              |
+| projects | list[string]? | No       | Update project list              |
+| metadata | JSON?         | No       | Merge or replace client metadata |
 
 ### POST /api/workspaces/{workspace_id}/delete
 

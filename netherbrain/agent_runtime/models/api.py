@@ -18,13 +18,19 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from netherbrain.agent_runtime.models.enums import ConversationStatus
+from netherbrain.agent_runtime.models.enums import (
+    ConversationStatus,
+    SessionStatus,
+    SessionType,
+    Transport,
+)
 from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
     ModelPreset,
     SubagentSpec,
     ToolsetSpec,
 )
+from netherbrain.agent_runtime.models.session import RunSummary
 
 # ---------------------------------------------------------------------------
 # Preset
@@ -91,6 +97,7 @@ class WorkspaceCreate(BaseModel):
     workspace_id: str | None = Field(default=None, description="Optional; auto-generated UUID if omitted.")
     name: str | None = None
     projects: list[str] = Field(default_factory=list, description="Ordered project IDs; first = default.")
+    metadata: dict | None = None
 
 
 class WorkspaceUpdate(BaseModel):
@@ -98,22 +105,24 @@ class WorkspaceUpdate(BaseModel):
 
     name: str | None = None
     projects: list[str] | None = None
+    metadata: dict | None = None
 
 
 class WorkspaceResponse(BaseModel):
     """Serialized workspace returned to clients."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     workspace_id: str
     name: str | None = None
     projects: list[str]
+    metadata: dict | None = Field(default=None, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
 
 
 # ---------------------------------------------------------------------------
-# Conversation (read-only for now)
+# Conversation
 # ---------------------------------------------------------------------------
 
 
@@ -133,3 +142,43 @@ class ConversationResponse(BaseModel):
     status: ConversationStatus
     created_at: datetime
     updated_at: datetime
+
+
+class ConversationUpdate(BaseModel):
+    """Partial conversation update."""
+
+    title: str | None = None
+    default_preset_id: str | None = None
+    metadata: dict | None = None
+    status: ConversationStatus | None = None
+
+
+# ---------------------------------------------------------------------------
+# Session
+# ---------------------------------------------------------------------------
+
+
+class SessionResponse(BaseModel):
+    """Serialized session index row returned to clients."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    session_id: str
+    parent_session_id: str | None = None
+    project_ids: list[str]
+    status: SessionStatus
+    run_summary: RunSummary | None = None
+    session_type: SessionType
+    transport: Transport
+    conversation_id: str
+    spawned_by: str | None = None
+    preset_id: str | None = None
+    created_at: datetime
+
+
+class SessionDetailResponse(BaseModel):
+    """Session index with optional hydrated state and display messages."""
+
+    index: SessionResponse
+    state: dict | None = None
+    display_messages: list[dict] | None = None

@@ -13,13 +13,25 @@ from sse_starlette.sse import AppStatus
 
 from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
 from netherbrain.agent_runtime.log import setup_logging
+from netherbrain.agent_runtime.managers.sessions import SessionManager
 from netherbrain.agent_runtime.registry import SessionRegistry
-from netherbrain.agent_runtime.settings import get_settings
+from netherbrain.agent_runtime.settings import NetherSettings, get_settings
+from netherbrain.agent_runtime.store.base import StateStore
+from netherbrain.agent_runtime.store.local import LocalStateStore
 
 # ---------------------------------------------------------------------------
 # Shared singletons initialised during lifespan
 # ---------------------------------------------------------------------------
 registry = SessionRegistry()
+
+
+def _create_state_store(settings: NetherSettings) -> StateStore:
+    """Create the state store backend based on configuration."""
+    if settings.state_store == "s3":
+        # TODO: S3StateStore implementation
+        msg = "S3 state store not yet implemented"
+        raise NotImplementedError(msg)
+    return LocalStateStore(settings.state_store_path)
 
 
 @asynccontextmanager
@@ -39,6 +51,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _app.state.db_engine = None
     _app.state.db_session_factory = None
     _app.state.redis = None
+    _app.state.session_manager = None
 
     # -- Database --------------------------------------------------------------
     if settings.database_url:
@@ -68,7 +81,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # open connections to close, giving active streams time to finish.
     AppStatus.disable_automatic_graceful_drain()
 
-    # TODO: recover interrupted sessions from DB (status=committed)
+    # -- Session manager -------------------------------------------------------
+    if _app.state.db_session_factory is not None:
+        store = _create_state_store(settings)
+        _app.state.session_manager = SessionManager(store=store, registry=registry)
+        logger.info("SessionManager: initialised (store={})", settings.state_store)
+
+        # Startup recovery: mark orphaned sessions as failed.
+        async with _app.state.db_session_factory() as db:
+            recovered = await SessionManager.recover_orphaned_sessions(db)
+            if recovered > 0:
+                logger.info("Startup recovery: {} orphaned sessions marked as failed", recovered)
 
     yield
 
@@ -123,11 +146,13 @@ async def health() -> dict[str, str]:
 # -- CRUD routers ------------------------------------------------------------
 from netherbrain.agent_runtime.routers.conversations import router as conversations_router  # noqa: E402
 from netherbrain.agent_runtime.routers.presets import router as presets_router  # noqa: E402
+from netherbrain.agent_runtime.routers.sessions import router as sessions_router  # noqa: E402
 from netherbrain.agent_runtime.routers.workspaces import router as workspaces_router  # noqa: E402
 
 api.include_router(presets_router)
 api.include_router(workspaces_router)
 api.include_router(conversations_router)
+api.include_router(sessions_router)
 
 app.include_router(api)
 

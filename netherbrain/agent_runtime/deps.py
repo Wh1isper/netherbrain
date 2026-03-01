@@ -23,6 +23,8 @@ import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from netherbrain.agent_runtime.managers.sessions import SessionManager
+
 
 async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
     """Yield an async SQLAlchemy session, closing it after the request.
@@ -66,3 +68,18 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 RedisClient = Annotated[aioredis.Redis, Depends(get_redis)]
 """Annotated dependency: shared async Redis client."""
+
+
+async def get_session_manager(request: Request) -> SessionManager:
+    """Return the SessionManager singleton initialised in app lifespan."""
+    manager: SessionManager | None = request.app.state.session_manager
+    if manager is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Session manager not initialised (database not configured).",
+        )
+    return manager
+
+
+SessionMgr = Annotated[SessionManager, Depends(get_session_manager)]
+"""Annotated dependency: SessionManager singleton."""

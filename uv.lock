@@ -1977,6 +1977,7 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "anyio" },
     { name = "click" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -2006,6 +2007,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
+    { name = "anyio", specifier = ">=4.0" },
     { name = "click", specifier = ">=8.1.0" },
     { name = "fastapi", specifier = ">=0.134.0" },
     { name = "httpx", specifier = ">=0.28.0" },
@@ -2017,7 +2019,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "sse-starlette", specifier = ">=3.3.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41.0" },
-    { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.24.0" },
+    { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.25.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -4202,7 +4204,7 @@ wheels = [
 
 [[package]]
 name = "ya-agent-sdk"
-version = "0.24.0"
+version = "0.25.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -4219,9 +4221,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "y-agent-environment" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/d5/3e152c22d20fa37a81073def84b172393d21eeef6da1e60826e827574d6c/ya_agent_sdk-0.24.0.tar.gz", hash = "sha256:4feb7531a52a53b03cbc23f959185663750d21905c26c7f8cd7cd59b89850886", size = 741291, upload-time = "2026-02-28T03:37:27.691Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/63/744f97b3999bc96cb6d557f1c24df27123852069f5625a3ec38b8c64ba5d/ya_agent_sdk-0.25.0.tar.gz", hash = "sha256:333489052ca6b224af096130166cbd4ef278aec5903fba0ddac2accfb9897718", size = 741671, upload-time = "2026-03-01T04:14:06.703Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/49/d668ea338971c24655a00739942ab0306d02779361fe9c821c2a9c6468af/ya_agent_sdk-0.24.0-py3-none-any.whl", hash = "sha256:4b9428d1d48f24db643d537e97f39e089fd724db93e49cb8558f19dc629b5beb", size = 247150, upload-time = "2026-02-28T03:37:26.647Z" },
+    { url = "https://files.pythonhosted.org/packages/91/76/bd4065258bfa8a8cd5bf93ed53290ee9f629bf4e0cbfad0868ca819536c8/ya_agent_sdk-0.25.0-py3-none-any.whl", hash = "sha256:6a788939e5784c1c70165dcc2926851ba3e39b4fe4ed1c29051fb014835da2e1", size = 247309, upload-time = "2026-03-01T04:14:05.175Z" },
 ]
 
 [package.optional-dependencies]

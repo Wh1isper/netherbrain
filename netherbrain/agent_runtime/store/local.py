@@ -1,0 +1,106 @@
+"""Local filesystem state store.
+
+Stores session state as JSON files under ``{data_dir}/sessions/{session_id}/``.
+Uses ``anyio.to_thread.run_sync`` for non-blocking file I/O.
+
+Writes are atomic: data is written to a temporary file in the same directory,
+then renamed to the target path.  This prevents corrupt reads if the process
+crashes mid-write.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import shutil
+import tempfile
+from functools import partial
+from pathlib import Path
+
+from anyio import to_thread
+
+from netherbrain.agent_runtime.models.session import SessionState
+
+
+class LocalStateStore:
+    """Local filesystem implementation of the StateStore protocol.
+
+    Layout::
+
+        {data_dir}/sessions/{session_id}/state.json
+        {data_dir}/sessions/{session_id}/display_messages.json
+    """
+
+    def __init__(self, data_dir: str | Path) -> None:
+        self._base = Path(data_dir) / "sessions"
+
+    def _session_dir(self, session_id: str) -> Path:
+        return self._base / session_id
+
+    # -- Write -----------------------------------------------------------------
+
+    async def write_state(self, session_id: str, state: SessionState) -> None:
+        session_dir = self._session_dir(session_id)
+        data = state.model_dump_json(indent=2)
+        await to_thread.run_sync(partial(_atomic_write, session_dir / "state.json", data))
+
+    async def write_display_messages(self, session_id: str, messages: list[dict]) -> None:
+        session_dir = self._session_dir(session_id)
+        data = json.dumps(messages, ensure_ascii=False, indent=2)
+        await to_thread.run_sync(partial(_atomic_write, session_dir / "display_messages.json", data))
+
+    # -- Read ------------------------------------------------------------------
+
+    async def read_state(self, session_id: str) -> SessionState:
+        path = self._session_dir(session_id) / "state.json"
+        raw = await to_thread.run_sync(partial(_read_file, path))
+        return SessionState.model_validate_json(raw)
+
+    async def read_display_messages(self, session_id: str) -> list[dict]:
+        path = self._session_dir(session_id) / "display_messages.json"
+        raw = await to_thread.run_sync(partial(_read_file, path))
+        return json.loads(raw)
+
+    # -- Utilities -------------------------------------------------------------
+
+    async def exists(self, session_id: str) -> bool:
+        path = self._session_dir(session_id) / "state.json"
+        return await to_thread.run_sync(path.exists)
+
+    async def delete(self, session_id: str) -> None:
+        session_dir = self._session_dir(session_id)
+        await to_thread.run_sync(partial(_rmtree, session_dir))
+
+
+# -- Sync helpers (run in thread pool) -----------------------------------------
+
+
+def _atomic_write(path: Path, data: str) -> None:
+    """Write data atomically: temp file + rename.
+
+    Ensures readers never see a partially-written file.  The temp file is
+    created in the same directory so ``os.rename`` is atomic on POSIX.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+        os.rename(tmp_path, path)
+    except BaseException:
+        # Clean up temp file on any failure.
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise
+
+
+def _read_file(path: Path) -> str:
+    """Read file contents.  Raises ``FileNotFoundError`` if missing."""
+    return path.read_text(encoding="utf-8")
+
+
+def _rmtree(path: Path) -> None:
+    """Remove directory tree.  No-op if path doesn't exist."""
+    if path.exists():
+        shutil.rmtree(path)

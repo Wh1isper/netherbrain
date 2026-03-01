@@ -10,10 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from netherbrain.agent_runtime.app import app
 from netherbrain.agent_runtime.deps import get_db
+from netherbrain.agent_runtime.managers.sessions import SessionManager
+from netherbrain.agent_runtime.registry import SessionRegistry
+from netherbrain.agent_runtime.store.local import LocalStateStore
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+async def client(db_session: AsyncSession, tmp_path: object) -> AsyncIterator[AsyncClient]:
     """Async HTTP client wired to the app with a test DB session.
 
     Overrides ``get_db`` so every request uses the savepoint-isolated
@@ -30,6 +33,10 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     app.state.db_engine = None
     app.state.db_session_factory = None
     app.state.redis = None
+    app.state.session_manager = SessionManager(
+        store=LocalStateStore(tmp_path),
+        registry=SessionRegistry(),
+    )
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

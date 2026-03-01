@@ -180,6 +180,7 @@ A workspace is a named, reusable grouping of project references -- analogous to 
 | workspace_id | string (PK)  | Unique identifier (slug)             |
 | name         | string?      | Human-readable display name          |
 | projects     | list[string] | Ordered project_ids, first = default |
+| metadata     | JSONB        | Client-defined metadata (opaque)     |
 | created_at   | timestamp    | Creation time                        |
 | updated_at   | timestamp    | Last modification time               |
 

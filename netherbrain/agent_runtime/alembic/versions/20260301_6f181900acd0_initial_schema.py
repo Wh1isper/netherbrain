@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: f754ade9504b
+Revision ID: 6f181900acd0
 Revises:
-Create Date: 2026-03-01 11:15:56.125972
+Create Date: 2026-03-01 12:37:18.133008
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "f754ade9504b"
+revision: str = "6f181900acd0"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -53,6 +53,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(), nullable=False),
         sa.Column("name", sa.String(), nullable=True),
         sa.Column("projects", postgresql.JSONB(astext_type=sa.Text()), server_default="[]", nullable=False),
+        sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("workspace_id", name=op.f("pk_workspaces")),

@@ -25,6 +25,10 @@ netherbrain/
   cli.py               # Unified click CLI (netherbrain agent / netherbrain gateway / netherbrain db)
   agent_runtime/       # FastAPI service
     app.py             # FastAPI application (serves API + static UI)
+    settings.py        # pydantic-settings configuration (NETHER_* env vars)
+    deps.py            # FastAPI dependency injection (DbSession, RedisClient, SessionMgr)
+    registry.py        # In-memory session registry (interrupt, steering, drain)
+    context.py         # RuntimeSession dataclass (in-flight execution state)
     alembic.ini        # Alembic configuration (packaged)
     alembic/           # Database migrations
       env.py           # Migration environment
@@ -32,10 +36,34 @@ netherbrain/
     db/                # Database layer
       tables.py        # SQLAlchemy ORM models (schema source of truth)
       engine.py        # Async engine factory
-    models/            # Pydantic domain models
+    models/            # Pydantic domain models and API schemas
+      enums.py         # Shared enumerations (SessionStatus, Transport, etc.)
+      api.py           # Request/response schemas (Create/Update/Response)
+      session.py       # Session/conversation domain models
+      preset.py        # Preset domain models
+      workspace.py     # Workspace domain models
+      events.py        # Protocol event models
+    managers/          # Business logic (data access, CRUD, orchestration)
+      presets.py       # Preset CRUD functions
+      workspaces.py    # Workspace CRUD functions
+      conversations.py # Conversation CRUD functions
+      sessions.py      # SessionManager class (create/commit/get/list, state store)
+    routers/           # Thin HTTP adapters (parse params, call managers, translate errors)
+      presets.py       # /api/presets/* endpoints
+      workspaces.py    # /api/workspaces/* endpoints
+      conversations.py # /api/conversations/* endpoints
+      sessions.py      # /api/sessions/* endpoints
+    store/             # State store for session persistence (large blobs)
+      base.py          # StateStore async Protocol
+      local.py         # Local filesystem implementation (atomic writes)
   im_gateway/          # IM bot gateway
     gateway.py         # Gateway logic
 ui/                    # Frontend (Vite + React + TypeScript)
+  spec/                # UI design specification
+    00-overview.md     # Product model, workspace-centric design, tech stack
+    01-layout.md       # Page structure, navigation, responsive behavior
+    02-chat.md         # Message rendering, streaming, controls
+    03-settings.md     # Preset and workspace management
   src/
     pages/
       Chat.tsx         # Conversation interface
@@ -52,6 +80,22 @@ tests/
   test_db_integration.py
   test_im_gateway.py
 ```
+
+## Layered Architecture
+
+The agent-runtime follows a strict three-layer separation:
+
+- **Routers** (`routers/`): Thin HTTP adapters. Parse request parameters, call managers, translate domain exceptions (`LookupError`, `ValueError`) to HTTP responses (`404`, `409`, `422`). No SQLAlchemy queries or business logic here.
+- **Managers** (`managers/`): Business logic and data access. Accept `db: AsyncSession` as parameter. Raise domain exceptions, never HTTP exceptions. Stateless CRUD managers use module-level async functions; stateful managers (e.g. `SessionManager`) use classes.
+- **Store** (`store/`): State persistence for large blobs (session state, display messages). Async Protocol interface with pluggable backends (local FS, S3).
+
+Key rules:
+
+- Managers do NOT depend on FastAPI.
+- Routers do NOT contain SQLAlchemy queries.
+- Singletons (SessionManager, StateStore) are initialised in `app.py` lifespan, accessed via FastAPI dependency injection (`deps.py`).
+- DB sessions are per-request (from DI), passed to manager methods as parameters.
+- No backward-compatibility shims; update all imports directly when moving code.
 
 ## Tech Stack
 
@@ -168,12 +212,16 @@ Tags:
 
 ## Web UI
 
-The agent-runtime serves a built-in web UI with two sections:
+Chat-app style web interface served by the agent-runtime at root path (`/`).
 
-- **Admin**: Agent preset management (create, edit, delete presets)
-- **Chat**: Conversation interface (create conversations, send messages, view streaming responses)
+- **Design language**: Modern chat app (ChatGPT/Claude), not admin dashboard.
+- **Workspace-centric**: Workspaces organize conversations by project context.
+- **Default workspace**: Auto-created on first launch (`webui-default`, project: `webui`, metadata: `{"source": "webui", "default": true}`).
+- **Responsive**: Desktop and mobile are both first-class.
+- **Tech stack**: Tailwind CSS + shadcn/ui + Zustand + react-markdown + Shiki.
+- **Two pages**: Chat (`/`, `/c/:id`) and Settings (`/settings`).
 
-The UI is part of the agent-runtime package and served by FastAPI at the root path. When modifying agent-runtime APIs, always consider corresponding UI changes.
+UI design spec lives in `ui/spec/`. When modifying agent-runtime APIs, always consider corresponding UI changes.
 
 ## CI/CD
 

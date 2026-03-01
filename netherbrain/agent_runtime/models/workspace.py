@@ -19,5 +19,6 @@ class WorkspaceIndex(BaseModel):
     workspace_id: str
     name: str | None = None
     projects: list[str] = Field(default_factory=list, description="Ordered project_ids, first = default")
+    metadata: dict | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
