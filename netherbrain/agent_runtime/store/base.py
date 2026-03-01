@@ -20,6 +20,9 @@ from typing import Protocol, runtime_checkable
 
 from netherbrain.agent_runtime.models.session import SessionState
 
+# Type alias for display messages -- a list of serialised AG-UI chunk dicts.
+DisplayMessages = list[dict]
+
 
 @runtime_checkable
 class StateStore(Protocol):
@@ -28,6 +31,7 @@ class StateStore(Protocol):
     Storage layout (keyed by session_id)::
 
         {base}/sessions/{session_id}/state.json
+        {base}/sessions/{session_id}/display_messages.json  (optional)
 
     Where ``base`` is backend-specific (local path or S3 key prefix),
     optionally including a namespace prefix.
@@ -39,6 +43,14 @@ class StateStore(Protocol):
 
     async def read_state(self, session_id: str) -> SessionState:
         """Read session state.  Raises ``FileNotFoundError`` if not found."""
+        ...
+
+    async def write_display_messages(self, session_id: str, messages: DisplayMessages) -> None:
+        """Write compressed AG-UI display messages."""
+        ...
+
+    async def read_display_messages(self, session_id: str) -> DisplayMessages | None:
+        """Read display messages.  Returns ``None`` if not found."""
         ...
 
     async def exists(self, session_id: str) -> bool:

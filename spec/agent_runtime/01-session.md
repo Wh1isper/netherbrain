@@ -149,10 +149,12 @@ flowchart TB
     end
     subgraph Store["State Store (heavy, immutable)"]
         SDK["state.json<br/>(context_state, message_history,<br/>environment_state)"]
+        DM["display_messages.json<br/>(compressed AG-UI chunks)"]
     end
 ```
 
 - **State Store** (`state.json`): SDK resumable state packed as a single blob. Used to restore agent state for the next turn. Not for caller consumption. Single-file write ensures atomicity on both local FS (tempfile + rename) and S3 (single PUT).
+- **State Store** (`display_messages.json`): Compressed AG-UI event stream using chunk events (`TextMessageChunk`, `ToolCallChunk`, `ReasoningMessageChunk`). Each chunk collapses a Start + Content\* + End triplet into a single event with the full content. Written at commit time from the protocol adapter's event buffer. Optional -- may be absent for IM-only sessions or failed runs.
 - **PG Display Data** (`input` + `final_message`): Lightweight text fields for conversation rendering, search, and IM message formatting.
 
 ## Persistence Topology
@@ -170,17 +172,20 @@ flowchart LR
 
     subgraph Store["State Store (Local FS / S3)"]
         STATE["state.json<br/>(context_state, message_history,<br/>environment_state)"]
+        DM["display_messages.json<br/>(compressed AG-UI chunks)"]
     end
 
     SM -->|"index + display"| IDX
     SM -->|"conversation metadata"| CONV
     SM -->|"SDK state read/write"| STATE
+    SM -->|"display messages"| DM
 ```
 
 | Store       | What                                  | Why                                    |
 | ----------- | ------------------------------------- | -------------------------------------- |
 | PG          | Session index, input, final_message   | Queryable lineage, display, search     |
 | State Store | context_state + message_history + env | Large opaque blob, single atomic write |
+| State Store | display_messages.json                 | Compressed event stream for UI history |
 
 ### Storage Layout
 
@@ -188,15 +193,17 @@ Local filesystem (default):
 
 ```
 {data_root}/{data_prefix}/sessions/{session_id}/state.json
+{data_root}/{data_prefix}/sessions/{session_id}/display_messages.json
 ```
 
 S3 (optional):
 
 ```
 s3://{bucket}/{data_prefix}/sessions/{session_id}/state.json
+s3://{bucket}/{data_prefix}/sessions/{session_id}/display_messages.json
 ```
 
-When `data_prefix` is unset, the prefix segment is omitted.
+When `data_prefix` is unset, the prefix segment is omitted. `display_messages.json` is optional and may not exist for all sessions.
 
 ## Session Lifecycle
 

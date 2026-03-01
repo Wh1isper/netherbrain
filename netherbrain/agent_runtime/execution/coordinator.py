@@ -44,6 +44,7 @@ from netherbrain.agent_runtime.execution.runtime import create_service_runtime
 from netherbrain.agent_runtime.models.enums import SessionStatus, Transport
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 from netherbrain.agent_runtime.models.session import ModelUsageSummary, RunSummary, SessionState, UsageSummary
+from netherbrain.agent_runtime.streaming.compress import compress_display_messages
 from netherbrain.agent_runtime.streaming.protocols.agui import AGUIProtocol
 from netherbrain.agent_runtime.streaming.protocols.base import ProtocolAdapter
 from netherbrain.agent_runtime.transport.base import EventTransport
@@ -333,6 +334,7 @@ async def _handle_interrupt(
     exported_state: SessionState | None,
     exported_final: str | None,
     summary: RunSummary,
+    adapter: ProtocolAdapter | None = None,
 ) -> ExecutionResult:
     """Handle AgentInterrupted: partial commit or fail."""
     if exported_state is not None:
@@ -343,6 +345,7 @@ async def _handle_interrupt(
                 state=exported_state,
                 final_message=exported_final,
                 run_summary=summary,
+                display_messages=_compress_adapter_buffer(adapter),
                 status=SessionStatus.COMMITTED,
             )
         except Exception:
@@ -369,6 +372,25 @@ async def _handle_interrupt(
         final_message=exported_final,
         run_summary=summary,
     )
+
+
+# ---------------------------------------------------------------------------
+# Display messages compression helper
+# ---------------------------------------------------------------------------
+
+
+def _compress_adapter_buffer(adapter: ProtocolAdapter | None) -> list[dict] | None:
+    """Compress the adapter's event buffer into display message chunks.
+
+    Returns None if the adapter is not an AGUIProtocol or has no buffer.
+    """
+    if adapter is None:
+        return None
+    if not isinstance(adapter, AGUIProtocol):
+        return None
+    if not adapter.buffer:
+        return None
+    return compress_display_messages(adapter.buffer)
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +616,7 @@ async def execute_session(  # noqa: C901
             final_message=exported_final,
             deferred_tools=deferred_tools_data,
             run_summary=exported_summary,
+            display_messages=_compress_adapter_buffer(adapter),
             status=status,
         )
 
@@ -644,6 +667,7 @@ async def execute_session(  # noqa: C901
             exported_state,
             exported_final,
             summary,
+            adapter=adapter,
         )
 
     except Exception:

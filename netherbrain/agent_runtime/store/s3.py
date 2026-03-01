@@ -14,6 +14,7 @@ matching the same async pattern as LocalStateStore.
 
 from __future__ import annotations
 
+import json
 from functools import partial
 from typing import Any
 
@@ -22,6 +23,7 @@ from anyio import to_thread
 from botocore.config import Config
 
 from netherbrain.agent_runtime.models.session import SessionState
+from netherbrain.agent_runtime.store.base import DisplayMessages
 
 
 def _create_s3_client(
@@ -81,14 +83,27 @@ class S3StateStore:
         self._client = _create_s3_client(endpoint_url, access_key, secret_key, region=region, path_style=path_style)
         self._key_prefix = f"{prefix}/sessions/" if prefix else "sessions/"
 
-    def _object_key(self, session_id: str) -> str:
-        return f"{self._key_prefix}{session_id}/state.json"
+    def _object_key(self, session_id: str, filename: str = "state.json") -> str:
+        return f"{self._key_prefix}{session_id}/{filename}"
 
     # -- Write -----------------------------------------------------------------
 
     async def write_state(self, session_id: str, state: SessionState) -> None:
-        key = self._object_key(session_id)
+        key = self._object_key(session_id, "state.json")
         data = state.model_dump_json(indent=2)
+        await to_thread.run_sync(
+            partial(
+                self._client.put_object,
+                Bucket=self._bucket,
+                Key=key,
+                Body=data.encode("utf-8"),
+                ContentType="application/json",
+            )
+        )
+
+    async def write_display_messages(self, session_id: str, messages: DisplayMessages) -> None:
+        key = self._object_key(session_id, "display_messages.json")
+        data = json.dumps(messages, ensure_ascii=False, indent=2)
         await to_thread.run_sync(
             partial(
                 self._client.put_object,
@@ -102,9 +117,17 @@ class S3StateStore:
     # -- Read ------------------------------------------------------------------
 
     async def read_state(self, session_id: str) -> SessionState:
-        key = self._object_key(session_id)
+        key = self._object_key(session_id, "state.json")
         body = await to_thread.run_sync(partial(self._get_object_body, key))
         return SessionState.model_validate_json(body)
+
+    async def read_display_messages(self, session_id: str) -> DisplayMessages | None:
+        key = self._object_key(session_id, "display_messages.json")
+        try:
+            body = await to_thread.run_sync(partial(self._get_object_body, key))
+        except FileNotFoundError:
+            return None
+        return json.loads(body)
 
     def _get_object_body(self, key: str) -> str:
         """Get object and read body in the same thread.
@@ -122,7 +145,7 @@ class S3StateStore:
     # -- Utilities -------------------------------------------------------------
 
     async def exists(self, session_id: str) -> bool:
-        key = self._object_key(session_id)
+        key = self._object_key(session_id, "state.json")
         try:
             await to_thread.run_sync(partial(self._client.head_object, Bucket=self._bucket, Key=key))
         except self._client.exceptions.ClientError as e:
@@ -133,6 +156,7 @@ class S3StateStore:
             return True
 
     async def delete(self, session_id: str) -> None:
-        key = self._object_key(session_id)
-        # S3 delete is idempotent -- no error if key doesn't exist.
-        await to_thread.run_sync(partial(self._client.delete_object, Bucket=self._bucket, Key=key))
+        # Delete both state.json and display_messages.json.
+        for filename in ("state.json", "display_messages.json"):
+            key = self._object_key(session_id, filename)
+            await to_thread.run_sync(partial(self._client.delete_object, Bucket=self._bucket, Key=key))

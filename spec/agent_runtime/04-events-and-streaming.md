@@ -286,13 +286,54 @@ agent_runtime/
 - `sse-starlette`: SSE response for FastAPI
 - `redis`: Redis Stream transport
 
+## Display Messages (Event Compression)
+
+At commit time, the protocol adapter's event buffer is compressed into a compact chunk list and written to the State Store as `display_messages.json`. This enables UI clients to reconstruct the full conversation view (tool calls, reasoning, custom events) from history without replaying the raw event stream.
+
+### Compression
+
+The coordinator calls a compression function that walks the `AGUIProtocol.buffer` and collapses streaming triplets into AG-UI chunk events:
+
+| Original Events                                          | Compressed To         | Fields                                                          |
+| -------------------------------------------------------- | --------------------- | --------------------------------------------------------------- |
+| TextMessageStart + TextMessageContent\* + TextMessageEnd | TextMessageChunk      | messageId, role, delta (concatenated)                           |
+| ToolCallStart + ToolCallArgs\* + ToolCallEnd             | ToolCallChunk         | toolCallId, toolCallName, parentMessageId, delta (concatenated) |
+| ReasoningStart + ReasoningMessage\* + ReasoningEnd       | ReasoningMessageChunk | messageId, delta (concatenated)                                 |
+| ToolCallResult                                           | Kept as-is            | Already atomic                                                  |
+| CustomEvent                                              | Kept as-is            | Already atomic                                                  |
+| RunStarted, RunFinished, RunError                        | Dropped               | Derivable from session index                                    |
+| StepStarted, StepFinished                                | Dropped               | Real-time only                                                  |
+
+### Data Flow
+
+```mermaid
+flowchart LR
+    BUF["AGUIProtocol._buffer<br/>(full event stream)"] --> CMP["compress()"]
+    CMP --> DM["display_messages.json<br/>(State Store)"]
+    CMP --> FM["final_message<br/>(PG)"]
+```
+
+The compression runs inside the coordinator's finalize phase, after the agent stream is fully consumed but before the session is committed. Both `display_messages.json` and `state.json` are written during the same commit operation.
+
+### Storage
+
+`display_messages.json` is a separate file in the State Store, alongside `state.json`:
+
+```
+{base}/sessions/{session_id}/state.json
+{base}/sessions/{session_id}/display_messages.json
+```
+
+The file is optional. It may be absent for failed sessions or when compression is disabled.
+
 ## Access Patterns
 
-| Timing           | Method                                                                               | Data Source        |
-| ---------------- | ------------------------------------------------------------------------------------ | ------------------ |
-| During execution | SSE or Redis Stream (live events)                                                    | Redis Stream       |
-| After commit     | `GET /sessions/{id}/get`                                                             | PG (final_message) |
-| Reconnect        | Check session status; if committed, use session index; if running, attach via bridge | Both               |
+| Timing           | Method                                                                               | Data Source                         |
+| ---------------- | ------------------------------------------------------------------------------------ | ----------------------------------- |
+| During execution | SSE or Redis Stream (live events)                                                    | Redis Stream                        |
+| After commit     | `GET /sessions/{id}/get`                                                             | PG + State Store (display_messages) |
+| History browse   | `GET /conversations/{id}/turns?include_display=true`                                 | PG + State Store                    |
+| Reconnect        | Check session status; if committed, use session index; if running, attach via bridge | Both                                |
 
 ## Guaranteed Delivery
 

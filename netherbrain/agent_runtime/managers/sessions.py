@@ -28,6 +28,7 @@ from netherbrain.agent_runtime.models.enums import (
     Transport,
 )
 from netherbrain.agent_runtime.models.session import RunSummary, SessionState
+from netherbrain.agent_runtime.store.base import DisplayMessages
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -129,6 +130,7 @@ class SessionManager:
         final_message: str | None = None,
         deferred_tools: dict | None = None,
         run_summary: RunSummary | None = None,
+        display_messages: DisplayMessages | None = None,
         status: SessionStatus = SessionStatus.COMMITTED,
     ) -> SessionRow:
         """Commit a session: write state to store, update PG index.
@@ -142,6 +144,10 @@ class SessionManager:
 
         # Write SDK state blob to state store.
         await self._store.write_state(session_id, state)
+
+        # Write display messages (optional, separate file).
+        if display_messages is not None:
+            await self._store.write_display_messages(session_id, display_messages)
 
         # Update PG index (status, final_message, deferred_tools, run_summary).
         values: dict[str, Any] = {"status": status}
@@ -187,9 +193,10 @@ class SessionManager:
         *,
         include_state: bool = False,
     ) -> dict:
-        """Get session index from PG, optionally hydrated with store data.
+        """Get session index from PG, hydrated with display messages.
 
-        Returns a dict with ``index`` (always) and ``state`` (optional).
+        Returns a dict with ``index`` (always), ``display_messages`` (always,
+        may be None), and ``state`` (optional).
         """
         row = await db.get(SessionRow, session_id)
         if row is None:
@@ -197,6 +204,9 @@ class SessionManager:
             raise LookupError(msg)
 
         result: dict = {"index": row}
+
+        # Always load display messages (lightweight relative to full state).
+        result["display_messages"] = await self._store.read_display_messages(session_id)
 
         if include_state:
             try:
@@ -231,12 +241,17 @@ class SessionManager:
         self,
         db: AsyncSession,
         conversation_id: str,
+        *,
+        include_display: bool = False,
     ) -> list[dict]:
         """Get input/output pairs for all committed sessions in a conversation.
 
         Returns a list of dicts with ``input``, ``final_message``, and
         ``session_id`` in chronological order.  Sessions without final_message
         are included (they represent in-progress or failed turns).
+
+        When ``include_display`` is True, each turn additionally includes
+        ``display_messages`` loaded from the State Store.
         """
         stmt = (
             select(
@@ -255,15 +270,18 @@ class SessionManager:
             .order_by(SessionRow.created_at.asc())
         )
         result = await db.execute(stmt)
-        return [
-            {
+        turns = []
+        for row in result.all():
+            turn: dict = {
                 "session_id": row.session_id,
                 "input": row.input,
                 "final_message": row.final_message,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
             }
-            for row in result.all()
-        ]
+            if include_display:
+                turn["display_messages"] = await self._store.read_display_messages(row.session_id)
+            turns.append(turn)
+        return turns
 
     # -- Startup recovery ------------------------------------------------------
 

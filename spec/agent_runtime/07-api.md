@@ -293,11 +293,14 @@ Get conversation state: metadata, latest session, active execution, mailbox summ
 
 Retrieve display messages across sessions, ordered chronologically.
 
-| Query Param  | Type  | Description                    |
-| ------------ | ----- | ------------------------------ |
-| session_type | enum? | Filter: agent / async_subagent |
-| limit        | int?  | Page size                      |
-| offset       | int?  | Page offset                    |
+| Query Param     | Type  | Description                                                      |
+| --------------- | ----- | ---------------------------------------------------------------- |
+| session_type    | enum? | Filter: agent / async_subagent                                   |
+| include_display | bool  | Include compressed display_messages per session (default: false) |
+| limit           | int?  | Page size                                                        |
+| offset          | int?  | Page offset                                                      |
+
+When `include_display=false` (default), each turn contains `input` and `final_message` from PG only. When `include_display=true`, each turn additionally includes `display_messages` loaded from the State Store -- a compressed AG-UI chunk list that enables full conversation rendering (tool calls, reasoning, etc.).
 
 ### GET /api/conversations/{conversation_id}/sessions
 
@@ -343,11 +346,13 @@ Direct session execution with explicit parameters. Building block for conversati
 
 ### GET /api/sessions/{session_id}/get
 
-Returns session index (PG) with optional SDK state. Session index always includes `input` and `final_message`.
+Returns session index (PG) with display messages and optional SDK state. Session index always includes `input`, `final_message`, and `display_messages`.
 
 | Query Param   | Type | Description                                  |
 | ------------- | ---- | -------------------------------------------- |
 | include_state | bool | Include full SDK state blob (default: false) |
+
+`display_messages` is loaded from the State Store by default. It contains compressed AG-UI chunk events for full conversation rendering. The field is `null` when display messages were not captured (e.g., failed sessions).
 
 ### GET /api/sessions/{session_id}/status
 

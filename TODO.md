@@ -28,16 +28,19 @@ Implementation roadmap derived from spec/ documents. Organized by priority and d
 
 Persistence layer for session state (context, history, display messages).
 
-- [x] State store interface (read/write state.json and display_messages.json)
+- [x] State store interface (read/write state.json)
+- [x] State store: display_messages.json read/write (separate optional file alongside state.json)
 - [x] Local filesystem implementation (`{data_dir}/sessions/{session_id}/`, atomic writes)
 - [x] S3 implementation (optional)
 - [x] Session manager: create session (PG index + conversation + registry)
 - [x] Session manager: commit session (write store + update PG status + unregister)
 - [x] Session manager: get session (PG index + state store read)
+- [x] Session manager: get session loads display_messages by default
 - [x] Session manager: list sessions by conversation
 - [x] Startup recovery: mark orphaned `status=created` sessions as `failed`
 - [x] Conversation update API (title, metadata, status, default_preset_id)
-- [x] Conversation turns endpoint (display_messages across sessions)
+- [x] Conversation turns endpoint (input + final_message from PG)
+- [x] Conversation turns: `include_display` param to load display_messages from State Store
 - [x] Conversation sessions list endpoint
 - [x] Session get endpoint (with optional state hydration)
 
@@ -52,20 +55,25 @@ Core agent execution pipeline.
 - [x] Input mapping (text/url/file/binary parts, content_mode file/inline)
 - [x] System prompt rendering (Jinja2 template)
 - [x] Execution coordinator: setup -> run -> finalize pipeline
-- [x] Session commit flow: export state, compress events, write store, update PG
+- [x] Session commit flow: export state, write store, update PG
+- [x] Display messages compression: compress AGUIProtocol buffer into AG-UI chunk events at commit time
+- [x] Write display_messages.json to State Store during session commit
 - [x] Deferred tool handling (awaiting_tool_results status, user_interactions, tool_results)
 
 ## Phase 4: Event Protocol and Transport
 
 Event processing and delivery.
 
-- [ ] Protocol event envelope model (event_id, event_type, session_id, timestamp, agent_id, payload)
-- [ ] Event processor: normalize internal events to protocol events
-- [ ] Event processor: buffer events during execution
-- [ ] Event processor: compress events into display_messages after execution
-- [ ] SSE transport (sse-starlette EventSourceResponse, terminal event closes connection)
-- [ ] Redis stream transport (XADD to `nether:stream:{session_id}`, short TTL)
-- [ ] Stream-to-SSE bridge (`GET /sessions/{id}/events`, `Last-Event-ID` resume)
+- [x] Protocol event types (AG-UI re-exports, extension event names, SSE encoding helpers)
+- [x] Protocol adapter interface (`ProtocolAdapter` with `on_event` / `on_error`)
+- [x] AG-UI protocol adapter (`AGUIProtocol`: SDK StreamEvent -> AG-UI BaseEvent)
+- [x] Pipeline lifecycle events (`PipelineStarted`, `PipelineCompleted`, `PipelineFailed`, `UsageSnapshot`)
+- [x] Per-model usage tracking (`ModelUsage` / `PipelineUsage` dataclasses, aggregation by model_id)
+- [x] Usage snapshot hook (`UsageSnapshotEmitter` post-node hook for real-time usage)
+- [x] Event transport protocol (`EventTransport`: `send` / `close` interface)
+- [x] SSE transport (queue-backed, non-blocking `close` to avoid teardown stall)
+- [x] Redis stream transport (XADD to `nether:stream:{session_id}`, configurable TTL)
+- [x] Stream-to-SSE bridge (`bridge_stream_to_sse`: XREAD + `Last-Event-ID` resume + idle timeout)
 
 ## Phase 5: Chat API (Conversation-Level Endpoints)
 
@@ -86,7 +94,7 @@ High-level conversation operations.
 Direct session control.
 
 - [ ] `POST /api/sessions/execute` (explicit session creation and execution)
-- [ ] `GET /api/sessions/{id}/get` (PG index + optional display_messages)
+- [ ] `GET /api/sessions/{id}/get` (PG index + display_messages by default, optional SDK state)
 - [ ] `GET /api/sessions/{id}/status` (check registry then PG)
 - [ ] `GET /api/sessions/{id}/events` (stream-to-SSE bridge with resume)
 - [ ] `POST /api/sessions/{id}/interrupt`

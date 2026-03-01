@@ -22,6 +22,7 @@ row; only the heavy SDK state blob lives here.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import shutil
 import tempfile
@@ -31,6 +32,7 @@ from pathlib import Path
 from anyio import to_thread
 
 from netherbrain.agent_runtime.models.session import SessionState
+from netherbrain.agent_runtime.store.base import DisplayMessages
 
 
 class LocalStateStore:
@@ -59,12 +61,25 @@ class LocalStateStore:
         data = state.model_dump_json(indent=2)
         await to_thread.run_sync(partial(_atomic_write, session_dir / "state.json", data))
 
+    async def write_display_messages(self, session_id: str, messages: DisplayMessages) -> None:
+        session_dir = self._session_dir(session_id)
+        data = json.dumps(messages, ensure_ascii=False, indent=2)
+        await to_thread.run_sync(partial(_atomic_write, session_dir / "display_messages.json", data))
+
     # -- Read ------------------------------------------------------------------
 
     async def read_state(self, session_id: str) -> SessionState:
         path = self._session_dir(session_id) / "state.json"
         raw = await to_thread.run_sync(partial(_read_file, path))
         return SessionState.model_validate_json(raw)
+
+    async def read_display_messages(self, session_id: str) -> DisplayMessages | None:
+        path = self._session_dir(session_id) / "display_messages.json"
+        try:
+            raw = await to_thread.run_sync(partial(_read_file, path))
+        except FileNotFoundError:
+            return None
+        return json.loads(raw)
 
     # -- Utilities -------------------------------------------------------------
 

@@ -142,3 +142,71 @@ async def test_prefixed_store_roundtrip(prefixed_store: LocalStateStore) -> None
 
     await prefixed_store.delete("sess-1")
     assert await prefixed_store.exists("sess-1") is False
+
+
+# -- Display messages tests ---------------------------------------------------
+
+
+async def test_write_and_read_display_messages(store: LocalStateStore) -> None:
+    """Display messages round-trip as JSON list."""
+    messages = [
+        {"type": "TEXT_MESSAGE_CHUNK", "messageId": "m1", "role": "assistant", "delta": "Hello"},
+        {"type": "TOOL_CALL_CHUNK", "toolCallId": "tc1", "toolCallName": "search", "delta": '{"q":"test"}'},
+    ]
+    await store.write_display_messages("sess-1", messages)
+
+    result = await store.read_display_messages("sess-1")
+    assert result is not None
+    assert len(result) == 2
+    assert result[0]["type"] == "TEXT_MESSAGE_CHUNK"
+    assert result[0]["delta"] == "Hello"
+    assert result[1]["toolCallName"] == "search"
+
+
+async def test_read_display_messages_not_found(store: LocalStateStore) -> None:
+    """Reading display messages for a session with no file returns None."""
+    result = await store.read_display_messages("nonexistent")
+    assert result is None
+
+
+async def test_read_display_messages_state_only(store: LocalStateStore) -> None:
+    """Session with state.json but no display_messages.json returns None."""
+    state = SessionState()
+    await store.write_state("sess-1", state)
+
+    result = await store.read_display_messages("sess-1")
+    assert result is None
+
+
+async def test_display_messages_file_path(tmp_path) -> None:
+    """Display messages are stored as display_messages.json next to state.json."""
+    store = LocalStateStore(tmp_path)
+    messages = [{"type": "TEXT_MESSAGE_CHUNK", "delta": "hi"}]
+    await store.write_display_messages("sess-1", messages)
+
+    expected = tmp_path / "sessions" / "sess-1" / "display_messages.json"
+    assert expected.exists()
+
+
+async def test_delete_removes_display_messages(store: LocalStateStore) -> None:
+    """Delete should remove both state.json and display_messages.json."""
+    state = SessionState()
+    await store.write_state("sess-1", state)
+    await store.write_display_messages("sess-1", [{"type": "TEXT_MESSAGE_CHUNK"}])
+
+    await store.delete("sess-1")
+    assert await store.exists("sess-1") is False
+    assert await store.read_display_messages("sess-1") is None
+
+
+async def test_display_messages_with_prefix(tmp_path) -> None:
+    """Prefixed store should store display_messages in the right namespace."""
+    store = LocalStateStore(tmp_path, prefix="alice")
+    messages = [{"type": "TEXT_MESSAGE_CHUNK", "delta": "test"}]
+    await store.write_display_messages("sess-1", messages)
+
+    expected = tmp_path / "alice" / "sessions" / "sess-1" / "display_messages.json"
+    assert expected.exists()
+
+    result = await store.read_display_messages("sess-1")
+    assert result == messages
