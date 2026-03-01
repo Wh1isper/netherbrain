@@ -33,6 +33,22 @@ class ToolsetSpec(BaseModel):
     exclude_tools: list[str] = Field(default_factory=list)
 
 
+class ToolConfigSpec(BaseModel):
+    """Non-secret tool configuration stored in the preset.
+
+    API keys are auto-loaded from environment variables by the SDK.
+    Media hooks are configured at the service level (NetherSettings).
+    This spec covers only the per-preset knobs.
+    """
+
+    skip_url_verification: bool = True
+    enable_load_document: bool = False
+    image_understanding_model: str | None = None
+    image_understanding_model_settings: dict | None = None
+    video_understanding_model: str | None = None
+    video_understanding_model_settings: dict | None = None
+
+
 class EnvironmentSpec(BaseModel):
     """Shell execution mode and project environment."""
 
@@ -77,6 +93,7 @@ class AgentPreset(BaseModel):
     system_prompt: str
     toolsets: list[ToolsetSpec] = Field(default_factory=list)
     environment: EnvironmentSpec = Field(default_factory=EnvironmentSpec)
+    tool_config: ToolConfigSpec = Field(default_factory=ToolConfigSpec)
     subagents: SubagentSpec = Field(default_factory=SubagentSpec)
     is_default: bool = False
     created_at: datetime | None = None

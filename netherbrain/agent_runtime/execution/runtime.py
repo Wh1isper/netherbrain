@@ -16,9 +16,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from pydantic_ai import ModelSettings
+from pydantic_ai import DeferredToolRequests, ModelSettings
 from ya_agent_sdk.agents.main import AgentRuntime, create_agent
-from ya_agent_sdk.context import AgentContext, ModelConfig, ResumableState
+from ya_agent_sdk.context import AgentContext, ModelConfig, ResumableState, ToolConfig
 from ya_agent_sdk.toolsets.core.base import BaseTool
 from ya_agent_sdk.toolsets.core.content import tools as content_tools
 from ya_agent_sdk.toolsets.core.context import tools as context_tools
@@ -35,7 +35,7 @@ from netherbrain.agent_runtime.execution.environment import (
 )
 from netherbrain.agent_runtime.execution.prompt import render_system_prompt
 from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
-from netherbrain.agent_runtime.models.preset import ModelPreset, SubagentSpec, ToolsetSpec
+from netherbrain.agent_runtime.models.preset import ModelPreset, SubagentSpec, ToolConfigSpec, ToolsetSpec
 from netherbrain.agent_runtime.settings import NetherSettings
 
 if TYPE_CHECKING:
@@ -145,6 +145,32 @@ def resolve_model_config(model: ModelPreset) -> ModelConfig:
 
 
 # ---------------------------------------------------------------------------
+# Tool config mapping
+# ---------------------------------------------------------------------------
+
+
+def resolve_tool_config(spec: ToolConfigSpec) -> ToolConfig:
+    """Map ``ToolConfigSpec`` to SDK ``ToolConfig``.
+
+    Non-secret settings come from the preset.  API keys are auto-loaded
+    from environment variables by the SDK's ``ToolConfig`` defaults.
+    """
+    kwargs: dict[str, Any] = {
+        "skip_url_verification": spec.skip_url_verification,
+        "enable_load_document": spec.enable_load_document,
+    }
+    if spec.image_understanding_model is not None:
+        kwargs["image_understanding_model"] = spec.image_understanding_model
+    if spec.image_understanding_model_settings is not None:
+        kwargs["image_understanding_model_settings"] = ModelSettings(**spec.image_understanding_model_settings)
+    if spec.video_understanding_model is not None:
+        kwargs["video_understanding_model"] = spec.video_understanding_model
+    if spec.video_understanding_model_settings is not None:
+        kwargs["video_understanding_model_settings"] = ModelSettings(**spec.video_understanding_model_settings)
+    return ToolConfig(**kwargs)
+
+
+# ---------------------------------------------------------------------------
 # Subagent mapping
 # ---------------------------------------------------------------------------
 
@@ -177,7 +203,7 @@ def create_service_runtime(
     state: ResumableState | None = None,
     message_history: Sequence[ModelMessage] | None = None,
     resource_state: ResourceRegistryState | None = None,
-) -> tuple[AgentRuntime[AgentContext, str, Any], ProjectPaths]:
+) -> tuple[AgentRuntime[AgentContext, str | DeferredToolRequests, Any], ProjectPaths]:
     """Create an SDK ``AgentRuntime`` from a fully resolved config.
 
     This is the main entry point for the execution pipeline. It:
@@ -229,13 +255,18 @@ def create_service_runtime(
     # -- Subagents -------------------------------------------------------------
     subagent_configs = resolve_subagent_configs(config.subagents)
 
+    # -- Tool config -----------------------------------------------------------
+    tool_config = resolve_tool_config(config.tool_config)
+
     # -- Create runtime --------------------------------------------------------
     runtime = create_agent(
         model=config.model.name,
         model_settings=model_settings,
         model_cfg=model_cfg,
+        output_type=[str, DeferredToolRequests],
         env=env,
         tools=all_tools,
+        tool_config=tool_config,
         system_prompt=system_prompt,
         state=state,
         subagent_configs=subagent_configs if subagent_configs else None,

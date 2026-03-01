@@ -97,6 +97,7 @@ Agent presets are stored in PostgreSQL with structured JSON columns. Manageable 
 | system_prompt | text        | System prompt (Jinja2 template)                 |
 | toolsets      | JSONB       | Enabled toolsets and config (list[ToolsetSpec]) |
 | environment   | JSONB       | Shell mode and project config (EnvironmentSpec) |
+| tool_config   | JSONB       | Tool-level configuration (ToolConfigSpec)       |
 | subagents     | JSONB       | Subagent configuration (SubagentSpec)           |
 | is_default    | bool        | Whether this is the default preset              |
 | created_at    | timestamp   | Creation time                                   |
@@ -155,6 +156,19 @@ At runtime, projects resolve to managed directories:
 - Storage: `{DATA_ROOT}/{DATA_PREFIX}/projects/{project_id}/` (auto-created on first access)
 
 In docker mode, the user is responsible for mounting `DATA_ROOT` into the container. The runtime only executes commands via `docker exec`.
+
+### ToolConfigSpec (JSON)
+
+Non-secret tool configuration. API keys are auto-loaded from environment variables by the SDK; this spec covers per-preset knobs only.
+
+| Field                              | Type   | Default | Description                             |
+| ---------------------------------- | ------ | ------- | --------------------------------------- |
+| skip_url_verification              | bool   | true    | Skip SSRF URL verification              |
+| enable_load_document               | bool   | false   | Enable document URL parsing in LoadTool |
+| image_understanding_model          | string | null    | Model for image understanding           |
+| image_understanding_model_settings | dict   | null    | Model settings for image understanding  |
+| video_understanding_model          | string | null    | Model for video understanding           |
+| video_understanding_model_settings | dict   | null    | Model settings for video understanding  |
 
 ### SubagentSpec (JSON)
 

@@ -28,6 +28,7 @@ from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
     ModelPreset,
     SubagentSpec,
+    ToolConfigSpec,
     ToolsetSpec,
 )
 from netherbrain.agent_runtime.models.session import RunSummary
@@ -47,6 +48,7 @@ class PresetCreate(BaseModel):
     system_prompt: str
     toolsets: list[ToolsetSpec] = Field(default_factory=list)
     environment: EnvironmentSpec = Field(default_factory=EnvironmentSpec)
+    tool_config: ToolConfigSpec = Field(default_factory=ToolConfigSpec)
     subagents: SubagentSpec = Field(default_factory=SubagentSpec)
     is_default: bool = False
 
@@ -64,6 +66,7 @@ class PresetUpdate(BaseModel):
     system_prompt: str | None = None
     toolsets: list[ToolsetSpec] | None = None
     environment: EnvironmentSpec | None = None
+    tool_config: ToolConfigSpec | None = None
     subagents: SubagentSpec | None = None
     is_default: bool | None = None
 
@@ -80,6 +83,7 @@ class PresetResponse(BaseModel):
     system_prompt: str
     toolsets: list[ToolsetSpec]
     environment: EnvironmentSpec
+    tool_config: ToolConfigSpec
     subagents: SubagentSpec
     is_default: bool
     created_at: datetime

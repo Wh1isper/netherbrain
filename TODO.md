@@ -143,4 +143,7 @@ Async subagent orchestration.
 
 ## In-Code TODOs
 
-(none)
+- `app.py` -- Flush pending mailbox messages during shutdown
+- `environment.py` -- Replace LocalEnvironment with VirtualLocalEnvironment once SDK provides VirtualFileOperator
+- `environment.py` -- Implement DockerShell integration for docker mode
+- `runtime.py` -- Implement subagent config mapping (Phase 8)

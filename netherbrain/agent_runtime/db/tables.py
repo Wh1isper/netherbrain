@@ -46,6 +46,7 @@ class Preset(Base):
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     toolsets: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     environment: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    tool_config: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     subagents: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     is_default: Mapped[bool] = mapped_column(default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now())

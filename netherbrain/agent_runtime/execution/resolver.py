@@ -31,6 +31,7 @@ from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
     ModelPreset,
     SubagentSpec,
+    ToolConfigSpec,
     ToolsetSpec,
 )
 
@@ -78,6 +79,7 @@ class ConfigOverride(BaseModel):
     system_prompt: str | None = None
     toolsets: list[ToolsetSpec] | None = None
     environment: EnvironmentSpec | None = None
+    tool_config: ToolConfigSpec | None = None
     subagents: SubagentSpec | None = None
 
 
@@ -92,6 +94,7 @@ class ResolvedConfig(BaseModel):
     model: ModelPreset
     system_prompt: str
     toolsets: list[ToolsetSpec] = Field(default_factory=list)
+    tool_config: ToolConfigSpec = Field(default_factory=ToolConfigSpec)
     subagents: SubagentSpec = Field(default_factory=SubagentSpec)
 
     # Resolved environment (flattened from EnvironmentSpec + workspace lookup)
@@ -162,6 +165,10 @@ async def resolve_config(
         override and override.subagents,
         SubagentSpec(**preset.subagents),
     )
+    tool_config_raw = _first(
+        override and override.tool_config,
+        ToolConfigSpec(**preset.tool_config),
+    )
 
     # Environment: merge shell/container settings from override or preset.
     env_override = override.environment if override else None
@@ -190,6 +197,7 @@ async def resolve_config(
         model=model,
         system_prompt=system_prompt,
         toolsets=toolsets,
+        tool_config=tool_config_raw,
         subagents=subagents_raw,
         shell_mode=shell_mode,
         project_ids=resolved_projects,
