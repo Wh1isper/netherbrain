@@ -19,7 +19,7 @@ flowchart TB
 
     subgraph Outputs
         PROTO["Protocol Event Stream<br/>(to Transport)"]
-        DM["display_messages<br/>(compress after execution)"]
+        DM["final_message<br/>(extract after execution)"]
     end
 
     PAI & SDK & RT -->|"internal events"| NORM
@@ -95,7 +95,7 @@ Single component handling normalization, buffering, and compression.
 
 - **Normalize**: Map internal events to protocol events (single coupling point)
 - **Buffer**: Accumulate for real-time delivery and post-execution compression
-- **Compress**: After execution, collapse event stream into structured `display_messages` for UI rendering
+- **Compress**: After execution, extract the final model text output as `final_message` for PG storage
 
 ## Transport
 
@@ -143,7 +143,7 @@ sequenceDiagram
     RD-->>C: events
 ```
 
-Stream TTL is short (minutes, not hours). Redis is purely a live buffer during execution, not a data source. After a session commits, callers should retrieve `display_messages` from the State Store -- this is the preferred access path for completed sessions.
+Stream TTL is short (minutes, not hours). Redis is purely a live buffer during execution, not a data source. After a session commits, callers should retrieve `final_message` from the session index (PG) -- this is the preferred access path for completed sessions.
 
 ### Stream-to-SSE Bridge
 
@@ -156,24 +156,24 @@ Accept: text/event-stream
 Last-Event-ID: {cursor}
 ```
 
-| Run State                          | Last-Event-ID | Behavior                                 |
-| ---------------------------------- | ------------- | ---------------------------------------- |
-| Active, stream exists              | absent        | Replay from beginning + live events      |
-| Active, stream exists              | present       | Replay from cursor + live events         |
-| Completed, stream in TTL           | any           | Replay remaining + terminal + close      |
-| Session committed / stream expired | any           | 410 Gone; use `display_messages` instead |
+| Run State                          | Last-Event-ID | Behavior                            |
+| ---------------------------------- | ------------- | ----------------------------------- |
+| Active, stream exists              | absent        | Replay from beginning + live events |
+| Active, stream exists              | present       | Replay from cursor + live events    |
+| Completed, stream in TTL           | any           | Replay remaining + terminal + close |
+| Session committed / stream expired | any           | 410 Gone; use session index instead |
 
-For completed sessions, `display_messages` from the State Store is the canonical source. The bridge is only useful during live execution.
+For completed sessions, `final_message` from the session index (PG) is the canonical source. The bridge is only useful during live execution.
 
 This enables callers to consume async runs with SSE semantics during live execution.
 
 ## Access Patterns
 
-| Timing           | Method                                                                                  | Data Source                    |
-| ---------------- | --------------------------------------------------------------------------------------- | ------------------------------ |
-| During execution | SSE or Redis Stream (live events)                                                       | Redis Stream                   |
-| After commit     | `GET /sessions/{id}/get`                                                                | State Store (display_messages) |
-| Reconnect        | Check session status; if committed, use display_messages; if running, attach via bridge | Both                           |
+| Timing           | Method                                                                               | Data Source        |
+| ---------------- | ------------------------------------------------------------------------------------ | ------------------ |
+| During execution | SSE or Redis Stream (live events)                                                    | Redis Stream       |
+| After commit     | `GET /sessions/{id}/get`                                                             | PG (final_message) |
+| Reconnect        | Check session status; if committed, use session index; if running, attach via bridge | Both               |
 
 ## Guaranteed Delivery
 

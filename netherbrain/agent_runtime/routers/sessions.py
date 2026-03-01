@@ -19,14 +19,12 @@ async def handle_get_session(
     db: DbSession,
     manager: SessionMgr,
     include_state: bool = Query(False, description="Include full session state blob."),
-    include_display_messages: bool = Query(False, description="Include display messages."),
 ) -> dict:
     try:
         result = await manager.get_session(
             db,
             session_id,
             include_state=include_state,
-            include_display_messages=include_display_messages,
         )
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.") from None

@@ -133,24 +133,21 @@ Delete a workspace. Does not delete project directories.
 
 Used by `run`, `fork`, `fire`, `execute`, and `steer` endpoints.
 
-| Field        | Type       | Required | Description                 |
-| ------------ | ---------- | -------- | --------------------------- |
-| content_mode | enum       | No       | `file` (default) / `inline` |
-| parts        | list[Part] | Yes      | Content parts               |
+Input is a list of content parts (`list[Part]`). Each part has a `type` and optional `mode` to control delivery.
 
 ### Part
 
-| Field | Type    | Required | Description                            |
-| ----- | ------- | -------- | -------------------------------------- |
-| type  | enum    | Yes      | `text` / `url` / `file` / `binary`     |
-| text  | string  | Cond.    | Text content (type=text)               |
-| url   | string  | Cond.    | Resource URL (type=url)                |
-| path  | string  | Cond.    | Project-relative file path (type=file) |
-| data  | string  | Cond.    | Base64-encoded content (type=binary)   |
-| mime  | string? | No       | MIME type hint (for url/binary)        |
-| mode  | enum?   | No       | Per-part override: `file` / `inline`   |
+| Field | Type    | Required | Description                                |
+| ----- | ------- | -------- | ------------------------------------------ |
+| type  | enum    | Yes      | `text` / `url` / `file` / `binary`         |
+| text  | string  | Cond.    | Text content (type=text)                   |
+| url   | string  | Cond.    | Resource URL (type=url)                    |
+| path  | string  | Cond.    | Project-relative file path (type=file)     |
+| data  | string  | Cond.    | Base64-encoded content (type=binary)       |
+| mime  | string? | No       | MIME type hint (for url/binary)            |
+| mode  | enum?   | No       | Delivery mode: `file` (default) / `inline` |
 
-`content_mode` sets the default for all parts; per-part `mode` overrides it. See [03-execution.md](03-execution.md) for mapping behavior.
+Default mode is `file` (always safe). Callers opt into `inline` per-part when they know the model supports it. See [03-execution.md](03-execution.md) for mapping behavior.
 
 ## Conversations (Chat)
 
@@ -346,11 +343,11 @@ Direct session execution with explicit parameters. Building block for conversati
 
 ### GET /api/sessions/{session_id}/get
 
-Returns session index (PG) with optional display messages.
+Returns session index (PG) with optional SDK state. Session index always includes `input` and `final_message`.
 
-| Query Param              | Type | Description                              |
-| ------------------------ | ---- | ---------------------------------------- |
-| include_display_messages | bool | Include display_messages (default: true) |
+| Query Param   | Type | Description                                  |
+| ------------- | ---- | -------------------------------------------- |
+| include_state | bool | Include full SDK state blob (default: false) |
 
 ### GET /api/sessions/{session_id}/status
 

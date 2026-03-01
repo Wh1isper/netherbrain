@@ -14,7 +14,10 @@ Messages are displayed in a vertical thread. User messages and agent responses a
 
 ### Agent Response Rendering
 
-Agent responses contain rich content rendered from `display_messages` protocol events.
+Agent responses are rendered from two sources:
+
+- **Streaming**: SSE protocol events (`content_delta`, `tool_call_start`, etc.) during live execution.
+- **History**: `input` / `final_message` pairs loaded via `GET /conversations/{id}/turns` for completed sessions.
 
 ```mermaid
 flowchart TB
@@ -79,7 +82,7 @@ stateDiagram-v2
 
 Chat page uses SSE transport (`transport=sse`) for direct streaming. The UI consumes `POST /api/conversations/run` and processes the event stream.
 
-Reconnection on SSE drop: check session status, reattach via `/sessions/{id}/events` with `Last-Event-ID` if still running, or load `display_messages` if completed.
+Reconnection on SSE drop: check session status, reattach via `/conversations/{id}/events` with `Last-Event-ID` if still running, or reload turns via `GET /conversations/{id}/turns` if completed.
 
 ## Input Area
 
@@ -117,11 +120,22 @@ flowchart LR
 
 Shown at top of the chat area.
 
-| Element      | Description                        |
-| ------------ | ---------------------------------- |
-| Title        | Editable conversation title        |
-| Preset badge | Shows which agent preset is active |
-| Actions menu | Fork, change preset, archive       |
+| Element      | Description                                                               |
+| ------------ | ------------------------------------------------------------------------- |
+| Title        | Editable conversation title (saved via `POST /conversations/{id}/update`) |
+| Preset badge | Shows which agent preset is active                                        |
+| Actions menu | Fork, change preset, archive (status update via same endpoint)            |
+
+## Loading History
+
+When the user opens an existing conversation (sidebar click or direct navigation to `/c/:id`):
+
+1. Fetch conversation metadata: `GET /conversations/{id}/get`
+2. Fetch turn history: `GET /conversations/{id}/turns`
+3. Render each turn as a user message (`input`) followed by an agent response (`final_message`)
+4. If a session is still running, reattach to its SSE stream via `GET /conversations/{id}/events`
+
+Turns are returned in chronological order. Each turn contains `session_id`, `input` (list of content parts), `final_message` (markdown string or null for in-progress turns), and `created_at`.
 
 ## New Chat
 

@@ -22,19 +22,36 @@ Sessions are never mutated after commit. A new execution always produces a new s
 
 ## Session Structure
 
-| Field             | Type               | Description                                                     |
-| ----------------- | ------------------ | --------------------------------------------------------------- |
-| session_id        | string (immutable) | Unique snapshot identity                                        |
-| parent_session_id | string?            | Previous snapshot (null for root)                               |
-| project_ids       | list[string]       | Ordered project references for this session's environment       |
-| status            | enum               | created / committed / awaiting_tool_results / failed / archived |
-| run_summary       | RunSummary         | Run metadata captured at commit time                            |
-| context_state     | JSON               | SDK ResumableState (subagent history, handoff, usages)          |
-| message_history   | JSON               | LLM message history (pydantic-ai ModelMessage sequence)         |
-| environment_state | JSON               | Environment resource state for restore                          |
-| display_messages  | JSON               | Compressed protocol events for external consumption             |
-| metadata          | SessionMetadata    | Indexed fields for query and attribution                        |
-| created_at        | timestamp          | Snapshot creation time                                          |
+| Field             | Store       | Type               | Description                                                     |
+| ----------------- | ----------- | ------------------ | --------------------------------------------------------------- |
+| session_id        | PG          | string (immutable) | Unique snapshot identity                                        |
+| parent_session_id | PG          | string?            | Previous snapshot (null for root)                               |
+| project_ids       | PG          | list[string]       | Ordered project references for this session's environment       |
+| status            | PG          | enum               | created / committed / awaiting_tool_results / failed / archived |
+| run_summary       | PG          | RunSummary         | Run metadata captured at commit time                            |
+| input             | PG          | list[Part]?        | API input parts (written at creation)                           |
+| final_message     | PG          | string?            | Final model text output (written at commit)                     |
+| metadata          | PG          | SessionMetadata    | Indexed fields for query and attribution                        |
+| created_at        | PG          | timestamp          | Snapshot creation time                                          |
+| context_state     | State Store | JSON               | SDK ResumableState (subagent history, handoff, usages)          |
+| message_history   | State Store | JSON               | LLM message history (pydantic-ai ModelMessage sequence)         |
+| environment_state | State Store | JSON               | Environment resource state for restore                          |
+
+### Input Parts
+
+Input is a list of content parts, stored as JSONB on the session row. Each part has a `type` and optional `mode` to control delivery.
+
+| Field | Type    | Required | Description                            |
+| ----- | ------- | -------- | -------------------------------------- |
+| type  | enum    | Yes      | `text` / `url` / `file` / `binary`     |
+| text  | string  | Cond.    | Text content (type=text)               |
+| url   | string  | Cond.    | Resource URL (type=url)                |
+| path  | string  | Cond.    | Project-relative file path (type=file) |
+| data  | string  | Cond.    | Base64-encoded content (type=binary)   |
+| mime  | string? | No       | MIME type hint (for url/binary)        |
+| mode  | enum?   | No       | Per-part delivery: `file` / `inline`   |
+
+See [03-execution.md](03-execution.md) for input mapping behavior.
 
 ## Run Summary
 
@@ -96,25 +113,36 @@ A conversation is a logical collection of sessions sharing a `conversation_id`. 
 | Concurrency | At most one running `session_type=agent` session per conversation                      |
 | Environment | Each session snapshots its own `project_ids`; continue inherits from parent by default |
 
-## Dual Message Model
+### Conversation Turns
 
-LLM context and external display messages are distinct concerns.
+A conversation's turns are the sequence of input/output pairs across its committed sessions. Retrieved directly from PG (no state store access needed).
 
 ```mermaid
-flowchart TB
-    subgraph Session["Session Snapshot"]
-        subgraph Internal["LLM Context (for restore)"]
-            CS[context_state]
-            MH[message_history]
-        end
-        subgraph External["Display Messages (for callers)"]
-            DM[display_messages]
-        end
+flowchart LR
+    subgraph Conversation
+        S0["Session 0<br/>input: [text: 'hello']<br/>final: 'Hi!'"]
+        S1["Session 1<br/>input: [text: 'help me']<br/>final: 'Sure...'"]
+        S0 --> S1
     end
 ```
 
-- **LLM Context** (`context_state` + `message_history`): Used to restore agent state for the next turn. Not for caller consumption.
-- **Display Messages** (`display_messages`): Compressed protocol events for UI rendering and IM message formatting.
+## Dual Storage Model
+
+LLM context (for SDK restore) and display data (for callers) are stored separately.
+
+```mermaid
+flowchart TB
+    subgraph PG["PostgreSQL (queryable, lightweight)"]
+        IDX["Session Index<br/>(status, run_summary, metadata)"]
+        IO["Display Data<br/>(input, final_message)"]
+    end
+    subgraph Store["State Store (heavy, immutable)"]
+        SDK["state.json<br/>(context_state, message_history,<br/>environment_state)"]
+    end
+```
+
+- **State Store** (`state.json`): SDK resumable state packed as a single blob. Used to restore agent state for the next turn. Not for caller consumption. Single-file write ensures atomicity on both local FS (tempfile + rename) and S3 (single PUT).
+- **PG Display Data** (`input` + `final_message`): Lightweight text fields for conversation rendering, search, and IM message formatting.
 
 ## Persistence Topology
 
@@ -125,25 +153,23 @@ flowchart LR
     end
 
     subgraph PG["PostgreSQL"]
-        IDX["Session Index<br/>(id, parent_id, project_ids,<br/>status, run_summary, metadata)"]
+        IDX["Session Index<br/>(id, parent_id, project_ids,<br/>status, run_summary, metadata,<br/>input, final_message)"]
         CONV["Conversation Index<br/>(conversation_id, title,<br/>status)"]
     end
 
     subgraph Store["State Store (Local FS / S3)"]
         STATE["state.json<br/>(context_state, message_history,<br/>environment_state)"]
-        DM["display_messages.json"]
     end
 
-    SM -->|"index + lineage"| IDX
+    SM -->|"index + display"| IDX
     SM -->|"conversation metadata"| CONV
-    SM -->|"state read/write"| STATE
-    SM -->|"display messages"| DM
+    SM -->|"SDK state read/write"| STATE
 ```
 
-| Store       | What                        | Why                         |
-| ----------- | --------------------------- | --------------------------- |
-| PG          | Session index, conversation | Queryable lineage, metadata |
-| State Store | Session state + display     | Large blob, immutable       |
+| Store       | What                                  | Why                                    |
+| ----------- | ------------------------------------- | -------------------------------------- |
+| PG          | Session index, input, final_message   | Queryable lineage, display, search     |
+| State Store | context_state + message_history + env | Large opaque blob, single atomic write |
 
 ### Storage Layout
 
@@ -151,14 +177,12 @@ Local filesystem (default):
 
 ```
 {data_dir}/sessions/{session_id}/state.json
-{data_dir}/sessions/{session_id}/display_messages.json
 ```
 
 S3 (optional):
 
 ```
 {bucket}/sessions/{session_id}/state.json
-{bucket}/sessions/{session_id}/display_messages.json
 ```
 
 ## Session Lifecycle

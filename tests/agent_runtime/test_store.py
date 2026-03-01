@@ -30,22 +30,9 @@ async def test_write_and_read_state(store: LocalStateStore) -> None:
     assert result.environment_state == {"cwd": "/home/user/project"}
 
 
-async def test_write_and_read_display_messages(store: LocalStateStore) -> None:
-    messages = [{"role": "assistant", "text": "Hi there"}]
-    await store.write_display_messages("sess-1", messages)
-
-    result = await store.read_display_messages("sess-1")
-    assert result == messages
-
-
 async def test_read_state_not_found(store: LocalStateStore) -> None:
     with pytest.raises(FileNotFoundError):
         await store.read_state("nonexistent")
-
-
-async def test_read_display_messages_not_found(store: LocalStateStore) -> None:
-    with pytest.raises(FileNotFoundError):
-        await store.read_display_messages("nonexistent")
 
 
 async def test_exists(store: LocalStateStore) -> None:
@@ -59,7 +46,6 @@ async def test_exists(store: LocalStateStore) -> None:
 async def test_delete(store: LocalStateStore) -> None:
     state = SessionState()
     await store.write_state("sess-1", state)
-    await store.write_display_messages("sess-1", [{"text": "hi"}])
 
     await store.delete("sess-1")
     assert await store.exists("sess-1") is False

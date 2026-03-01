@@ -35,9 +35,8 @@ sequenceDiagram
     end
 
     Note over EC: Finalize
-    EC->>EP: compress()
-    EP-->>EC: display_messages
-    EC->>SM: commit(SDK state + display_messages)
+    EC->>EC: Extract final_message from output
+    EC->>SM: commit(SDK state, final_message)
     EC-->>C: terminal event
 ```
 
@@ -60,7 +59,7 @@ flowchart LR
     end
 
     subgraph Finalize
-        F1["compress() -> display_messages"]
+        F1["Extract final_message"]
         F2["Export SDK state"]
         F3["Session commit (PG + State Store)"]
     end
@@ -72,7 +71,7 @@ Responsibilities:
 
 - **Setup**: Load parent state, create environment, instantiate transport
 - **Execute**: Run the agent, pipe events through processor to transport
-- **Finalize**: Compress events, export SDK state, commit session
+- **Finalize**: Extract final model output, export SDK state, commit session
 
 Pipeline execution and transport delivery are decoupled. The agent runs to completion regardless of consumer speed or disconnection.
 
@@ -137,7 +136,7 @@ flowchart TB
 
 ## Input Mapping
 
-Input is a list of content parts, mapped to SDK UserPrompt. Each non-text part has a `content_mode` that controls how it is delivered to the model.
+Input is a list of content parts, mapped to SDK UserPrompt. Each non-text part has a `mode` that controls how it is delivered to the model.
 
 ### Content Mode
 
@@ -146,13 +145,11 @@ Input is a list of content parts, mapped to SDK UserPrompt. Each non-text part h
 | `file`   | Download/write to environment, reference as file path (default) | None            |
 | `inline` | Pass directly into model context (image URL, base64, etc.)      | Model-dependent |
 
-Default is `file` (always safe). Callers opt into `inline` when they know the model supports it. If `inline` is requested but the model does not support the content type, execution fails with an error (no silent fallback).
-
-`content_mode` can be set per-request (applies to all parts) or per-part (overrides request default).
+Default is `file` (always safe). Callers opt into `inline` per-part when they know the model supports it. If `inline` is requested but the model does not support the content type, execution fails with an error (no silent fallback).
 
 ### Part Type Mapping
 
-| Part Type | content_mode=file (default)   | content_mode=inline                         |
+| Part Type | mode=file (default)           | mode=inline                                 |
 | --------- | ----------------------------- | ------------------------------------------- |
 | text      | Pass through as string        | Pass through as string                      |
 | url       | Download to environment       | Pass URL directly into model context        |
@@ -160,8 +157,6 @@ Default is `file` (always safe). Callers opt into `inline` when they know the mo
 | binary    | Write to environment temp dir | Decode and pass directly into model context |
 
 Inline mode passes content directly to the model via pydantic-ai's multimodal UserPrompt. Whether the model accepts a given content type (image, video, audio, PDF, etc.) depends on the model's capabilities. If the model does not support the content type, execution fails with an error -- the runtime does not silently fall back to file mode.
-
-Input mapping uses `user_prompt_factory` for lazy execution at agent start time.
 
 ### Deferred Tool Feedback
 
@@ -180,8 +175,8 @@ After execution completes:
 
 1. Export `context_state` and `message_history` from SDK
 2. Export `environment_state` from Environment
-3. Compress protocol events into `display_messages`
-4. Write `state.json` and `display_messages.json` to State Store
-5. Update PG session index (status -> committed, project_ids, run_summary)
+3. Extract `final_message` (last model text output)
+4. Write `state.json` (context_state + message_history + environment_state) to State Store
+5. Update PG session index (status -> committed, final_message, run_summary)
 
-If state write fails, session status is set to `failed`. Display messages failure is non-fatal (session is still restorable).
+If state write fails, session status is set to `failed`.

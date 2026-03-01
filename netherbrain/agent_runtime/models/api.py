@@ -173,12 +173,13 @@ class SessionResponse(BaseModel):
     conversation_id: str
     spawned_by: str | None = None
     preset_id: str | None = None
+    input: list[dict] | None = None
+    final_message: str | None = None
     created_at: datetime
 
 
 class SessionDetailResponse(BaseModel):
-    """Session index with optional hydrated state and display messages."""
+    """Session index with optional hydrated SDK state."""
 
     index: SessionResponse
     state: dict | None = None
-    display_messages: list[dict] | None = None

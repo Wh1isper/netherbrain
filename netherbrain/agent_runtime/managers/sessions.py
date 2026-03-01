@@ -4,7 +4,7 @@ The SessionManager is a process-level singleton initialised in the app lifespan.
 It coordinates between three backends:
 
 - **PostgreSQL**: Session and conversation index rows (queryable metadata)
-- **State Store**: Large immutable blobs (context_state, display_messages)
+- **State Store**: Large immutable blobs (context_state, message_history)
 - **Registry**: In-memory live session references (interrupt, steering)
 
 Individual methods accept an ``AsyncSession`` (DB) parameter so that database
@@ -14,7 +14,7 @@ access follows FastAPI's per-request dependency injection pattern.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from sqlalchemy import select, update
@@ -60,6 +60,7 @@ class SessionManager:
         session_type: SessionType = SessionType.AGENT,
         transport: Transport = Transport.SSE,
         spawned_by: str | None = None,
+        input_parts: list[dict[str, Any]] | None = None,
     ) -> SessionRow:
         """Create a new session with its PG index row and conversation.
 
@@ -103,6 +104,7 @@ class SessionManager:
             conversation_id=conversation_id,
             spawned_by=spawned_by,
             preset_id=preset_id,
+            input=input_parts,
         )
         db.add(session_row)
         await db.commit()
@@ -124,7 +126,7 @@ class SessionManager:
         session_id: str,
         *,
         state: SessionState,
-        display_messages: list[dict] | None = None,
+        final_message: str | None = None,
         run_summary: RunSummary | None = None,
         status: SessionStatus = SessionStatus.COMMITTED,
     ) -> SessionRow:
@@ -137,13 +139,13 @@ class SessionManager:
             msg = f"Cannot commit with status '{status}'; use fail_session for failures"
             raise ValueError(msg)
 
-        # Write blobs to state store.
+        # Write SDK state blob to state store.
         await self._store.write_state(session_id, state)
-        if display_messages is not None:
-            await self._store.write_display_messages(session_id, display_messages)
 
-        # Update PG index.
-        values: dict = {"status": status}
+        # Update PG index (status, final_message, run_summary).
+        values: dict[str, Any] = {"status": status}
+        if final_message is not None:
+            values["final_message"] = final_message
         if run_summary is not None:
             values["run_summary"] = run_summary.model_dump()
 
@@ -181,12 +183,10 @@ class SessionManager:
         session_id: str,
         *,
         include_state: bool = False,
-        include_display_messages: bool = False,
     ) -> dict:
         """Get session index from PG, optionally hydrated with store data.
 
-        Returns a dict with ``index`` (always), ``state`` (optional), and
-        ``display_messages`` (optional).
+        Returns a dict with ``index`` (always) and ``state`` (optional).
         """
         row = await db.get(SessionRow, session_id)
         if row is None:
@@ -200,12 +200,6 @@ class SessionManager:
                 result["state"] = await self._store.read_state(session_id)
             except FileNotFoundError:
                 result["state"] = None
-
-        if include_display_messages:
-            try:
-                result["display_messages"] = await self._store.read_display_messages(session_id)
-            except FileNotFoundError:
-                result["display_messages"] = None
 
         return result
 
@@ -235,13 +229,19 @@ class SessionManager:
         db: AsyncSession,
         conversation_id: str,
     ) -> list[dict]:
-        """Aggregate display_messages across all committed sessions in a conversation.
+        """Get input/output pairs for all committed sessions in a conversation.
 
-        Returns a flat list of display messages in session order (by created_at).
-        Sessions without display_messages are skipped.
+        Returns a list of dicts with ``input``, ``final_message``, and
+        ``session_id`` in chronological order.  Sessions without final_message
+        are included (they represent in-progress or failed turns).
         """
         stmt = (
-            select(SessionRow.session_id)
+            select(
+                SessionRow.session_id,
+                SessionRow.input,
+                SessionRow.final_message,
+                SessionRow.created_at,
+            )
             .where(
                 SessionRow.conversation_id == conversation_id,
                 SessionRow.status.in_([
@@ -252,16 +252,15 @@ class SessionManager:
             .order_by(SessionRow.created_at.asc())
         )
         result = await db.execute(stmt)
-        session_ids = list(result.scalars().all())
-
-        turns: list[dict] = []
-        for sid in session_ids:
-            try:
-                messages = await self._store.read_display_messages(sid)
-                turns.extend(messages)
-            except FileNotFoundError:
-                continue
-        return turns
+        return [
+            {
+                "session_id": row.session_id,
+                "input": row.input,
+                "final_message": row.final_message,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in result.all()
+        ]
 
     # -- Startup recovery ------------------------------------------------------
 

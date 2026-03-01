@@ -6,12 +6,14 @@ Uses ``anyio.to_thread.run_sync`` for non-blocking file I/O.
 Writes are atomic: data is written to a temporary file in the same directory,
 then renamed to the target path.  This prevents corrupt reads if the process
 crashes mid-write.
+
+Display data (input, final_message) is stored in PostgreSQL on the session
+row; only the heavy SDK state blob lives here.
 """
 
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import shutil
 import tempfile
@@ -29,7 +31,6 @@ class LocalStateStore:
     Layout::
 
         {data_dir}/sessions/{session_id}/state.json
-        {data_dir}/sessions/{session_id}/display_messages.json
     """
 
     def __init__(self, data_dir: str | Path) -> None:
@@ -45,22 +46,12 @@ class LocalStateStore:
         data = state.model_dump_json(indent=2)
         await to_thread.run_sync(partial(_atomic_write, session_dir / "state.json", data))
 
-    async def write_display_messages(self, session_id: str, messages: list[dict]) -> None:
-        session_dir = self._session_dir(session_id)
-        data = json.dumps(messages, ensure_ascii=False, indent=2)
-        await to_thread.run_sync(partial(_atomic_write, session_dir / "display_messages.json", data))
-
     # -- Read ------------------------------------------------------------------
 
     async def read_state(self, session_id: str) -> SessionState:
         path = self._session_dir(session_id) / "state.json"
         raw = await to_thread.run_sync(partial(_read_file, path))
         return SessionState.model_validate_json(raw)
-
-    async def read_display_messages(self, session_id: str) -> list[dict]:
-        path = self._session_dir(session_id) / "display_messages.json"
-        raw = await to_thread.run_sync(partial(_read_file, path))
-        return json.loads(raw)
 
     # -- Utilities -------------------------------------------------------------
 

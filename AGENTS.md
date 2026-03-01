@@ -87,7 +87,7 @@ The agent-runtime follows a strict three-layer separation:
 
 - **Routers** (`routers/`): Thin HTTP adapters. Parse request parameters, call managers, translate domain exceptions (`LookupError`, `ValueError`) to HTTP responses (`404`, `409`, `422`). No SQLAlchemy queries or business logic here.
 - **Managers** (`managers/`): Business logic and data access. Accept `db: AsyncSession` as parameter. Raise domain exceptions, never HTTP exceptions. Stateless CRUD managers use module-level async functions; stateful managers (e.g. `SessionManager`) use classes.
-- **Store** (`store/`): State persistence for large blobs (session state, display messages). Async Protocol interface with pluggable backends (local FS, S3).
+- **Store** (`store/`): State persistence for large SDK blobs (context_state, message_history, environment_state). Async Protocol interface with pluggable backends (local FS, S3). Display data (input, final_message) lives in PG on the session row.
 
 Key rules:
 
@@ -180,7 +180,11 @@ Usage documentation: how-to guides, API usage examples, integration instructions
 
 ### spec/
 
-Design specification for this project: architecture diagrams, flowcharts, swimlane diagrams, pseudocode flows.
+Design specification for the agent-runtime and im-gateway: architecture diagrams, flowcharts, swimlane diagrams, pseudocode flows.
+
+### ui/spec/
+
+Design specification for the Web UI: product model, layout, page behavior, interaction flows. Follows the same conventions as `spec/` (mermaid diagrams, concise, high-level). When modifying agent-runtime APIs, always review `ui/spec/` for corresponding impact.
 
 - Use mermaid for all diagrams.
 - Keep documents concise and elegant; focus on high-level design only.
@@ -220,8 +224,6 @@ Chat-app style web interface served by the agent-runtime at root path (`/`).
 - **Responsive**: Desktop and mobile are both first-class.
 - **Tech stack**: Tailwind CSS + shadcn/ui + Zustand + react-markdown + Shiki.
 - **Two pages**: Chat (`/`, `/c/:id`) and Settings (`/settings`).
-
-UI design spec lives in `ui/spec/`. When modifying agent-runtime APIs, always consider corresponding UI changes.
 
 ## CI/CD
 

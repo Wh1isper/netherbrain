@@ -132,7 +132,7 @@ Persistent message store (PostgreSQL) collecting subagent outcomes within a conv
 | created_at        | timestamp | When posted                                 |
 | delivered_to      | string?   | Session that consumed this (null = pending) |
 
-Messages are lightweight references. Full content is retrieved from the source session's `display_messages` at render time.
+Messages are lightweight references. Full content is retrieved from the source session's `final_message` at render time.
 
 ### Production Rules
 
@@ -166,7 +166,7 @@ Single result:
 
 ```
 Async subagent '{name}' (session: {id}) completed:
-{display_messages content}
+{final_message content}
 ```
 
 Multiple results:

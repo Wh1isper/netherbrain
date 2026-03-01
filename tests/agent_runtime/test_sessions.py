@@ -47,6 +47,18 @@ async def test_create_root_session(manager: SessionManager, db_session: AsyncSes
 
 
 @pytest.mark.integration
+async def test_create_session_with_input(manager: SessionManager, db_session: AsyncSession) -> None:
+    """Session stores structured input parts in PG."""
+    input_parts = [
+        {"type": "text", "text": "hello world"},
+        {"type": "url", "url": "https://example.com/img.png", "mode": "inline"},
+    ]
+    row = await manager.create_session(db_session, input_parts=input_parts)
+
+    assert row.input == input_parts
+
+
+@pytest.mark.integration
 async def test_create_continuation_session(manager: SessionManager, db_session: AsyncSession) -> None:
     """Continuation: inherits conversation_id from parent."""
     root = await manager.create_session(db_session)
@@ -85,15 +97,15 @@ async def test_create_session_invalid_parent(manager: SessionManager, db_session
 
 @pytest.mark.integration
 async def test_commit_session(manager: SessionManager, store: LocalStateStore, db_session: AsyncSession) -> None:
-    """Commit writes state to store and updates PG status."""
-    row = await manager.create_session(db_session)
+    """Commit writes state to store and updates PG status + final_message."""
+    input_parts = [{"type": "text", "text": "hi"}]
+    row = await manager.create_session(db_session, input_parts=input_parts)
     session_id = row.session_id
 
     state = SessionState(
         context_state={"agent": "data"},
         message_history=[{"role": "user", "content": "hi"}],
     )
-    display = [{"role": "assistant", "text": "hello"}]
     summary = RunSummary(
         duration_ms=1234,
         usage=UsageSummary(total_tokens=100, prompt_tokens=80, completion_tokens=20, model_requests=1),
@@ -103,19 +115,18 @@ async def test_commit_session(manager: SessionManager, store: LocalStateStore, d
         db_session,
         session_id,
         state=state,
-        display_messages=display,
+        final_message="Hello! How can I help?",
         run_summary=summary,
     )
 
     assert committed.status == SessionStatus.COMMITTED
     assert committed.run_summary["duration_ms"] == 1234
+    assert committed.final_message == "Hello! How can I help?"
+    assert committed.input == input_parts
 
     # Verify state store.
     stored = await store.read_state(session_id)
     assert stored.context_state == {"agent": "data"}
-
-    stored_display = await store.read_display_messages(session_id)
-    assert stored_display == display
 
 
 @pytest.mark.integration
@@ -165,8 +176,9 @@ async def test_list_sessions(manager: SessionManager, db_session: AsyncSession) 
 
 @pytest.mark.integration
 async def test_conversation_turns(manager: SessionManager, db_session: AsyncSession) -> None:
-    """Turns aggregates display_messages across committed sessions."""
-    root = await manager.create_session(db_session)
+    """Turns returns input/final_message pairs from PG."""
+    input1 = [{"type": "text", "text": "question 1"}]
+    root = await manager.create_session(db_session, input_parts=input1)
     root_id = root.session_id
     conv_id = root.conversation_id
 
@@ -174,23 +186,26 @@ async def test_conversation_turns(manager: SessionManager, db_session: AsyncSess
         db_session,
         root_id,
         state=SessionState(),
-        display_messages=[{"role": "user", "text": "q1"}, {"role": "assistant", "text": "a1"}],
+        final_message="answer 1",
     )
 
-    child = await manager.create_session(db_session, parent_session_id=root_id)
+    input2 = [{"type": "text", "text": "question 2"}]
+    child = await manager.create_session(db_session, parent_session_id=root_id, input_parts=input2)
     child_id = child.session_id
 
     await manager.commit_session(
         db_session,
         child_id,
         state=SessionState(),
-        display_messages=[{"role": "user", "text": "q2"}, {"role": "assistant", "text": "a2"}],
+        final_message="answer 2",
     )
 
     turns = await manager.get_conversation_turns(db_session, conv_id)
-    assert len(turns) == 4
-    assert turns[0]["text"] == "q1"
-    assert turns[3]["text"] == "a2"
+    assert len(turns) == 2
+    assert turns[0]["input"] == input1
+    assert turns[0]["final_message"] == "answer 1"
+    assert turns[1]["input"] == input2
+    assert turns[1]["final_message"] == "answer 2"
 
 
 @pytest.mark.integration
@@ -262,7 +277,13 @@ async def test_session_get_endpoint(client: AsyncClient, db_session: AsyncSessio
 
     conv = Conversation(conversation_id="conv-sg", status="active")
     db_session.add(conv)
-    sess = Session(session_id="sg-1", conversation_id="conv-sg", status="committed")
+    sess = Session(
+        session_id="sg-1",
+        conversation_id="conv-sg",
+        status="committed",
+        input=[{"type": "text", "text": "hello"}],
+        final_message="Hi there!",
+    )
     db_session.add(sess)
     await db_session.commit()
 
@@ -270,6 +291,8 @@ async def test_session_get_endpoint(client: AsyncClient, db_session: AsyncSessio
     assert resp.status_code == 200
     data = resp.json()
     assert data["index"]["session_id"] == "sg-1"
+    assert data["index"]["input"] == [{"type": "text", "text": "hello"}]
+    assert data["index"]["final_message"] == "Hi there!"
     assert data["state"] is None  # not requested
 
 

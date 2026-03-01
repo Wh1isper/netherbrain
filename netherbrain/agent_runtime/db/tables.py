@@ -98,6 +98,8 @@ class Session(Base):
     )
     spawned_by: Mapped[str | None]
     preset_id: Mapped[str | None]
+    input: Mapped[dict | None] = mapped_column("input", JSONB)
+    final_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now())
 
 
