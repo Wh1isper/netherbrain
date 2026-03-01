@@ -122,6 +122,8 @@ Connection closes after terminal event. No built-in resume support; use Redis St
 
 Events published to a Redis Stream keyed by session. Short TTL -- streams are ephemeral buffers, not durable storage. Display messages are persisted in the State Store at session commit time.
 
+All Redis keys use the `nether:` application prefix to avoid collisions in shared Redis instances. Stream keys follow the pattern `nether:stream:{session_id}`.
+
 ```mermaid
 sequenceDiagram
     participant C as Caller

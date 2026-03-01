@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: netherbrain
       POSTGRES_DB: netherbrain
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +20,7 @@ services:
     image: redis:7
     container_name: netherbrain-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
     volumes:
       - redisdata:/data
     healthcheck:

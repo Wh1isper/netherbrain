@@ -22,6 +22,8 @@ class NetherSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="NETHER_",
+        env_file=".env",
+        env_file_encoding="utf-8",
         case_sensitive=False,
     )
 
@@ -64,3 +66,24 @@ class NetherSettings(BaseSettings):
         if self.auth_token:
             return self.auth_token
         return secrets.token_urlsafe(32)
+
+
+def get_settings() -> NetherSettings:
+    """Return a cached settings instance.
+
+    Reads from environment variables and ``.env`` on first call, then returns
+    the same object.  Call ``get_settings.cache_clear()`` in tests to force a
+    re-read after overriding env vars.
+    """
+    return _get_settings_cached()
+
+
+def _get_settings_cached() -> NetherSettings:
+    """Inner function wrapped by lru_cache (allows type-safe cache_clear)."""
+    return NetherSettings()
+
+
+# Apply lru_cache at runtime so the function is only called once.
+from functools import lru_cache  # noqa: E402
+
+_get_settings_cached = lru_cache(maxsize=1)(_get_settings_cached)

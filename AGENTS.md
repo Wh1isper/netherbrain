@@ -22,9 +22,17 @@ graph LR
 ```
 netherbrain/
   __init__.py
-  cli.py               # Unified click CLI (netherbrain agent / netherbrain gateway)
+  cli.py               # Unified click CLI (netherbrain agent / netherbrain gateway / netherbrain db)
   agent_runtime/       # FastAPI service
     app.py             # FastAPI application (serves API + static UI)
+    alembic.ini        # Alembic configuration (packaged)
+    alembic/           # Database migrations
+      env.py           # Migration environment
+      versions/        # Migration scripts
+    db/                # Database layer
+      tables.py        # SQLAlchemy ORM models (schema source of truth)
+      engine.py        # Async engine factory
+    models/            # Pydantic domain models
   im_gateway/          # IM bot gateway
     gateway.py         # Gateway logic
 ui/                    # Frontend (Vite + React + TypeScript)
@@ -39,7 +47,9 @@ dev/
   dev-setup.sh            # Infrastructure management script (up/down/status/reset)
   dev.env                 # Dev environment variables
 tests/
+  conftest.py           # Shared fixtures (testcontainers, db_session, redis_client)
   test_agent_runtime.py
+  test_db_integration.py
   test_im_gateway.py
 ```
 
@@ -59,6 +69,11 @@ tests/
 
 - `netherbrain agent` - Start the agent runtime server (default: 0.0.0.0:8000)
 - `netherbrain gateway` - Start the IM gateway (connects to agent-runtime)
+- `netherbrain db upgrade` - Run database migrations to latest
+- `netherbrain db downgrade` - Roll back database by one migration
+- `netherbrain db migrate <message>` - Autogenerate a migration from model changes
+- `netherbrain db current` - Show current database revision
+- `netherbrain db history` - Show migration history
 
 ## Dev Commands (Makefile)
 
@@ -68,15 +83,48 @@ tests/
 - `make check` - Run all quality checks (server + UI)
 - `make check-server` - Run server-side quality checks only
 - `make check-ui` - Run UI linting and formatting checks only
-- `make test` - Run tests with pytest
+- `make test` - Run all tests (requires Docker for integration tests)
+- `make test-unit` - Run unit tests only (no Docker required)
 - `make build` - Build wheel (includes UI)
 - `make dev` - Run agent-runtime and UI dev server concurrently
 - `make run-agent` - Run agent-runtime with auto-reload
 - `make run-gateway` - Run im-gateway
+- `make db-upgrade` - Run database migrations to latest
+- `make db-downgrade` - Roll back database by one migration
+- `make db-current` - Show current database revision
+- `make db-history` - Show migration history
 - `make infra-up` - Start dev PostgreSQL and Redis
 - `make infra-down` - Stop dev infrastructure (data preserved)
 - `make infra-status` - Show dev infrastructure status
 - `make infra-reset` - Stop and wipe dev infrastructure data
+
+## Settings
+
+- All settings read from `NETHER_*` env vars via `pydantic-settings`, with `.env` fallback.
+- Use `get_settings()` (cached via `lru_cache`) instead of instantiating `NetherSettings()` directly.
+- Do NOT create `NetherSettings()` at module level in app code -- it prevents test env var overrides.
+- CLI commands (`cli.py`) and Alembic `env.py` may create `NetherSettings()` directly since they run in isolated contexts.
+
+## Database
+
+- Driver: `psycopg[binary,pool]` (psycopg3) -- single driver for both sync (Alembic) and async (FastAPI).
+- Dialect: `postgresql+psycopg://` for sync, `postgresql+asyncpg://` is NOT used.
+- Alembic config (`alembic.ini`) and migrations (`alembic/`) are packaged inside `netherbrain/agent_runtime/`.
+- `tables.py` (SQLAlchemy ORM) is the single source of truth for schema. Alembic reads `Base.metadata`.
+- `env.py` uses `include_object` filter to protect foreign tables, `compare_type=True`, `compare_server_default=True`.
+- Dev infrastructure: PostgreSQL on port **15432**, Redis on port **16379** (non-default to avoid conflicts).
+
+## Testing
+
+- Function-style tests only (no test classes).
+- Use `@pytest.mark.integration` for tests that need PostgreSQL / Redis containers.
+- Containers are managed by `testcontainers-python` (session-scoped: started once per run).
+- `PostgresContainer(driver="psycopg")` -- use the driver param, not string replacement.
+- DB test isolation via savepoint rollback (`join_transaction_mode="create_savepoint"`).
+- Redis test isolation via `flushdb` after each test.
+- Schema setup uses Alembic `upgrade head` with the packaged `alembic.ini` (tests the real migration path).
+- After setting test env vars, call `_get_settings_cached.cache_clear()` so `get_settings()` picks them up.
+- Fixtures: `db_session` (async SQLAlchemy session), `redis_client` (async Redis client), `async_engine` (session-scoped).
 
 ## Documentation Conventions
 
@@ -124,12 +172,6 @@ The agent-runtime serves a built-in web UI with two sections:
 - **Chat**: Conversation interface (create conversations, send messages, view streaming responses)
 
 The UI is part of the agent-runtime package and served by FastAPI at the root path. When modifying agent-runtime APIs, always consider corresponding UI changes.
-
-## CI/CD
-
-- Push to main: quality checks, tests, then build and push `dev` image
-- Release: publish to PyPI, build and push tagged + `latest` image
-  nt-runtime package and served by FastAPI at the root path. When modifying agent-runtime APIs, always consider corresponding UI changes.
 
 ## CI/CD
 

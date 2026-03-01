@@ -40,9 +40,14 @@ check-server: ## Run server-side quality checks
 	@uv run deptry .
 
 .PHONY: test
-test: ## Run tests with pytest
+test: ## Run all tests (requires Docker for integration tests)
 	@echo "Testing code: Running pytest"
 	@uv run python -m pytest tests
+
+.PHONY: test-unit
+test-unit: ## Run unit tests only (no Docker required)
+	@echo "Running unit tests"
+	@uv run python -m pytest tests -m "not integration"
 
 .PHONY: run-agent
 run-agent: ## Run agent-runtime dev server with auto-reload
@@ -103,6 +108,26 @@ publish: ## Publish a release to PyPI
 
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish
+
+# =============================================================================
+# Database
+# =============================================================================
+
+.PHONY: db-upgrade
+db-upgrade: ## Run database migrations to latest
+	@uv run netherbrain db upgrade
+
+.PHONY: db-downgrade
+db-downgrade: ## Roll back database by one migration
+	@uv run netherbrain db downgrade
+
+.PHONY: db-current
+db-current: ## Show current database revision
+	@uv run netherbrain db current
+
+.PHONY: db-history
+db-history: ## Show migration history
+	@uv run netherbrain db history
 
 # =============================================================================
 # Infrastructure

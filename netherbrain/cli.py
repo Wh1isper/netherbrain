@@ -45,5 +45,76 @@ def gateway(runtime_url: str) -> None:
     asyncio.run(gw.start())
 
 
+# ---------------------------------------------------------------------------
+# Database management
+# ---------------------------------------------------------------------------
+
+
+def _alembic_config():
+    """Build an Alembic Config from the package's alembic.ini.
+
+    Both alembic.ini and the alembic/ directory live inside the package,
+    so this works whether running from source or from an installed package.
+    """
+    from pathlib import Path
+
+    from alembic.config import Config
+
+    ini_path = Path(__file__).parent / "agent_runtime" / "alembic.ini"
+    cfg = Config(str(ini_path))
+    return cfg
+
+
+@main.group()
+def db() -> None:
+    """Database migration and management commands."""
+
+
+@db.command()
+@click.option("--revision", default="head", help="Target revision (default: head).")
+def upgrade(revision: str) -> None:
+    """Run database migrations forward."""
+    from alembic import command
+
+    command.upgrade(_alembic_config(), revision)
+    click.echo(f"Database upgraded to {revision}.")
+
+
+@db.command()
+@click.option("--revision", default="-1", help="Target revision (default: -1, one step back).")
+def downgrade(revision: str) -> None:
+    """Roll back database migrations."""
+    from alembic import command
+
+    command.downgrade(_alembic_config(), revision)
+    click.echo(f"Database downgraded to {revision}.")
+
+
+@db.command()
+@click.argument("message")
+def migrate(message: str) -> None:
+    """Autogenerate a new migration from model changes."""
+    from alembic import command
+
+    command.revision(_alembic_config(), message=message, autogenerate=True)
+    click.echo(f"Migration generated: {message}")
+
+
+@db.command()
+def current() -> None:
+    """Show current database revision."""
+    from alembic import command
+
+    command.current(_alembic_config(), verbose=True)
+
+
+@db.command()
+def history() -> None:
+    """Show migration history."""
+    from alembic import command
+
+    command.history(_alembic_config(), verbose=True)
+
+
 if __name__ == "__main__":
     main()

@@ -24,8 +24,8 @@ cmd_up() {
     docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d --wait
     echo ""
     echo "Dev infrastructure is ready:"
-    echo "  PostgreSQL: postgresql://netherbrain:netherbrain@localhost:5432/netherbrain"
-    echo "  Redis:      redis://localhost:6379/0"
+    echo "  PostgreSQL: postgresql://netherbrain:netherbrain@localhost:15432/netherbrain"
+    echo "  Redis:      redis://localhost:16379/0"
     echo ""
     echo "Load env vars into your shell:"
     echo "  set -a && source dev/dev.env && set +a"

@@ -179,7 +179,7 @@ At least one of `input`, `user_interactions`, `tool_results` must be provided.
 {
   session_id: "S1",
   conversation_id: "C1",
-  stream_key: "stream:S1"
+  stream_key: "nether:stream:S1"
 }
 ```
 
@@ -275,7 +275,7 @@ Get conversation state: metadata, latest session, active execution, mailbox summ
   },
   "active_session": {
     "session_id": "S6",
-    "stream_key": "stream:S6",
+    "stream_key": "nether:stream:S6",
     "transport": "stream"
   },
   "mailbox": {

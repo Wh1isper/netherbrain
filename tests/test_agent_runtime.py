@@ -2,10 +2,9 @@ from fastapi.testclient import TestClient
 
 from netherbrain.agent_runtime.app import app
 
-client = TestClient(app)
-
 
 def test_health():
-    response = client.get("/api/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    with TestClient(app) as client:
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}

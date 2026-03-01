@@ -11,14 +11,7 @@ from loguru import logger
 
 from netherbrain.agent_runtime.log import setup_logging
 from netherbrain.agent_runtime.registry import SessionRegistry
-from netherbrain.agent_runtime.settings import NetherSettings
-
-# ---------------------------------------------------------------------------
-# Settings & logging -- resolved once at import time so that uvicorn workers
-# pick them up before the first request.
-# ---------------------------------------------------------------------------
-settings = NetherSettings()
-setup_logging(settings.log_level)
+from netherbrain.agent_runtime.settings import get_settings
 
 # ---------------------------------------------------------------------------
 # Shared singletons initialised during lifespan
@@ -29,6 +22,9 @@ registry = SessionRegistry()
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # -- Startup ---------------------------------------------------------------
+    settings = get_settings()
+    setup_logging(settings.log_level)
+
     auth_token = settings.resolve_auth_token()
     if not settings.auth_token:
         logger.warning("No NETHER_AUTH_TOKEN set -- generated token: {}", auth_token)
