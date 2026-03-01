@@ -49,10 +49,12 @@ Auto-generation behavior: if `AUTH_TOKEN` is not set or empty, the runtime gener
 | `DATA_ROOT`     | No       | Unified data directory (default: `./data`)   |
 | `DATA_PREFIX`   | No       | Optional namespace prefix for all data paths |
 | `STATE_STORE`   | No       | `local` (default) or `s3`                    |
-| `S3_ENDPOINT`   | No       | S3 endpoint (when STATE_STORE=s3)            |
+| `S3_ENDPOINT`   | No       | S3 endpoint URL                              |
 | `S3_BUCKET`     | No       | S3 bucket name                               |
+| `S3_REGION`     | No       | S3 region name                               |
 | `S3_ACCESS_KEY` | No       | S3 access key                                |
 | `S3_SECRET_KEY` | No       | S3 secret key                                |
+| `S3_PATH_STYLE` | No       | Use path-style addressing (default: false)   |
 
 ### LLM Providers
 

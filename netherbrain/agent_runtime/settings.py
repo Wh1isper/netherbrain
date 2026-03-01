@@ -53,8 +53,11 @@ class NetherSettings(BaseSettings):
     # S3 (only when state_store = "s3")
     s3_endpoint: str | None = None
     s3_bucket: str | None = None
+    s3_region: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: SecretStr | None = None
+    s3_path_style: bool = False
+    """Use path-style addressing (required by MinIO and some S3-compatible services)."""
 
     # -- Auth ------------------------------------------------------------------
     auth_token: str | None = None

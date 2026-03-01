@@ -28,9 +28,23 @@ registry = SessionRegistry()
 def _create_state_store(settings: NetherSettings) -> StateStore:
     """Create the state store backend based on configuration."""
     if settings.state_store == "s3":
-        # TODO: S3StateStore implementation
-        msg = "S3 state store not yet implemented"
-        raise NotImplementedError(msg)
+        if not settings.s3_bucket or not settings.s3_endpoint:
+            msg = "S3 state store requires NETHER_S3_BUCKET and NETHER_S3_ENDPOINT"
+            raise ValueError(msg)
+        if not settings.s3_access_key or not settings.s3_secret_key:
+            msg = "S3 state store requires NETHER_S3_ACCESS_KEY and NETHER_S3_SECRET_KEY"
+            raise ValueError(msg)
+        from netherbrain.agent_runtime.store.s3 import S3StateStore
+
+        return S3StateStore(
+            bucket=settings.s3_bucket,
+            endpoint_url=settings.s3_endpoint,
+            access_key=settings.s3_access_key,
+            secret_key=settings.s3_secret_key.get_secret_value(),
+            prefix=settings.data_prefix,
+            region=settings.s3_region,
+            path_style=settings.s3_path_style,
+        )
     return LocalStateStore(settings.data_root, prefix=settings.data_prefix)
 
 
@@ -117,8 +131,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     #    that SSE connections can deliver the terminal event before closing.
     AppStatus.should_exit = True
     logger.info("SSE: signalled streams to close")
-
-    # TODO: flush pending mailbox messages
 
     # Close Redis client (returns pooled connections).
     if _app.state.redis is not None:

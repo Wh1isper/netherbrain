@@ -30,7 +30,7 @@ Persistence layer for session state (context, history, display messages).
 
 - [x] State store interface (read/write state.json and display_messages.json)
 - [x] Local filesystem implementation (`{data_dir}/sessions/{session_id}/`, atomic writes)
-- [ ] S3 implementation (optional)
+- [x] S3 implementation (optional)
 - [x] Session manager: create session (PG index + conversation + registry)
 - [x] Session manager: commit session (write store + update PG status + unregister)
 - [x] Session manager: get session (PG index + state store read)
@@ -46,14 +46,14 @@ Persistence layer for session state (context, history, display messages).
 Core agent execution pipeline.
 
 - [x] Config resolver (load preset + merge override + resolve workspace + inject env vars)
-- [ ] Environment setup: local mode (project path resolution under DATA_ROOT)
-- [ ] Environment setup: docker mode (docker exec shell)
-- [ ] Input mapping (text/url/file/binary parts, content_mode file/inline)
-- [ ] System prompt rendering (Jinja2 template)
-- [ ] SDK adapter: map resolved config to `create_agent` + `stream_agent`
-- [ ] Execution coordinator: setup -> run -> finalize pipeline
-- [ ] Session commit flow: export state, compress events, write store, update PG
-- [ ] Deferred tool handling (awaiting_tool_results status, user_interactions, tool_results)
+- [x] Environment setup: local mode (project path resolution under DATA_ROOT)
+- [-] Environment setup: docker mode (docker exec shell)
+- [x] SDK adapter: map resolved config to `create_agent` + `stream_agent`
+- [x] Input mapping (text/url/file/binary parts, content_mode file/inline)
+- [x] System prompt rendering (Jinja2 template)
+- [x] Execution coordinator: setup -> run -> finalize pipeline
+- [x] Session commit flow: export state, compress events, write store, update PG
+- [x] Deferred tool handling (awaiting_tool_results status, user_interactions, tool_results)
 
 ## Phase 4: Event Protocol and Transport
 
@@ -143,5 +143,4 @@ Async subagent orchestration.
 
 ## In-Code TODOs
 
-- `app.py` -- S3StateStore implementation (in `_create_state_store`)
-- `app.py` -- Flush pending mailbox messages during shutdown
+(none)

@@ -58,6 +58,11 @@ netherbrain/
       local.py         # Local filesystem implementation (atomic writes)
     execution/         # Execution pipeline (Phase 3+)
       resolver.py      # Config resolver (preset + override + workspace -> ResolvedConfig)
+      environment.py   # Environment setup (project paths, virtual workspace, SDK Environment factory)
+      runtime.py       # SDK adapter (ResolvedConfig -> create_agent -> AgentRuntime)
+      input.py         # Input mapping (InputPart list -> SDK UserPrompt)
+      prompt.py        # System prompt rendering (Jinja2 templates)
+      coordinator.py   # Execution orchestration (setup -> run -> finalize pipeline)
   im_gateway/          # IM bot gateway
     gateway.py         # Gateway logic
 ui/                    # Frontend (Vite + React + TypeScript)

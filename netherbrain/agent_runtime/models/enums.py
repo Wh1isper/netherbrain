@@ -51,6 +51,25 @@ class MailboxSourceType(StrEnum):
     SUBAGENT_FAILED = "subagent_failed"
 
 
+# -- Input -------------------------------------------------------------------
+
+
+class ContentMode(StrEnum):
+    """Delivery mode for non-text input parts."""
+
+    FILE = "file"
+    INLINE = "inline"
+
+
+class InputPartType(StrEnum):
+    """Content part type in user input."""
+
+    TEXT = "text"
+    URL = "url"
+    FILE = "file"
+    BINARY = "binary"
+
+
 # -- Events ------------------------------------------------------------------
 
 

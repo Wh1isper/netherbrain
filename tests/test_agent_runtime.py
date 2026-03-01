@@ -1,8 +1,10 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from netherbrain.agent_runtime.app import app
 
 
+@pytest.mark.integration
 def test_health():
     with TestClient(app) as client:
         response = client.get("/api/health")
