@@ -31,7 +31,7 @@ def _create_state_store(settings: NetherSettings) -> StateStore:
         # TODO: S3StateStore implementation
         msg = "S3 state store not yet implemented"
         raise NotImplementedError(msg)
-    return LocalStateStore(settings.state_store_path)
+    return LocalStateStore(settings.data_root, prefix=settings.data_prefix)
 
 
 @asynccontextmanager
@@ -45,7 +45,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         logger.warning("No NETHER_AUTH_TOKEN set -- generated token: {}", auth_token)
 
     logger.info("Agent Runtime starting (host={}, port={})", settings.host, settings.port)
-    logger.info("State store: {} (path={})", settings.state_store, settings.state_store_path)
+    prefix_info = f", prefix={settings.data_prefix}" if settings.data_prefix else ""
+    logger.info("Data root: {} (store={}{})", settings.data_root, settings.state_store, prefix_info)
 
     # -- Initialise state fields (always present, possibly None) ----------------
     _app.state.db_engine = None
@@ -85,7 +86,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if _app.state.db_session_factory is not None:
         store = _create_state_store(settings)
         _app.state.session_manager = SessionManager(store=store, registry=registry)
-        logger.info("SessionManager: initialised (store={})", settings.state_store)
+        logger.info("SessionManager: initialised")
 
         # Startup recovery: mark orphaned sessions as failed.
         async with _app.state.db_session_factory() as db:

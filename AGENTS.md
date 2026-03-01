@@ -56,6 +56,8 @@ netherbrain/
     store/             # State store for session persistence (large blobs)
       base.py          # StateStore async Protocol
       local.py         # Local filesystem implementation (atomic writes)
+    execution/         # Execution pipeline (Phase 3+)
+      resolver.py      # Config resolver (preset + override + workspace -> ResolvedConfig)
   im_gateway/          # IM bot gateway
     gateway.py         # Gateway logic
 ui/                    # Frontend (Vite + React + TypeScript)

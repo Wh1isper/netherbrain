@@ -16,6 +16,11 @@ def store(tmp_path) -> LocalStateStore:
     return LocalStateStore(tmp_path)
 
 
+@pytest.fixture
+def prefixed_store(tmp_path) -> LocalStateStore:
+    return LocalStateStore(tmp_path, prefix="alice")
+
+
 async def test_write_and_read_state(store: LocalStateStore) -> None:
     state = SessionState(
         context_state={"key": "value"},
@@ -78,3 +83,62 @@ async def test_multiple_sessions_isolated(store: LocalStateStore) -> None:
     await store.delete("a")
     assert await store.exists("a") is False
     assert await store.exists("b") is True
+
+
+async def test_prefix_creates_namespaced_path(tmp_path) -> None:
+    """Prefix inserts a namespace directory between data_root and sessions."""
+    store = LocalStateStore(tmp_path, prefix="alice")
+    state = SessionState(context_state={"ns": "alice"})
+    await store.write_state("sess-1", state)
+
+    # File should be at {tmp_path}/alice/sessions/sess-1/state.json
+    expected = tmp_path / "alice" / "sessions" / "sess-1" / "state.json"
+    assert expected.exists()
+
+    result = await store.read_state("sess-1")
+    assert result.context_state == {"ns": "alice"}
+
+
+async def test_prefix_none_no_extra_directory(tmp_path) -> None:
+    """No prefix means no extra directory segment."""
+    store = LocalStateStore(tmp_path, prefix=None)
+    state = SessionState()
+    await store.write_state("sess-1", state)
+
+    # File should be at {tmp_path}/sessions/sess-1/state.json
+    expected = tmp_path / "sessions" / "sess-1" / "state.json"
+    assert expected.exists()
+
+
+async def test_different_prefixes_isolated(tmp_path) -> None:
+    """Different prefixes are fully isolated from each other."""
+    store_a = LocalStateStore(tmp_path, prefix="alice")
+    store_b = LocalStateStore(tmp_path, prefix="bob")
+
+    await store_a.write_state("sess-1", SessionState(context_state={"user": "alice"}))
+    await store_b.write_state("sess-1", SessionState(context_state={"user": "bob"}))
+
+    a = await store_a.read_state("sess-1")
+    b = await store_b.read_state("sess-1")
+    assert a.context_state == {"user": "alice"}
+    assert b.context_state == {"user": "bob"}
+
+    await store_a.delete("sess-1")
+    assert await store_a.exists("sess-1") is False
+    assert await store_b.exists("sess-1") is True
+
+
+async def test_prefixed_store_roundtrip(prefixed_store: LocalStateStore) -> None:
+    """Prefixed store should work identically to unprefixed for CRUD ops."""
+    state = SessionState(
+        context_state={"key": "value"},
+        message_history=[{"role": "user", "content": "hello"}],
+    )
+    await prefixed_store.write_state("sess-1", state)
+    assert await prefixed_store.exists("sess-1") is True
+
+    result = await prefixed_store.read_state("sess-1")
+    assert result.context_state == {"key": "value"}
+
+    await prefixed_store.delete("sess-1")
+    assert await prefixed_store.exists("sess-1") is False

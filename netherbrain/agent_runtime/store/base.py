@@ -4,6 +4,11 @@ The state store handles large, immutable blobs (session state) that are
 written once at commit time and read on restore.  The interface is async
 to support both local filesystem and remote (S3) backends.
 
+All backends support an optional namespace prefix that partitions storage::
+
+    Local:  {data_root}/{prefix}/sessions/{session_id}/state.json
+    S3:     s3://{bucket}/{prefix}/sessions/{session_id}/state.json
+
 PostgreSQL stores the lightweight session index (including input and
 final_message for display); the state store holds the heavy SDK state
 payload.  See spec/agent_runtime/01-session.md for the persistence topology.
@@ -20,8 +25,12 @@ from netherbrain.agent_runtime.models.session import SessionState
 class StateStore(Protocol):
     """Async protocol for reading and writing session state blobs.
 
-    Storage layout (keyed by session_id):
-        {root}/sessions/{session_id}/state.json
+    Storage layout (keyed by session_id)::
+
+        {base}/sessions/{session_id}/state.json
+
+    Where ``base`` is backend-specific (local path or S3 key prefix),
+    optionally including a namespace prefix.
     """
 
     async def write_state(self, session_id: str, state: SessionState) -> None:

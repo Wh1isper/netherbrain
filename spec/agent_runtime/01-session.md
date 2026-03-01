@@ -176,14 +176,16 @@ flowchart LR
 Local filesystem (default):
 
 ```
-{data_dir}/sessions/{session_id}/state.json
+{data_root}/{data_prefix}/sessions/{session_id}/state.json
 ```
 
 S3 (optional):
 
 ```
-{bucket}/sessions/{session_id}/state.json
+s3://{bucket}/{data_prefix}/sessions/{session_id}/state.json
 ```
+
+When `data_prefix` is unset, the prefix segment is omitted.
 
 ## Session Lifecycle
 

@@ -45,8 +45,8 @@ Persistence layer for session state (context, history, display messages).
 
 Core agent execution pipeline.
 
-- [ ] Config resolver (load preset + merge override + resolve workspace + inject env vars)
-- [ ] Environment setup: local mode (project path resolution under PROJECTS_ROOT)
+- [x] Config resolver (load preset + merge override + resolve workspace + inject env vars)
+- [ ] Environment setup: local mode (project path resolution under DATA_ROOT)
 - [ ] Environment setup: docker mode (docker exec shell)
 - [ ] Input mapping (text/url/file/binary parts, content_mode file/inline)
 - [ ] System prompt rendering (Jinja2 template)

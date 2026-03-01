@@ -37,13 +37,18 @@ class NetherSettings(BaseSettings):
     redis_url: str | None = None
     """Redis connection string.  Required for stream transport."""
 
-    # -- State store -----------------------------------------------------------
-    state_store: Literal["local", "s3"] = "local"
-    state_store_path: str = "./data"
+    # -- Data storage ----------------------------------------------------------
+    data_root: str = "./data"
+    """Unified root directory for all managed data (projects, session state)."""
 
-    # -- Projects --------------------------------------------------------------
-    projects_root: str = "./projects"
-    """Root directory for managed project directories."""
+    data_prefix: str | None = None
+    """Optional namespace prefix inserted into all data paths.
+
+    When set, all paths become ``{data_root}/{data_prefix}/...``.
+    Useful for multi-tenant or organizational separation.
+    """
+
+    state_store: Literal["local", "s3"] = "local"
 
     # S3 (only when state_store = "s3")
     s3_endpoint: str | None = None

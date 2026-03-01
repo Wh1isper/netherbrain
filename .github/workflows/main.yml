@@ -29,6 +29,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          package_json_file: ui/package.json
 
       - name: Install UI dependencies
         run: cd ui && pnpm install --frozen-lockfile

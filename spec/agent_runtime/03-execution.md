@@ -85,7 +85,7 @@ flowchart TB
     PROJ_RESOLVE -->|neither| NONE["No project environment"]
     WS --> PROJ
 
-    PROJ --> PATHS["project_ids[0] -> default_path<br/>project_ids[1:] -> allowed_paths<br/>(under PROJECTS_ROOT)"]
+    PROJ --> PATHS["project_ids[0] -> default_path<br/>project_ids[1:] -> allowed_paths<br/>(under DATA_ROOT)"]
     PATHS --> CHECK{shell_mode}
     NONE --> CHECK
 
@@ -102,7 +102,7 @@ flowchart TB
     FRESH --> ENV
 ```
 
-- **Project resolution**: `workspace_id` is resolved from PG to a `project_ids` list; inline `project_ids` are used directly. Each project_id maps to `{PROJECTS_ROOT}/{project_id}/`, auto-created on first access.
+- **Project resolution**: `workspace_id` is resolved from PG to a `project_ids` list; inline `project_ids` are used directly. Each project_id maps to `{DATA_ROOT}/{DATA_PREFIX}/projects/{project_id}/`, auto-created on first access.
 - **Local mode**: `LocalEnvironment` with resolved project paths
 - **Docker mode**: `LocalFileOperator` for file operations + `DockerShell` targeting the configured container. File operations remain on the host; shell commands execute inside the container via `docker exec`
 

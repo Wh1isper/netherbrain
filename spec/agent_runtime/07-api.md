@@ -99,7 +99,7 @@ Create a named workspace.
 | projects     | list[string] | Yes      | Ordered project_ids, first = default |
 | metadata     | JSON?        | No       | Client-defined metadata (opaque)     |
 
-Project directories are auto-created under `PROJECTS_ROOT` on first access.
+Project directories are auto-created under `DATA_ROOT` on first access.
 
 ### GET /api/workspaces/list
 

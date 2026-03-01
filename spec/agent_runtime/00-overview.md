@@ -20,7 +20,7 @@ Built on `ya-agent-sdk` (which wraps `pydantic-ai`), the runtime exposes `create
 | ---------- | --------------------------------------------------------------------- |
 | PostgreSQL | Agent presets, workspaces, conversation index, session index, mailbox |
 | Redis      | Event stream buffer (short TTL, ephemeral)                            |
-| Local FS   | Default session state storage (context, history, display)             |
+| Local FS   | Default session state storage and managed project directories         |
 | S3         | Optional alternative session state storage                            |
 
 ## Architecture
@@ -75,13 +75,13 @@ flowchart TB
 
 ## Environment Model
 
-The agent operates on **managed project directories**. A `project_id` is a client-provided slug that maps to a directory under the managed projects root:
+The agent operates on **managed project directories**. A `project_id` is a client-provided slug that maps to a directory under the unified data root:
 
 ```
-{projects_root}/{project_id}/
+{data_root}/{data_prefix}/projects/{project_id}/
 ```
 
-Directories are auto-created on first access. There is no separate project registry -- `project_id` is purely a storage mapping key.
+When `data_prefix` is unset, the path collapses to `{data_root}/projects/{project_id}/`. Directories are auto-created on first access. There is no separate project registry -- `project_id` is purely a storage mapping key.
 
 ### Workspace
 

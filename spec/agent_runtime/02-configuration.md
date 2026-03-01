@@ -42,17 +42,17 @@ Auto-generation behavior: if `AUTH_TOKEN` is not set or empty, the runtime gener
 
 ### Infrastructure
 
-| Variable           | Required | Description                                        |
-| ------------------ | -------- | -------------------------------------------------- |
-| `DATABASE_URL`     | Yes      | PostgreSQL connection string                       |
-| `REDIS_URL`        | Yes      | Redis connection string                            |
-| `STATE_STORE`      | No       | `local` (default) or `s3`                          |
-| `STATE_STORE_PATH` | No       | Local state directory (default: `./data`)          |
-| `PROJECTS_ROOT`    | No       | Managed projects directory (default: `./projects`) |
-| `S3_ENDPOINT`      | No       | S3 endpoint (when STATE_STORE=s3)                  |
-| `S3_BUCKET`        | No       | S3 bucket name                                     |
-| `S3_ACCESS_KEY`    | No       | S3 access key                                      |
-| `S3_SECRET_KEY`    | No       | S3 secret key                                      |
+| Variable        | Required | Description                                  |
+| --------------- | -------- | -------------------------------------------- |
+| `DATABASE_URL`  | Yes      | PostgreSQL connection string                 |
+| `REDIS_URL`     | Yes      | Redis connection string                      |
+| `DATA_ROOT`     | No       | Unified data directory (default: `./data`)   |
+| `DATA_PREFIX`   | No       | Optional namespace prefix for all data paths |
+| `STATE_STORE`   | No       | `local` (default) or `s3`                    |
+| `S3_ENDPOINT`   | No       | S3 endpoint (when STATE_STORE=s3)            |
+| `S3_BUCKET`     | No       | S3 bucket name                               |
+| `S3_ACCESS_KEY` | No       | S3 access key                                |
+| `S3_SECRET_KEY` | No       | S3 secret key                                |
 
 ### LLM Providers
 
@@ -150,9 +150,9 @@ At runtime, projects resolve to managed directories:
 
 - `project_ids[0]` -> default working directory (shell pwd)
 - `project_ids[1:]` -> additional allowed paths
-- Storage: `{PROJECTS_ROOT}/{project_id}/` (auto-created on first access)
+- Storage: `{DATA_ROOT}/{DATA_PREFIX}/projects/{project_id}/` (auto-created on first access)
 
-In docker mode, the user is responsible for mounting `PROJECTS_ROOT` into the container. The runtime only executes commands via `docker exec`.
+In docker mode, the user is responsible for mounting `DATA_ROOT` into the container. The runtime only executes commands via `docker exec`.
 
 ### SubagentSpec (JSON)
 
@@ -186,7 +186,7 @@ A workspace is a named, reusable grouping of project references -- analogous to 
 
 Workspaces are optional. Callers can always pass `project_ids` directly in the request for ad-hoc use without creating a workspace.
 
-`project_id` is not a registered entity -- it is purely a storage mapping key. Any valid slug used as a `project_id` automatically maps to `{PROJECTS_ROOT}/{project_id}/`, with the directory created on first access.
+`project_id` is not a registered entity -- it is purely a storage mapping key. Any valid slug used as a `project_id` automatically maps to `{DATA_ROOT}/{DATA_PREFIX}/projects/{project_id}/`, with the directory created on first access.
 
 ## Config Resolver
 
@@ -210,7 +210,7 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph Safe["Agent CAN access"]
-        WD["Managed project directories<br/>(under PROJECTS_ROOT)"]
+        WD["Managed project directories<br/>(under DATA_ROOT)"]
     end
 
     subgraph Blocked["Agent CANNOT access"]

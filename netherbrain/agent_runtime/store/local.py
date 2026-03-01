@@ -1,6 +1,14 @@
 """Local filesystem state store.
 
-Stores session state as JSON files under ``{data_dir}/sessions/{session_id}/``.
+Stores session state as JSON files under a unified data root with optional
+namespace prefix::
+
+    {data_root}/{prefix}/sessions/{session_id}/state.json
+
+When prefix is None, the path collapses to::
+
+    {data_root}/sessions/{session_id}/state.json
+
 Uses ``anyio.to_thread.run_sync`` for non-blocking file I/O.
 
 Writes are atomic: data is written to a temporary file in the same directory,
@@ -30,11 +38,16 @@ class LocalStateStore:
 
     Layout::
 
-        {data_dir}/sessions/{session_id}/state.json
+        {base}/sessions/{session_id}/state.json
+
+    Where ``base`` is ``data_root / prefix`` (or just ``data_root`` if no prefix).
     """
 
-    def __init__(self, data_dir: str | Path) -> None:
-        self._base = Path(data_dir) / "sessions"
+    def __init__(self, data_root: str | Path, prefix: str | None = None) -> None:
+        base = Path(data_root)
+        if prefix:
+            base = base / prefix
+        self._base = base / "sessions"
 
     def _session_dir(self, session_id: str) -> Path:
         return self._base / session_id

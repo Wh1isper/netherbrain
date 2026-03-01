@@ -11,7 +11,7 @@ Workspaces are the primary organizational unit. Each workspace defines a set of 
 | Concept   | User-Facing Term | Description                             |
 | --------- | ---------------- | --------------------------------------- |
 | Workspace | Workspace        | Named context with folders and a preset |
-| project   | Folder           | Directory under PROJECTS_ROOT           |
+| project   | Folder           | Directory under DATA_ROOT               |
 | Preset    | Agent            | Model + prompt + tools configuration    |
 
 ### Default Workspace
