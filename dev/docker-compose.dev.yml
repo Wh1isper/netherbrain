@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: netherbrain-postgres
+    environment:
+      POSTGRES_USER: netherbrain
+      POSTGRES_PASSWORD: netherbrain
+      POSTGRES_DB: netherbrain
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netherbrain"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: netherbrain-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

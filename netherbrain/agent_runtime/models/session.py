@@ -50,6 +50,9 @@ class SessionIndex(BaseModel):
 
     session_id: str
     parent_session_id: str | None = None
+    project_ids: list[str] = Field(
+        default_factory=list, description="Ordered project references for this session's environment"
+    )
     status: SessionStatus = SessionStatus.CREATED
     run_summary: RunSummary | None = None
     metadata: SessionMetadata = Field(default_factory=SessionMetadata)

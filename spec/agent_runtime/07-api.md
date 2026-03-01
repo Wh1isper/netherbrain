@@ -1,6 +1,6 @@
 # 07 - API
 
-RPC-style API surface. GET for reads, POST for all writes. All endpoints live under the `/api` prefix. Three tiers: Conversations (chat), Presets (admin), and Sessions (lower-level).
+RPC-style API surface. GET for reads, POST for all writes. All endpoints live under the `/api` prefix. Four tiers: Conversations (chat), Presets (admin), Workspaces (admin), and Sessions (lower-level).
 
 The root path (`/`) serves the built-in web UI (static SPA). API and UI share the same origin with no CORS concerns.
 
@@ -21,10 +21,10 @@ flowchart TB
         C3["list / get / turns"]
     end
 
-    subgraph Admin["Admin API (presets)"]
+    subgraph Admin["Admin API (presets + workspaces)"]
         direction LR
-        A1["create / update / delete"]
-        A2["list / get"]
+        A1["presets: create / update / delete / list / get"]
+        A2["workspaces: create / update / delete / list / get"]
     end
 
     subgraph Low["Session API (lower-level)"]
@@ -38,7 +38,7 @@ flowchart TB
 ```
 
 - **Chat API**: Conversation-centric operations for IM gateways and chat UIs
-- **Admin API**: Preset management for configuration UIs
+- **Admin API**: Preset and workspace management for configuration UIs
 - **Session API**: Lower-level building block, used internally and for advanced use cases
 
 ## Presets (Admin)
@@ -55,7 +55,7 @@ Create a new agent preset.
 | model         | JSON    | Yes      | ModelPreset (name, context_window, temperature, max_tokens) |
 | system_prompt | string  | Yes      | System prompt (Jinja2 template)                             |
 | toolsets      | JSON    | Yes      | list[ToolsetSpec]                                           |
-| environment   | JSON?   | No       | EnvironmentSpec (shell_mode, paths)                         |
+| environment   | JSON?   | No       | EnvironmentSpec (shell_mode, workspace_id/project_ids)      |
 | subagents     | JSON?   | No       | SubagentSpec                                                |
 | is_default    | bool    | No       | Set as default preset (default: false)                      |
 
@@ -86,6 +86,64 @@ Update a preset. Only provided fields are updated.
 
 Delete a preset. Returns 409 if preset is referenced by active conversations.
 
+## Workspaces (Admin)
+
+### POST /api/workspaces/create
+
+Create a named workspace.
+
+| Field        | Type         | Required | Description                          |
+| ------------ | ------------ | -------- | ------------------------------------ |
+| workspace_id | string       | Yes      | Unique slug identifier               |
+| name         | string?      | No       | Display name                         |
+| projects     | list[string] | Yes      | Ordered project_ids, first = default |
+
+Project directories are auto-created under `PROJECTS_ROOT` on first access.
+
+### GET /api/workspaces/list
+
+List all workspaces.
+
+### GET /api/workspaces/{workspace_id}/get
+
+Get a single workspace by ID.
+
+### POST /api/workspaces/{workspace_id}/update
+
+Update a workspace.
+
+| Field    | Type          | Required | Description         |
+| -------- | ------------- | -------- | ------------------- |
+| name     | string?       | No       | Update display name |
+| projects | list[string]? | No       | Update project list |
+
+### POST /api/workspaces/{workspace_id}/delete
+
+Delete a workspace. Does not delete project directories.
+
+## Input Format
+
+Used by `run`, `fork`, `fire`, `execute`, and `steer` endpoints.
+
+| Field        | Type       | Required | Description                 |
+| ------------ | ---------- | -------- | --------------------------- |
+| content_mode | enum       | No       | `file` (default) / `inline` |
+| parts        | list[Part] | Yes      | Content parts               |
+
+### Part
+
+| Field | Type    | Required | Description                            |
+| ----- | ------- | -------- | -------------------------------------- |
+| type  | enum    | Yes      | `text` / `url` / `file` / `binary`     |
+| text  | string  | Cond.    | Text content (type=text)               |
+| url   | string  | Cond.    | Resource URL (type=url)                |
+| path  | string  | Cond.    | Project-relative file path (type=file) |
+| data  | string  | Cond.    | Base64-encoded content (type=binary)   |
+| mime  | string? | No       | MIME type hint (for url/binary)        |
+| mode  | enum?   | No       | Per-part override: `file` / `inline`   |
+
+`content_mode` sets the default for all parts; per-part `mode` overrides it. See [03-execution.md](03-execution.md) for mapping behavior.
+
 ## Conversations (Chat)
 
 ### POST /api/conversations/run
@@ -96,9 +154,11 @@ Main entry point. Create a new conversation or continue an existing one.
 | ----------------- | ------- | -------- | -------------------------------------------------------------------- |
 | conversation_id   | string? | No       | Existing conversation to continue. Null = new conversation           |
 | preset_id         | string? | No       | Agent preset. Required for new conversation                          |
+| workspace_id      | string? | No       | Workspace reference (mutually exclusive with project_ids)            |
+| project_ids       | list?   | No       | Ad-hoc project list (mutually exclusive with workspace_id)           |
 | metadata          | JSON?   | No       | Client-defined metadata (new conversation only, ignored on continue) |
 | config_override   | JSON?   | No       | Per-request overrides (model, toolsets)                              |
-| input             | JSON?   | Cond.    | User input (content parts)                                           |
+| input             | JSON?   | Cond.    | User input (see Input Format)                                        |
 | user_interactions | JSON?   | Cond.    | HITL approval feedback                                               |
 | tool_results      | JSON?   | Cond.    | External tool execution results                                      |
 | transport         | enum    | No       | `sse` (default) / `stream`                                           |
@@ -139,8 +199,10 @@ Fork a new conversation from a session in this conversation.
 | Field           | Type    | Required | Description                                      |
 | --------------- | ------- | -------- | ------------------------------------------------ |
 | preset_id       | string  | Yes      | Agent preset                                     |
-| input           | JSON    | Yes      | User input                                       |
+| input           | JSON    | Yes      | User input (see Input Format)                    |
 | from_session_id | string? | No       | Fork point. Default: latest committed session    |
+| workspace_id    | string? | No       | Workspace reference (overrides fork-point env)   |
+| project_ids     | list?   | No       | Ad-hoc project list (overrides fork-point env)   |
 | metadata        | JSON?   | No       | Client-defined metadata for the new conversation |
 | config_override | JSON?   | No       | Per-request overrides                            |
 | transport       | enum    | No       | `sse` (default) / `stream`                       |
@@ -154,7 +216,9 @@ Drain mailbox and create continuation. See [06-async-agents.md](06-async-agents.
 | Field             | Type    | Required | Description                                             |
 | ----------------- | ------- | -------- | ------------------------------------------------------- |
 | preset_id         | string? | No       | Agent preset. Default: conversation's default_preset_id |
-| input             | JSON?   | No       | Optional additional user input                          |
+| input             | JSON?   | No       | Optional additional user input (see Input Format)       |
+| workspace_id      | string? | No       | Workspace reference (overrides current env)             |
+| project_ids       | list?   | No       | Ad-hoc project list (overrides current env)             |
 | user_interactions | JSON?   | No       | Optional HITL feedback                                  |
 | tool_results      | JSON?   | No       | Optional external tool results                          |
 | config_override   | JSON?   | No       | Per-request overrides                                   |
@@ -206,7 +270,8 @@ Get conversation state: metadata, latest session, active execution, mailbox summ
   "updated_at": "...",
   "latest_session": {
     "session_id": "S5",
-    "status": "committed"
+    "status": "committed",
+    "project_ids": ["my-project", "shared-lib"]
   },
   "active_session": {
     "session_id": "S6",
@@ -263,8 +328,10 @@ Direct session execution with explicit parameters. Building block for conversati
 | preset_id         | string  | Yes      | Agent preset                           |
 | parent_session_id | string? | No       | Continue or fork from this session     |
 | fork              | bool    | No       | If true, start new conversation branch |
+| workspace_id      | string? | No       | Workspace reference                    |
+| project_ids       | list?   | No       | Ad-hoc project list                    |
 | config_override   | JSON?   | No       | Per-request overrides                  |
-| input             | JSON?   | Cond.    | User input                             |
+| input             | JSON?   | Cond.    | User input (see Input Format)          |
 | user_interactions | JSON?   | Cond.    | HITL approval feedback                 |
 | tool_results      | JSON?   | Cond.    | External tool results                  |
 | transport         | enum    | No       | `sse` (default) / `stream`             |
@@ -311,12 +378,17 @@ Service health check (no auth required).
 
 ```mermaid
 flowchart LR
-    subgraph Admin["Admin (presets)"]
+    subgraph Admin["Admin (presets + workspaces)"]
         A1["POST /api/presets/create"]
         A2["GET /api/presets/list"]
         A3["GET /api/presets/{id}/get"]
         A4["POST /api/presets/{id}/update"]
         A5["POST /api/presets/{id}/delete"]
+        W1["POST /api/workspaces/create"]
+        W2["GET /api/workspaces/list"]
+        W3["GET /api/workspaces/{id}/get"]
+        W4["POST /api/workspaces/{id}/update"]
+        W5["POST /api/workspaces/{id}/delete"]
     end
 
     subgraph Chat["Chat (conversations)"]
@@ -351,6 +423,7 @@ flowchart LR
 | Tier               | Scope                  | Primary Consumer    | Description                                     |
 | ------------------ | ---------------------- | ------------------- | ----------------------------------------------- |
 | **Admin**          | `/api/presets/*`       | Admin UI            | Preset CRUD, configuration management           |
+| **Admin**          | `/api/workspaces/*`    | Admin UI            | Workspace CRUD, project grouping                |
 | **Chat**           | `/api/conversations/*` | IM gateway, Chat UI | Conversation lifecycle, streaming, control      |
 | **Sessions**       | `/api/sessions/*`      | Internal, advanced  | Explicit session DAG control, in-flight control |
 | **Infrastructure** | `/api/health`          | Monitoring          | Health check (no auth)                          |

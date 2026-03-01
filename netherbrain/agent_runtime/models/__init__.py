@@ -27,6 +27,7 @@ from netherbrain.agent_runtime.models.session import (
     SessionState,
     UsageSummary,
 )
+from netherbrain.agent_runtime.models.workspace import WorkspaceIndex
 
 __all__ = [
     # Preset
@@ -54,4 +55,5 @@ __all__ = [
     "ToolsetSpec",
     "Transport",
     "UsageSummary",
+    "WorkspaceIndex",
 ]

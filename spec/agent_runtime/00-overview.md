@@ -16,12 +16,12 @@ Built on `ya-agent-sdk` (which wraps `pydantic-ai`), the runtime exposes `create
 
 ## Infrastructure
 
-| Component  | Role                                                      |
-| ---------- | --------------------------------------------------------- |
-| PostgreSQL | Agent presets, conversation index, session index, mailbox |
-| Redis      | Event stream buffer (short TTL, ephemeral)                |
-| Local FS   | Default session state storage (context, history, display) |
-| S3         | Optional alternative session state storage                |
+| Component  | Role                                                                  |
+| ---------- | --------------------------------------------------------------------- |
+| PostgreSQL | Agent presets, workspaces, conversation index, session index, mailbox |
+| Redis      | Event stream buffer (short TTL, ephemeral)                            |
+| Local FS   | Default session state storage (context, history, display)             |
+| S3         | Optional alternative session state storage                            |
 
 ## Architecture
 
@@ -75,14 +75,36 @@ flowchart TB
 
 ## Environment Model
 
-The agent operates on the local machine. File operations are always local. Shell execution has two modes:
+The agent operates on **managed project directories**. A `project_id` is a client-provided slug that maps to a directory under the managed projects root:
+
+```
+{projects_root}/{project_id}/
+```
+
+Directories are auto-created on first access. There is no separate project registry -- `project_id` is purely a storage mapping key.
+
+### Workspace
+
+A **workspace** is a named, saved list of project_ids stored in PostgreSQL. It serves as a reusable shortcut -- like a VS Code `.code-workspace` file. Workspaces are optional; callers can always pass `project_ids` directly for ad-hoc use.
+
+### Project Resolution
+
+Each session snapshots an ordered `project_ids` list at creation time:
+
+- `project_ids[0]` becomes the default working directory (shell pwd)
+- `project_ids[1:]` become additional allowed paths
+- Empty `project_ids` means no file system access (pure conversation mode)
+
+### Shell Modes
+
+File operations are always local. Shell execution has two modes:
 
 | Mode   | Shell Target                 | Configured By            |
 | ------ | ---------------------------- | ------------------------ |
 | local  | Host machine directly        | Default                  |
 | docker | `docker exec` in a container | User sets `container_id` |
 
-In docker mode, the user is responsible for running the container and ensuring a shared volume mount between the host working directory and the container. The runtime does not manage container lifecycle.
+In docker mode, the user is responsible for running the container and mounting the projects root directory. The runtime does not manage container lifecycle.
 
 ## Boundary
 

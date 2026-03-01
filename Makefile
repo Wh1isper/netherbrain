@@ -1,66 +1,65 @@
+# =============================================================================
+# Combined targets
+# =============================================================================
+
 .PHONY: install
-install: ## Install the virtual environment and install the pre-commit hooks
+install: install-server install-ui ## Install all dependencies (server + UI)
+
+.PHONY: check
+check: check-server check-ui ## Run all quality checks (server + UI)
+
+.PHONY: dev
+dev: ## Run agent-runtime and UI dev server concurrently
+	@echo "Starting agent-runtime and UI dev server..."
+	@echo "Agent Runtime: http://localhost:8000"
+	@echo "UI Dev Server: http://localhost:5173"
+	@trap 'kill 0' EXIT; \
+		$(MAKE) run-agent & \
+		$(MAKE) dev-ui & \
+		wait
+
+# =============================================================================
+# Server
+# =============================================================================
+
+.PHONY: install-server
+install-server: ## Install Python virtual environment and pre-commit hooks
 	@echo "Creating virtual environment using uv"
 	@uv sync
 	@uv run pre-commit install
 
-.PHONY: check
-check: ## Run code quality tools.
+.PHONY: check-server
+check-server: ## Run server-side quality checks
 	@echo "Checking lock file consistency with 'pyproject.toml'"
 	@uv lock --locked
-	@echo "Linting code: Running pre-commit"
-	@uv run pre-commit run -a
+	@echo "Linting code: Running pre-commit (server hooks)"
+	@SKIP=ui-lint,ui-fmt-check uv run pre-commit run -a
 	@echo "Static type checking: Running pyright"
 	@uv run pyright
 	@echo "Checking for obsolete dependencies: Running deptry"
 	@uv run deptry .
 
 .PHONY: test
-test: ## Test the code with pytest
+test: ## Run tests with pytest
 	@echo "Testing code: Running pytest"
 	@uv run python -m pytest tests
 
-.PHONY: build
-build: clean-build build-ui ## Build wheel file (includes UI)
-	@echo "Creating wheel file"
-	@uvx --from build pyproject-build --installer uv
-
-.PHONY: clean-build
-clean-build: ## Clean build artifacts
-	@echo "Removing build artifacts"
-	@uv run python -c "import shutil; import os; shutil.rmtree('dist') if os.path.exists('dist') else None"
-
-.PHONY: publish
-publish: ## Publish a release to PyPI.
-	@echo "Publishing."
-	@uvx twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
-
-.PHONY: build-and-publish
-build-and-publish: build publish ## Build and publish.
-
 .PHONY: run-agent
-run-agent: build-ui ## Run agent-runtime dev server with auto-reload
+run-agent: ## Run agent-runtime dev server with auto-reload
 	@uv run netherbrain agent --reload
 
 .PHONY: run-gateway
 run-gateway: ## Run im-gateway
 	@uv run netherbrain gateway
 
-# --- UI ---
+# =============================================================================
+# UI
+# =============================================================================
 
 .PHONY: install-ui
 install-ui: ## Install UI dependencies
 	@echo "Installing UI dependencies"
 	@cd ui && npm install
-
-.PHONY: dev-ui
-dev-ui: ## Run UI dev server with hot-reload (proxies API to agent-runtime)
-	@cd ui && npm run dev
-
-.PHONY: build-ui
-build-ui: ## Build UI for production
-	@echo "Building UI"
-	@cd ui && npm run build
 
 .PHONY: check-ui
 check-ui: ## Run UI linting and formatting checks
@@ -74,15 +73,60 @@ fix-ui: ## Fix UI lint and formatting issues
 	@cd ui && npm run lint:fix
 	@cd ui && npm run fmt
 
-.PHONY: dev
-dev: ## Run agent-runtime and UI dev server concurrently
-	@echo "Starting agent-runtime and UI dev server..."
-	@echo "Agent Runtime: http://localhost:8000"
-	@echo "UI Dev Server: http://localhost:5173"
-	@trap 'kill 0' EXIT; \
-		$(MAKE) run-agent & \
-		$(MAKE) dev-ui & \
-		wait
+.PHONY: dev-ui
+dev-ui: ## Run UI dev server with hot-reload
+	@cd ui && npm run dev
+
+.PHONY: build-ui
+build-ui: ## Build UI for production
+	@echo "Building UI"
+	@cd ui && npm run build
+
+# =============================================================================
+# Build & Release
+# =============================================================================
+
+.PHONY: build
+build: clean-build build-ui ## Build wheel file (includes UI)
+	@echo "Creating wheel file"
+	@uvx --from build pyproject-build --installer uv
+
+.PHONY: clean-build
+clean-build: ## Clean build artifacts
+	@echo "Removing build artifacts"
+	@uv run python -c "import shutil; import os; shutil.rmtree('dist') if os.path.exists('dist') else None"
+
+.PHONY: publish
+publish: ## Publish a release to PyPI
+	@echo "Publishing."
+	@uvx twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
+
+.PHONY: build-and-publish
+build-and-publish: build publish ## Build and publish
+
+# =============================================================================
+# Infrastructure
+# =============================================================================
+
+.PHONY: infra-up
+infra-up: ## Start dev PostgreSQL and Redis
+	@bash dev/dev-setup.sh up
+
+.PHONY: infra-down
+infra-down: ## Stop dev PostgreSQL and Redis (data preserved)
+	@bash dev/dev-setup.sh down
+
+.PHONY: infra-status
+infra-status: ## Show dev infrastructure status
+	@bash dev/dev-setup.sh status
+
+.PHONY: infra-reset
+infra-reset: ## Stop dev infrastructure and remove all data
+	@bash dev/dev-setup.sh reset
+
+# =============================================================================
+# Help
+# =============================================================================
 
 .PHONY: help
 help:

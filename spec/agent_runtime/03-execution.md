@@ -80,9 +80,18 @@ Pipeline execution and transport delivery are decoupled. The agent runs to compl
 
 ```mermaid
 flowchart TB
-    RC[Resolved Config] --> CHECK{shell_mode}
-    CHECK -->|local| LOCAL["LocalEnvironment<br/>(default_path, allowed_paths)"]
-    CHECK -->|docker| DOCKER["DockerShell + LocalFileOperator<br/>(container_id, workdir)"]
+    RC[Resolved Config] --> PROJ_RESOLVE{"workspace_id<br/>or project_ids?"}
+    PROJ_RESOLVE -->|workspace_id| WS["Load workspace from PG"]
+    PROJ_RESOLVE -->|project_ids| PROJ["Use directly"]
+    PROJ_RESOLVE -->|neither| NONE["No project environment"]
+    WS --> PROJ
+
+    PROJ --> PATHS["project_ids[0] -> default_path<br/>project_ids[1:] -> allowed_paths<br/>(under PROJECTS_ROOT)"]
+    PATHS --> CHECK{shell_mode}
+    NONE --> CHECK
+
+    CHECK -->|local| LOCAL["LocalEnvironment"]
+    CHECK -->|docker| DOCKER["DockerShell + LocalFileOperator"]
 
     LOCAL --> ENV[Environment]
     DOCKER --> ENV
@@ -94,7 +103,8 @@ flowchart TB
     FRESH --> ENV
 ```
 
-- **Local mode**: `LocalEnvironment` with configured paths
+- **Project resolution**: `workspace_id` is resolved from PG to a `project_ids` list; inline `project_ids` are used directly. Each project_id maps to `{PROJECTS_ROOT}/{project_id}/`, auto-created on first access.
+- **Local mode**: `LocalEnvironment` with resolved project paths
 - **Docker mode**: `LocalFileOperator` for file operations + `DockerShell` targeting the configured container. File operations remain on the host; shell commands execute inside the container via `docker exec`
 
 When continuing a session, environment resource state is restored from the parent session's `environment_state`.
@@ -113,7 +123,7 @@ flowchart TB
     ADP --> TS["toolsets -> Toolset instances"]
     ADP --> SP["system_prompt -> rendered string"]
     ADP --> STATE["parent session -> ResumableState"]
-    ADP --> ENV["environment config -> Environment"]
+    ADP --> ENV["project_ids -> Environment paths"]
     ADP --> SUB["subagent refs -> SubagentConfig[]"]
 
     MODEL & MCFG & TCFG & TS & SP & STATE & ENV & SUB --> CA["create_agent()"]
@@ -127,14 +137,29 @@ flowchart TB
 
 ## Input Mapping
 
-Input is a list of content parts, mapped to SDK UserPrompt.
+Input is a list of content parts, mapped to SDK UserPrompt. Each non-text part has a `content_mode` that controls how it is delivered to the model.
 
-| Part Type | Description                   | Mapping                       |
-| --------- | ----------------------------- | ----------------------------- |
-| text      | Plain text                    | Pass through as string        |
-| url       | Remote resource (image, etc.) | Download to environment       |
-| file      | Local file reference          | Resolve workspace path        |
-| binary    | Base64-encoded content        | Write to environment temp dir |
+### Content Mode
+
+| Mode     | Behavior                                                        | Risk            |
+| -------- | --------------------------------------------------------------- | --------------- |
+| `file`   | Download/write to environment, reference as file path (default) | None            |
+| `inline` | Pass directly into model context (image URL, base64, etc.)      | Model-dependent |
+
+Default is `file` (always safe). Callers opt into `inline` when they know the model supports it. If `inline` is requested but the model does not support the content type, execution fails with an error (no silent fallback).
+
+`content_mode` can be set per-request (applies to all parts) or per-part (overrides request default).
+
+### Part Type Mapping
+
+| Part Type | content_mode=file (default)   | content_mode=inline                         |
+| --------- | ----------------------------- | ------------------------------------------- |
+| text      | Pass through as string        | Pass through as string                      |
+| url       | Download to environment       | Pass URL directly into model context        |
+| file      | Resolve project path          | Read file into model context                |
+| binary    | Write to environment temp dir | Decode and pass directly into model context |
+
+Inline mode passes content directly to the model via pydantic-ai's multimodal UserPrompt. Whether the model accepts a given content type (image, video, audio, PDF, etc.) depends on the model's capabilities. If the model does not support the content type, execution fails with an error -- the runtime does not silently fall back to file mode.
 
 Input mapping uses `user_prompt_factory` for lazy execution at agent start time.
 
@@ -157,6 +182,6 @@ After execution completes:
 2. Export `environment_state` from Environment
 3. Compress protocol events into `display_messages`
 4. Write `state.json` and `display_messages.json` to State Store
-5. Update PG session index (status -> committed, run_summary)
+5. Update PG session index (status -> committed, project_ids, run_summary)
 
 If state write fails, session status is set to `failed`. Display messages failure is non-fatal (session is still restorable).

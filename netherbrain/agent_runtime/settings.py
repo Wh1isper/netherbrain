@@ -39,6 +39,10 @@ class NetherSettings(BaseSettings):
     state_store: Literal["local", "s3"] = "local"
     state_store_path: str = "./data"
 
+    # -- Projects --------------------------------------------------------------
+    projects_root: str = "./projects"
+    """Root directory for managed project directories."""
+
     # S3 (only when state_store = "s3")
     s3_endpoint: str | None = None
     s3_bucket: str | None = None

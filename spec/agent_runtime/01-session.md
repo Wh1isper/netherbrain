@@ -26,6 +26,7 @@ Sessions are never mutated after commit. A new execution always produces a new s
 | ----------------- | ------------------ | --------------------------------------------------------------- |
 | session_id        | string (immutable) | Unique snapshot identity                                        |
 | parent_session_id | string?            | Previous snapshot (null for root)                               |
+| project_ids       | list[string]       | Ordered project references for this session's environment       |
 | status            | enum               | created / committed / awaiting_tool_results / failed / archived |
 | run_summary       | RunSummary         | Run metadata captured at commit time                            |
 | context_state     | JSON               | SDK ResumableState (subagent history, handoff, usages)          |
@@ -90,10 +91,10 @@ A conversation is a logical collection of sessions sharing a `conversation_id`. 
 | created_at        | timestamp | No      | Creation time                               |
 | updated_at        | timestamp | Yes     | Last activity time                          |
 
-| Aspect      | Scope                                                             |
-| ----------- | ----------------------------------------------------------------- |
-| Concurrency | At most one running `session_type=agent` session per conversation |
-| Environment | All sessions in a conversation share the same environment context |
+| Aspect      | Scope                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------- |
+| Concurrency | At most one running `session_type=agent` session per conversation                      |
+| Environment | Each session snapshots its own `project_ids`; continue inherits from parent by default |
 
 ## Dual Message Model
 
@@ -124,7 +125,7 @@ flowchart LR
     end
 
     subgraph PG["PostgreSQL"]
-        IDX["Session Index<br/>(id, parent_id, status,<br/>run_summary, metadata)"]
+        IDX["Session Index<br/>(id, parent_id, project_ids,<br/>status, run_summary, metadata)"]
         CONV["Conversation Index<br/>(conversation_id, title,<br/>status)"]
     end
 

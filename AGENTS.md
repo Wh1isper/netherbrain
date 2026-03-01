@@ -34,6 +34,10 @@ ui/                    # Frontend (Vite + React + TypeScript)
       Config.tsx       # Agent preset management
     App.tsx            # Root component with routing
     main.tsx           # Entry point
+dev/
+  docker-compose.dev.yml  # Dev PostgreSQL + Redis
+  dev-setup.sh            # Infrastructure management script (up/down/status/reset)
+  dev.env                 # Dev environment variables
 tests/
   test_agent_runtime.py
   test_im_gateway.py
@@ -58,12 +62,21 @@ tests/
 
 ## Dev Commands (Makefile)
 
-- `make install` - Set up virtual environment and pre-commit hooks
-- `make check` - Run linting, type checking, and dependency checks
+- `make install` - Install all dependencies (server + UI)
+- `make install-server` - Install Python venv and pre-commit hooks only
+- `make install-ui` - Install UI dependencies only
+- `make check` - Run all quality checks (server + UI)
+- `make check-server` - Run server-side quality checks only
+- `make check-ui` - Run UI linting and formatting checks only
 - `make test` - Run tests with pytest
-- `make build` - Build wheel
+- `make build` - Build wheel (includes UI)
+- `make dev` - Run agent-runtime and UI dev server concurrently
 - `make run-agent` - Run agent-runtime with auto-reload
 - `make run-gateway` - Run im-gateway
+- `make infra-up` - Start dev PostgreSQL and Redis
+- `make infra-down` - Stop dev infrastructure (data preserved)
+- `make infra-status` - Show dev infrastructure status
+- `make infra-reset` - Stop and wipe dev infrastructure data
 
 ## Documentation Conventions
 

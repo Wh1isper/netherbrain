@@ -35,6 +35,7 @@ class RuntimeSession:
     conversation_id: str
     parent_session_id: str | None = None
     preset_id: str | None = None
+    project_ids: list[str] = field(default_factory=list)
 
     # -- Classification --------------------------------------------------------
     session_type: SessionType = SessionType.AGENT

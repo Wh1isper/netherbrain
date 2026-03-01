@@ -42,16 +42,17 @@ Auto-generation behavior: if `AUTH_TOKEN` is not set or empty, the runtime gener
 
 ### Infrastructure
 
-| Variable           | Required | Description                               |
-| ------------------ | -------- | ----------------------------------------- |
-| `DATABASE_URL`     | Yes      | PostgreSQL connection string              |
-| `REDIS_URL`        | Yes      | Redis connection string                   |
-| `STATE_STORE`      | No       | `local` (default) or `s3`                 |
-| `STATE_STORE_PATH` | No       | Local state directory (default: `./data`) |
-| `S3_ENDPOINT`      | No       | S3 endpoint (when STATE_STORE=s3)         |
-| `S3_BUCKET`        | No       | S3 bucket name                            |
-| `S3_ACCESS_KEY`    | No       | S3 access key                             |
-| `S3_SECRET_KEY`    | No       | S3 secret key                             |
+| Variable           | Required | Description                                        |
+| ------------------ | -------- | -------------------------------------------------- |
+| `DATABASE_URL`     | Yes      | PostgreSQL connection string                       |
+| `REDIS_URL`        | Yes      | Redis connection string                            |
+| `STATE_STORE`      | No       | `local` (default) or `s3`                          |
+| `STATE_STORE_PATH` | No       | Local state directory (default: `./data`)          |
+| `PROJECTS_ROOT`    | No       | Managed projects directory (default: `./projects`) |
+| `S3_ENDPOINT`      | No       | S3 endpoint (when STATE_STORE=s3)                  |
+| `S3_BUCKET`        | No       | S3 bucket name                                     |
+| `S3_ACCESS_KEY`    | No       | S3 access key                                      |
+| `S3_SECRET_KEY`    | No       | S3 secret key                                      |
 
 ### LLM Providers
 
@@ -93,7 +94,7 @@ Agent presets are stored in PostgreSQL with structured JSON columns. Manageable 
 | model         | JSONB       | Model selection and settings (ModelPreset)      |
 | system_prompt | text        | System prompt (Jinja2 template)                 |
 | toolsets      | JSONB       | Enabled toolsets and config (list[ToolsetSpec]) |
-| environment   | JSONB       | Shell mode and paths (EnvironmentSpec)          |
+| environment   | JSONB       | Shell mode and project config (EnvironmentSpec) |
 | subagents     | JSONB       | Subagent configuration (SubagentSpec)           |
 | is_default    | bool        | Whether this is the default preset              |
 | created_at    | timestamp   | Creation time                                   |
@@ -135,15 +136,23 @@ Available toolsets:
 
 ### EnvironmentSpec (JSON)
 
-| Field             | Type    | Default | Description                                    |
-| ----------------- | ------- | ------- | ---------------------------------------------- |
-| shell_mode        | enum    | `local` | `local` or `docker`                            |
-| container_id      | string? | null    | Docker container ID (required for docker mode) |
-| container_workdir | string? | null    | Working directory inside container             |
-| default_path      | string  | `.`     | Default working directory                      |
-| allowed_paths     | list    | []      | Additional paths accessible to the agent       |
+| Field             | Type          | Default | Description                                                               |
+| ----------------- | ------------- | ------- | ------------------------------------------------------------------------- |
+| shell_mode        | enum          | `local` | `local` or `docker`                                                       |
+| workspace_id      | string?       | null    | Reference to a saved workspace (mutually exclusive with project_ids)      |
+| project_ids       | list[string]? | null    | Inline project list for ad-hoc use (mutually exclusive with workspace_id) |
+| container_id      | string?       | null    | Docker container ID (required for docker mode)                            |
+| container_workdir | string?       | null    | Working directory inside container                                        |
 
-In docker mode, the user is responsible for running the container with a volume mount mapping to the host working directory.
+`workspace_id` and `project_ids` are mutually exclusive. If neither is set, the agent has no file system access (pure conversation mode).
+
+At runtime, projects resolve to managed directories:
+
+- `project_ids[0]` -> default working directory (shell pwd)
+- `project_ids[1:]` -> additional allowed paths
+- Storage: `{PROJECTS_ROOT}/{project_id}/` (auto-created on first access)
+
+In docker mode, the user is responsible for mounting `PROJECTS_ROOT` into the container. The runtime only executes commands via `docker exec`.
 
 ### SubagentSpec (JSON)
 
@@ -162,27 +171,45 @@ In docker mode, the user is responsible for running the container with a volume 
 | description | string  | When to use (shown to LLM)           |
 | instruction | string? | Injected into parent's system prompt |
 
+## Workspace (Database)
+
+A workspace is a named, reusable grouping of project references -- analogous to a VS Code `.code-workspace` file. Stored in PostgreSQL for persistence and API management.
+
+| Column       | Type         | Description                          |
+| ------------ | ------------ | ------------------------------------ |
+| workspace_id | string (PK)  | Unique identifier (slug)             |
+| name         | string?      | Human-readable display name          |
+| projects     | list[string] | Ordered project_ids, first = default |
+| created_at   | timestamp    | Creation time                        |
+| updated_at   | timestamp    | Last modification time               |
+
+Workspaces are optional. Callers can always pass `project_ids` directly in the request for ad-hoc use without creating a workspace.
+
+`project_id` is not a registered entity -- it is purely a storage mapping key. Any valid slug used as a `project_id` automatically maps to `{PROJECTS_ROOT}/{project_id}/`, with the directory created on first access.
+
 ## Config Resolver
 
 ```mermaid
 flowchart LR
-    REQ["Request<br/>(preset_id + override)"] --> LOAD["Load Preset<br/>(from PG)"]
+    REQ["Request<br/>(preset_id + override<br/>+ workspace_id/project_ids)"] --> LOAD["Load Preset<br/>(from PG)"]
     LOAD --> MERGE["Merge Override"]
-    MERGE --> INJECT["Inject Env Vars<br/>(API keys -> ToolConfig)"]
+    MERGE --> RESOLVE_WS["Resolve Projects<br/>(workspace or inline)"]
+    RESOLVE_WS --> INJECT["Inject Env Vars<br/>(API keys -> ToolConfig)"]
     INJECT --> RESOLVED["Resolved Config"]
 ```
 
 1. Load the referenced preset from PostgreSQL (or default preset if unspecified)
 2. Merge per-request inline overrides (override wins)
-3. Inject environment variable values (API keys into ToolConfig)
-4. Produce resolved config for execution
+3. Resolve project list: request `workspace_id` / `project_ids` overrides preset default; workspace_id is resolved from PG; for continue/fork, parent session's `project_ids` is the fallback
+4. Inject environment variable values (API keys into ToolConfig)
+5. Produce resolved config for execution
 
 ## Security Boundary
 
 ```mermaid
 flowchart TB
     subgraph Safe["Agent CAN access"]
-        WD["Working directory files"]
+        WD["Managed project directories<br/>(under PROJECTS_ROOT)"]
     end
 
     subgraph Blocked["Agent CANNOT access"]

@@ -34,13 +34,17 @@ class ToolsetSpec(BaseModel):
 
 
 class EnvironmentSpec(BaseModel):
-    """Shell execution mode and filesystem paths."""
+    """Shell execution mode and project environment."""
 
     shell_mode: ShellMode = ShellMode.LOCAL
+    workspace_id: str | None = Field(
+        default=None, description="Reference to a saved workspace (mutually exclusive with project_ids)"
+    )
+    project_ids: list[str] | None = Field(
+        default=None, description="Inline project list for ad-hoc use (mutually exclusive with workspace_id)"
+    )
     container_id: str | None = None
     container_workdir: str | None = None
-    default_path: str = "."
-    allowed_paths: list[str] = Field(default_factory=list)
 
 
 class SubagentRef(BaseModel):
