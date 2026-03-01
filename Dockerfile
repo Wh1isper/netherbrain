@@ -1,10 +1,10 @@
 # -- Stage 1: Build UI --
 FROM node:22-slim AS ui-builder
 WORKDIR /ui
-COPY ui/package.json ui/package-lock.json ./
-RUN npm ci
+COPY ui/package.json ui/pnpm-lock.yaml ./
+RUN corepack enable && corepack install && pnpm install --frozen-lockfile
 COPY ui/ ./
-RUN npm run build
+RUN pnpm run build
 
 # -- Stage 2: Python runtime --
 FROM python:3.13-slim

@@ -69,23 +69,23 @@ install-ui: ## Install UI dependencies
 .PHONY: check-ui
 check-ui: ## Run UI linting and formatting checks
 	@echo "Linting UI"
-	@cd ui && npm run lint
+	@cd ui && pnpm run lint
 	@echo "Checking UI formatting"
-	@cd ui && npm run fmt:check
+	@cd ui && pnpm run fmt:check
 
 .PHONY: fix-ui
 fix-ui: ## Fix UI lint and formatting issues
-	@cd ui && npm run lint:fix
-	@cd ui && npm run fmt
+	@cd ui && pnpm run lint:fix
+	@cd ui && pnpm run fmt
 
 .PHONY: dev-ui
 dev-ui: ## Run UI dev server with hot-reload
-	@cd ui && npm run dev
+	@cd ui && pnpm run dev
 
 .PHONY: build-ui
 build-ui: ## Build UI for production
 	@echo "Building UI"
-	@cd ui && npm run build
+	@cd ui && pnpm run build
 
 # =============================================================================
 # Build & Release

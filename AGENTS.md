@@ -107,6 +107,7 @@ Key rules:
 - Linting: ruff, pyright
 - Testing: pytest
 - Frontend: Vite + React + TypeScript
+- Frontend package manager: pnpm
 - Frontend linting: eslint, prettier
 
 ## CLI Commands
