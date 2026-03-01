@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from netherbrain.agent_runtime.execution.prompt import render_system_prompt
 from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
-from netherbrain.agent_runtime.models.enums import ShellMode
+from netherbrain.agent_runtime.models.enums import EnvironmentMode
 from netherbrain.agent_runtime.models.preset import ModelPreset, SubagentSpec
 
 
@@ -15,7 +15,7 @@ def _make_config(**overrides) -> ResolvedConfig:
         "system_prompt": "You are a helpful assistant.",
         "toolsets": [],
         "subagents": SubagentSpec(),
-        "shell_mode": ShellMode.LOCAL,
+        "environment_mode": EnvironmentMode.LOCAL,
         "project_ids": ["my-project"],
     }
     defaults.update(overrides)
@@ -64,13 +64,13 @@ def test_template_no_projects() -> None:
     assert result == "Project: None"
 
 
-def test_template_shell_mode() -> None:
+def test_template_environment_mode() -> None:
     config = _make_config(
-        system_prompt="Mode: {{ shell_mode }}",
-        shell_mode=ShellMode.DOCKER,
+        system_prompt="Mode: {{ environment_mode }}",
+        environment_mode=EnvironmentMode.SANDBOX,
     )
     result = render_system_prompt(config)
-    assert result == "Mode: docker"
+    assert result == "Mode: sandbox"
 
 
 def test_template_model_name() -> None:

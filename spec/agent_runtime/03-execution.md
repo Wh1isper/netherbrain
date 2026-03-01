@@ -86,14 +86,14 @@ flowchart TB
     WS --> PROJ
 
     PROJ --> PATHS["project_ids[0] -> default_path<br/>project_ids[1:] -> allowed_paths<br/>(under DATA_ROOT)"]
-    PATHS --> CHECK{shell_mode}
+    PATHS --> CHECK{mode}
     NONE --> CHECK
 
-    CHECK -->|local| LOCAL["LocalEnvironment"]
-    CHECK -->|docker| DOCKER["DockerShell + LocalFileOperator"]
+    CHECK -->|local| LOCAL["LocalEnvironment<br/>(host shell + host file ops)"]
+    CHECK -->|sandbox| SANDBOX["SandboxEnvironment<br/>(docker shell + virtual file ops)"]
 
     LOCAL --> ENV[Environment]
-    DOCKER --> ENV
+    SANDBOX --> ENV
 
     PARENT["Parent Session?"] -->|Yes| RESTORE["Restore resource_state"]
     PARENT -->|No| FRESH["Fresh environment"]
@@ -103,8 +103,8 @@ flowchart TB
 ```
 
 - **Project resolution**: `workspace_id` is resolved from PG to a `project_ids` list; inline `project_ids` are used directly. Each project_id maps to `{DATA_ROOT}/{DATA_PREFIX}/projects/{project_id}/`, auto-created on first access.
-- **Local mode**: `LocalEnvironment` with resolved project paths
-- **Docker mode**: `LocalFileOperator` for file operations + `DockerShell` targeting the configured container. File operations remain on the host; shell commands execute inside the container via `docker exec`
+- **Local mode**: `LocalEnvironment` with resolved real project paths. Agent sees host filesystem paths directly.
+- **Sandbox mode**: `SandboxEnvironment` with `VirtualLocalFileOperator` (host I/O with virtual path mapping) + `DockerShell` (commands via `docker exec`). Agent sees a unified virtual path space (e.g., `/workspace/`). The runtime attaches to the container specified by `container_id` and does not manage its lifecycle.
 
 When continuing a session, environment resource state is restored from the parent session's `environment_state`.
 

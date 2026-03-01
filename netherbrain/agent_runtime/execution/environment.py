@@ -3,31 +3,22 @@
 Resolves project_ids to real filesystem paths, auto-creates directories,
 and constructs the SDK Environment for the execution pipeline.
 
-Virtual Workspace Model
------------------------
+Two environment modes are supported:
 
-The agent operates in a virtual workspace rooted at ``/workspace/``:
+**Local mode** (``EnvironmentMode.LOCAL``):
+    Shell and file operations run directly on the host.  The agent sees
+    real filesystem paths (e.g., ``{DATA_ROOT}/projects/{project_id}/``).
+    Uses ``LocalEnvironment`` from the SDK.
 
-- ``/workspace/``                 -> default project (CWD)
-- ``/workspace/{project_id}/``    -> additional projects
+**Sandbox mode** (``EnvironmentMode.SANDBOX``):
+    Shell commands execute inside a Docker container via ``docker exec``.
+    File operations run on the host but are presented through a virtual
+    path space (e.g., ``/workspace/{project_id}/``).  Both the file
+    operator and the shell see the same virtual paths, giving the agent
+    a symmetric view.  Uses ``SandboxEnvironment`` from the SDK.
 
-Real paths on the host:
-
-- ``{data_root}/{prefix}/projects/{project_id}/``
-
-Path translation is handled by a VirtualFileOperator that maps virtual
-paths to real paths on every file operation.  The agent never sees the
-real host path.
-
-Shell modes:
-
-- **local**: Shell runs on the host with CWD set to the real project path.
-  The agent may see the real path via ``pwd`` but all file tool outputs
-  use virtual paths.
-- **docker**: Shell runs inside the container via ``docker exec``.
-  The container mounts ``{data_root}/projects/`` as ``/workspace/``,
-  so the shell naturally sees ``/workspace/`` paths.
-  File operations still happen on the host via VirtualFileOperator.
+    The runtime only attaches to an existing container (``container_id``
+    is required).  Container lifecycle is managed externally by the user.
 """
 
 from __future__ import annotations
@@ -35,10 +26,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ya_agent_sdk.environment.local import LocalEnvironment
+from ya_agent_sdk.environment.local import LocalEnvironment, VirtualMount
+from ya_agent_sdk.environment.sandbox import SandboxEnvironment
 
 from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
-from netherbrain.agent_runtime.models.enums import ShellMode
+from netherbrain.agent_runtime.models.enums import EnvironmentMode
 from netherbrain.agent_runtime.settings import NetherSettings
 
 if TYPE_CHECKING:
@@ -48,8 +40,8 @@ if TYPE_CHECKING:
 # Constants
 # ---------------------------------------------------------------------------
 
-VIRTUAL_WORKSPACE_ROOT = Path("/workspace")
-"""Virtual root path presented to the agent."""
+DEFAULT_CONTAINER_WORKDIR = "/workspace"
+"""Default virtual root path presented to the agent in sandbox mode."""
 
 
 # ---------------------------------------------------------------------------
@@ -70,9 +62,9 @@ class ProjectPaths:
         data_root: Path,
         prefix: str | None,
         project_ids: list[str],
-        virtual_root: Path = VIRTUAL_WORKSPACE_ROOT,
+        virtual_root: Path | None = None,
     ) -> None:
-        self.virtual_root = virtual_root
+        self.virtual_root = virtual_root or Path(DEFAULT_CONTAINER_WORKDIR)
         self.project_ids = project_ids
 
         # Build real base: {data_root}/{prefix}/projects/ or {data_root}/projects/
@@ -100,7 +92,7 @@ class ProjectPaths:
         return self._projects_base / project_id
 
     def virtual_path(self, project_id: str) -> Path:
-        """Virtual path for a project: ``/workspace/{project_id}/``."""
+        """Virtual path for a project: ``{virtual_root}/{project_id}/``."""
         return self.virtual_root / project_id
 
     @property
@@ -144,10 +136,12 @@ def resolve_project_paths(
     settings: NetherSettings,
 ) -> ProjectPaths:
     """Build ``ProjectPaths`` from resolved config and settings."""
+    virtual_root = Path(config.container_workdir) if config.container_workdir else None
     return ProjectPaths(
         data_root=Path(settings.data_root),
         prefix=settings.data_prefix,
         project_ids=config.project_ids,
+        virtual_root=virtual_root,
     )
 
 
@@ -194,10 +188,10 @@ def create_environment(
     # Ensure project directories exist on disk.
     paths.ensure_directories()
 
-    if config.shell_mode == ShellMode.LOCAL:
+    if config.environment_mode == EnvironmentMode.LOCAL:
         env = _create_local_environment(paths, resource_state)
     else:
-        env = _create_docker_environment(config, paths, resource_state)
+        env = _create_sandbox_environment(config, paths, resource_state)
 
     return env, paths
 
@@ -205,13 +199,11 @@ def create_environment(
 def _create_local_environment(
     paths: ProjectPaths,
     resource_state: ResourceRegistryState | None,
-) -> object:
+) -> LocalEnvironment:
     """Create a local-mode environment.
 
-    TODO: Replace LocalEnvironment with VirtualLocalEnvironment once the
-    SDK provides VirtualFileOperator. For now, uses real paths with
-    LocalEnvironment. The virtual path mapping will be added when the SDK
-    (or this module) implements the translation layer.
+    Uses ``LocalEnvironment`` with real host paths.  The agent sees
+    the actual filesystem paths directly.
     """
     default_path = paths.default_real_path
     extra_paths = [paths.real_path(pid) for pid in paths.extra_project_ids]
@@ -223,20 +215,43 @@ def _create_local_environment(
     )
 
 
-def _create_docker_environment(
+def _create_sandbox_environment(
     config: ResolvedConfig,
     paths: ProjectPaths,
     resource_state: ResourceRegistryState | None,
-) -> object:
-    """Create a docker-mode environment.
+) -> SandboxEnvironment:
+    """Create a sandbox-mode environment.
 
-    File operations: VirtualFileOperator on host (virtual -> real translation).
-    Shell: DockerShell targeting the configured container.
+    Uses ``SandboxEnvironment`` with:
+    - ``VirtualLocalFileOperator``: file I/O on host with virtual path mapping
+    - ``DockerShell``: shell commands via ``docker exec`` in the container
 
-    The container is expected to mount the projects directory as /workspace/:
-        docker run -v {data_root}/projects:/workspace ...
+    The runtime attaches to the container specified by ``container_id``
+    and does not manage its lifecycle (no create/start/stop/remove).
+    The container must already be running (or in a startable state).
 
-    TODO: Implement DockerShell integration. For now, raises NotImplementedError.
+    The user is responsible for mounting project directories into the
+    container at the appropriate paths (matching ``container_workdir``).
     """
-    msg = f"Docker mode not yet implemented (container_id={config.container_id}). Use shell_mode=local for now."
-    raise NotImplementedError(msg)
+    workdir = config.container_workdir or DEFAULT_CONTAINER_WORKDIR
+
+    # Build mount mappings: host project dirs -> virtual paths inside container
+    mounts = [
+        VirtualMount(
+            host_path=paths.real_path(pid),
+            virtual_path=Path(workdir) / pid,
+        )
+        for pid in paths.project_ids
+    ]
+
+    # Default working directory is the first project's virtual path
+    default_project = paths.default_project_id
+    work_dir = f"{workdir}/{default_project}" if default_project else workdir
+
+    return SandboxEnvironment(
+        mounts=mounts,
+        work_dir=work_dir,
+        container_id=config.container_id,
+        cleanup_on_exit=False,
+        resource_state=resource_state,
+    )

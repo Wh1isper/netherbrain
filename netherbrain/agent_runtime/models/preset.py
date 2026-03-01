@@ -8,10 +8,11 @@ resolution, and later mapped to/from database rows.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from netherbrain.agent_runtime.models.enums import ShellMode
+from netherbrain.agent_runtime.models.enums import EnvironmentMode
 
 # -- Preset components -------------------------------------------------------
 
@@ -50,9 +51,9 @@ class ToolConfigSpec(BaseModel):
 
 
 class EnvironmentSpec(BaseModel):
-    """Shell execution mode and project environment."""
+    """Environment mode and project configuration."""
 
-    shell_mode: ShellMode = ShellMode.LOCAL
+    mode: EnvironmentMode = EnvironmentMode.LOCAL
     workspace_id: str | None = Field(
         default=None, description="Reference to a saved workspace (mutually exclusive with project_ids)"
     )
@@ -60,7 +61,14 @@ class EnvironmentSpec(BaseModel):
         default=None, description="Inline project list for ad-hoc use (mutually exclusive with workspace_id)"
     )
     container_id: str | None = None
-    container_workdir: str | None = None
+    container_workdir: str = "/workspace"
+
+    @model_validator(mode="after")
+    def _validate_sandbox_requires_container(self) -> Self:
+        if self.mode == EnvironmentMode.SANDBOX and not self.container_id:
+            msg = "container_id is required when mode is 'sandbox'"
+            raise ValueError(msg)
+        return self
 
 
 class SubagentRef(BaseModel):

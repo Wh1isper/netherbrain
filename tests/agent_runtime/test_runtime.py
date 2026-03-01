@@ -160,7 +160,7 @@ def test_resolve_model_config_context_window() -> None:
 def _make_config(**overrides):
     """Build a minimal ResolvedConfig."""
     from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
-    from netherbrain.agent_runtime.models.enums import ShellMode
+    from netherbrain.agent_runtime.models.enums import EnvironmentMode
 
     defaults = {
         "preset_id": "test-preset",
@@ -168,7 +168,7 @@ def _make_config(**overrides):
         "system_prompt": "You are a helpful assistant.",
         "toolsets": [ToolsetSpec(toolset_name="shell")],
         "subagents": SubagentSpec(),
-        "shell_mode": ShellMode.LOCAL,
+        "environment_mode": EnvironmentMode.LOCAL,
         "project_ids": ["test-project"],
         "container_id": None,
         "container_workdir": None,

@@ -8,7 +8,7 @@ Template variables available:
 
 - ``project_ids``    : list[str]  -- active project IDs
 - ``default_project``: str | None -- first project ID (CWD)
-- ``shell_mode``     : str        -- "local" or "docker"
+- ``environment_mode``: str        -- "local" or "sandbox"
 - ``model_name``     : str        -- model identifier
 - ``preset_id``      : str        -- active preset ID
 - ``date``           : str        -- current date (YYYY-MM-DD)
@@ -53,7 +53,7 @@ def render_system_prompt(
     template_vars: dict[str, object] = {
         "project_ids": config.project_ids,
         "default_project": config.project_ids[0] if config.project_ids else None,
-        "shell_mode": config.shell_mode.value,
+        "environment_mode": config.environment_mode.value,
         "model_name": config.model.name,
         "preset_id": config.preset_id,
         "date": datetime.now(tz=UTC).strftime("%Y-%m-%d"),

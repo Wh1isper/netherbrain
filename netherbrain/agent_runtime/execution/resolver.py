@@ -26,7 +26,7 @@ from sqlalchemy import select
 
 from netherbrain.agent_runtime.db.tables import Preset as PresetRow
 from netherbrain.agent_runtime.db.tables import Workspace as WorkspaceRow
-from netherbrain.agent_runtime.models.enums import ShellMode
+from netherbrain.agent_runtime.models.enums import EnvironmentMode
 from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
     ModelPreset,
@@ -98,7 +98,7 @@ class ResolvedConfig(BaseModel):
     subagents: SubagentSpec = Field(default_factory=SubagentSpec)
 
     # Resolved environment (flattened from EnvironmentSpec + workspace lookup)
-    shell_mode: ShellMode = ShellMode.LOCAL
+    environment_mode: EnvironmentMode = EnvironmentMode.LOCAL
     project_ids: list[str] = Field(default_factory=list)
     container_id: str | None = None
     container_workdir: str | None = None
@@ -170,11 +170,11 @@ async def resolve_config(
         ToolConfigSpec(**preset.tool_config),
     )
 
-    # Environment: merge shell/container settings from override or preset.
+    # Environment: merge mode/container settings from override or preset.
     env_override = override.environment if override else None
     env_preset = EnvironmentSpec(**preset.environment)
 
-    shell_mode = _first(env_override and env_override.shell_mode, env_preset.shell_mode)
+    environment_mode = _first(env_override and env_override.mode, env_preset.mode)
     container_id = _first(env_override and env_override.container_id, env_preset.container_id)
     container_workdir = _first(
         env_override and env_override.container_workdir,
@@ -199,7 +199,7 @@ async def resolve_config(
         toolsets=toolsets,
         tool_config=tool_config_raw,
         subagents=subagents_raw,
-        shell_mode=shell_mode,
+        environment_mode=environment_mode,
         project_ids=resolved_projects,
         container_id=container_id,
         container_workdir=container_workdir,

@@ -70,7 +70,7 @@ flowchart TB
     EVT --> RD
 
     AGENT --> LLM
-    ENV -.->|"shell (docker mode)"| DK
+    ENV -.->|"shell (sandbox mode)"| DK
 ```
 
 ## Environment Model
@@ -95,16 +95,16 @@ Each session snapshots an ordered `project_ids` list at creation time:
 - `project_ids[1:]` become additional allowed paths
 - Empty `project_ids` means no file system access (pure conversation mode)
 
-### Shell Modes
+### Environment Modes
 
-File operations are always local. Shell execution has two modes:
+Two environment modes control how the agent interacts with the file system and shell:
 
-| Mode   | Shell Target                 | Configured By            |
-| ------ | ---------------------------- | ------------------------ |
-| local  | Host machine directly        | Default                  |
-| docker | `docker exec` in a container | User sets `container_id` |
+| Mode    | File Operations                 | Shell Target                 | Configured By            |
+| ------- | ------------------------------- | ---------------------------- | ------------------------ |
+| local   | Host filesystem (real paths)    | Host machine directly        | Default                  |
+| sandbox | Host filesystem (virtual paths) | `docker exec` in a container | User sets `container_id` |
 
-In docker mode, the user is responsible for running the container and mounting the projects root directory. The runtime does not manage container lifecycle.
+In sandbox mode, the agent sees a virtual path space (e.g., `/workspace/`) for both file operations and shell commands. File I/O happens on the host via path-mapped virtual file operator; shell commands execute inside the container. The user is responsible for running the container and mounting the projects root directory. The runtime does not manage container lifecycle.
 
 ## Boundary
 

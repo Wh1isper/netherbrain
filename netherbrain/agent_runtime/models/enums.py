@@ -38,9 +38,9 @@ class ConversationStatus(StrEnum):
 # -- Environment -------------------------------------------------------------
 
 
-class ShellMode(StrEnum):
+class EnvironmentMode(StrEnum):
     LOCAL = "local"
-    DOCKER = "docker"
+    SANDBOX = "sandbox"
 
 
 # -- Mailbox -----------------------------------------------------------------

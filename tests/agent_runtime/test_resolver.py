@@ -14,7 +14,7 @@ from netherbrain.agent_runtime.execution.resolver import (
     WorkspaceNotFoundError,
     resolve_config,
 )
-from netherbrain.agent_runtime.models.enums import ShellMode
+from netherbrain.agent_runtime.models.enums import EnvironmentMode
 from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
     ModelPreset,
@@ -166,19 +166,19 @@ async def test_override_subagents(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.integration
-async def test_override_shell_mode(db_session: AsyncSession) -> None:
+async def test_override_environment_mode(db_session: AsyncSession) -> None:
     await _create_preset(db_session, "p1", is_default=True)
 
     override = ConfigOverride(
         environment=EnvironmentSpec(
-            shell_mode=ShellMode.DOCKER,
+            mode=EnvironmentMode.SANDBOX,
             container_id="abc123",
             container_workdir="/app",
         )
     )
     cfg = await resolve_config(db_session, override=override)
 
-    assert cfg.shell_mode == ShellMode.DOCKER
+    assert cfg.environment_mode == EnvironmentMode.SANDBOX
     assert cfg.container_id == "abc123"
     assert cfg.container_workdir == "/app"
 
@@ -193,7 +193,7 @@ async def test_no_override_preserves_preset(db_session: AsyncSession) -> None:
         system_prompt="Keep it short.",
         toolsets=[{"toolset_name": "core", "enabled": True}],
         environment={
-            "shell_mode": "docker",
+            "mode": "sandbox",
             "container_id": "ctr-1",
         },
         subagents={"include_builtin": False},
@@ -205,7 +205,7 @@ async def test_no_override_preserves_preset(db_session: AsyncSession) -> None:
     assert cfg.model.temperature == 0.7
     assert cfg.system_prompt == "Keep it short."
     assert len(cfg.toolsets) == 1
-    assert cfg.shell_mode == ShellMode.DOCKER
+    assert cfg.environment_mode == EnvironmentMode.SANDBOX
     assert cfg.container_id == "ctr-1"
     assert cfg.subagents.include_builtin is False
 

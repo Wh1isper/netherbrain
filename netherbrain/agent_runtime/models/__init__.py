@@ -14,11 +14,11 @@ from netherbrain.agent_runtime.models.api import (
 )
 from netherbrain.agent_runtime.models.enums import (
     ConversationStatus,
+    EnvironmentMode,
     EventType,
     MailboxSourceType,
     SessionStatus,
     SessionType,
-    ShellMode,
     Transport,
 )
 from netherbrain.agent_runtime.models.events import ProtocolEvent
@@ -51,6 +51,7 @@ __all__ = [
     # Enums
     "ConversationStatus",
     "ConversationUpdate",
+    "EnvironmentMode",
     "EnvironmentSpec",
     "EventType",
     "MailboxMessage",
@@ -69,7 +70,6 @@ __all__ = [
     "SessionState",
     "SessionStatus",
     "SessionType",
-    "ShellMode",
     "SubagentRef",
     "SubagentSpec",
     "ToolsetSpec",

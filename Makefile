@@ -64,7 +64,7 @@ run-gateway: ## Run im-gateway
 .PHONY: install-ui
 install-ui: ## Install UI dependencies
 	@echo "Installing UI dependencies"
-	@cd ui && npm install
+	@cd ui && pnpm install
 
 .PHONY: check-ui
 check-ui: ## Run UI linting and formatting checks

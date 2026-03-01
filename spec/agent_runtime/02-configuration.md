@@ -139,15 +139,17 @@ Available toolsets:
 
 ### EnvironmentSpec (JSON)
 
-| Field             | Type          | Default | Description                                                               |
-| ----------------- | ------------- | ------- | ------------------------------------------------------------------------- |
-| shell_mode        | enum          | `local` | `local` or `docker`                                                       |
-| workspace_id      | string?       | null    | Reference to a saved workspace (mutually exclusive with project_ids)      |
-| project_ids       | list[string]? | null    | Inline project list for ad-hoc use (mutually exclusive with workspace_id) |
-| container_id      | string?       | null    | Docker container ID (required for docker mode)                            |
-| container_workdir | string?       | null    | Working directory inside container                                        |
+| Field             | Type          | Default      | Description                                                               |
+| ----------------- | ------------- | ------------ | ------------------------------------------------------------------------- |
+| mode              | enum          | `local`      | `local` or `sandbox`                                                      |
+| workspace_id      | string?       | null         | Reference to a saved workspace (mutually exclusive with project_ids)      |
+| project_ids       | list[string]? | null         | Inline project list for ad-hoc use (mutually exclusive with workspace_id) |
+| container_id      | string?       | null         | Docker container ID (required when mode is `sandbox`)                     |
+| container_workdir | string        | `/workspace` | Working directory inside container (sandbox mode)                         |
 
 `workspace_id` and `project_ids` are mutually exclusive. If neither is set, the agent has no file system access (pure conversation mode).
+
+When `mode` is `sandbox`, `container_id` is required. The runtime attaches to the existing container via `docker exec` and does not manage container lifecycle (no create, start, stop, or remove).
 
 At runtime, projects resolve to managed directories:
 
@@ -155,7 +157,7 @@ At runtime, projects resolve to managed directories:
 - `project_ids[1:]` -> additional allowed paths
 - Storage: `{DATA_ROOT}/{DATA_PREFIX}/projects/{project_id}/` (auto-created on first access)
 
-In docker mode, the user is responsible for mounting `DATA_ROOT` into the container. The runtime only executes commands via `docker exec`.
+In sandbox mode, the agent sees virtual paths (e.g., `/workspace/{project_id}/`). File operations happen on the host via a virtual file operator with path mapping; shell commands execute inside the container. The user is responsible for mounting the projects root directory into the container at `container_workdir`.
 
 ### ToolConfigSpec (JSON)
 

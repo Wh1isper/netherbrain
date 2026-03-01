@@ -47,7 +47,7 @@ Core agent execution pipeline.
 
 - [x] Config resolver (load preset + merge override + resolve workspace + inject env vars)
 - [x] Environment setup: local mode (project path resolution under DATA_ROOT)
-- [-] Environment setup: docker mode (docker exec shell)
+- [x] Environment setup: sandbox mode (SandboxEnvironment with DockerShell + VirtualLocalFileOperator)
 - [x] SDK adapter: map resolved config to `create_agent` + `stream_agent`
 - [x] Input mapping (text/url/file/binary parts, content_mode file/inline)
 - [x] System prompt rendering (Jinja2 template)
@@ -113,12 +113,12 @@ Async subagent orchestration.
 
 ## Phase 9: Authentication
 
-- [ ] Auth middleware: validate `Authorization: Bearer {token}` on all endpoints except health
-- [ ] Skip auth for `GET /api/health`
+- [x] Auth middleware: validate `Authorization: Bearer {token}` on all endpoints except health
+- [x] Skip auth for `GET /api/health`
 
 ## Phase 10: Health Endpoint Enhancement
 
-- [ ] Enrich health response with PG and Redis connectivity status
+- [x] Enrich health response with PG and Redis connectivity status
 
 ## Phase 11: Web UI
 
@@ -144,6 +144,4 @@ Async subagent orchestration.
 ## In-Code TODOs
 
 - `app.py` -- Flush pending mailbox messages during shutdown
-- `environment.py` -- Replace LocalEnvironment with VirtualLocalEnvironment once SDK provides VirtualFileOperator
-- `environment.py` -- Implement DockerShell integration for docker mode
 - `runtime.py` -- Implement subagent config mapping (Phase 8)

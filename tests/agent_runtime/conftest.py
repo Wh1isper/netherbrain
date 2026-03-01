@@ -14,6 +14,8 @@ from netherbrain.agent_runtime.managers.sessions import SessionManager
 from netherbrain.agent_runtime.registry import SessionRegistry
 from netherbrain.agent_runtime.store.local import LocalStateStore
 
+TEST_AUTH_TOKEN = "test-token-for-integration"  # noqa: S105
+
 
 @pytest.fixture
 async def client(db_session: AsyncSession, tmp_path: object) -> AsyncIterator[AsyncClient]:
@@ -30,6 +32,7 @@ async def client(db_session: AsyncSession, tmp_path: object) -> AsyncIterator[As
     app.dependency_overrides[get_db] = _override_get_db
 
     # Pre-set state fields (lifespan does not run under ASGITransport).
+    app.state.auth_token = TEST_AUTH_TOKEN
     app.state.db_engine = None
     app.state.db_session_factory = None
     app.state.redis = None
@@ -39,7 +42,11 @@ async def client(db_session: AsyncSession, tmp_path: object) -> AsyncIterator[As
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {TEST_AUTH_TOKEN}"},
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()

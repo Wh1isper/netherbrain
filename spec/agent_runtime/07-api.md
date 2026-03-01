@@ -55,7 +55,7 @@ Create a new agent preset.
 | model         | JSON    | Yes      | ModelPreset (name, context_window, temperature, max_tokens) |
 | system_prompt | string  | Yes      | System prompt (Jinja2 template)                             |
 | toolsets      | JSON    | Yes      | list[ToolsetSpec]                                           |
-| environment   | JSON?   | No       | EnvironmentSpec (shell_mode, workspace_id/project_ids)      |
+| environment   | JSON?   | No       | EnvironmentSpec (mode, workspace_id/project_ids)            |
 | subagents     | JSON?   | No       | SubagentSpec                                                |
 | is_default    | bool    | No       | Set as default preset (default: false)                      |
 

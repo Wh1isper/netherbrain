@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRouter
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +14,7 @@ from sse_starlette.sse import AppStatus
 from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
 from netherbrain.agent_runtime.log import setup_logging
 from netherbrain.agent_runtime.managers.sessions import SessionManager
+from netherbrain.agent_runtime.middleware import BearerAuthMiddleware
 from netherbrain.agent_runtime.registry import SessionRegistry
 from netherbrain.agent_runtime.settings import NetherSettings, get_settings
 from netherbrain.agent_runtime.store.base import StateStore
@@ -63,6 +64,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     logger.info("Data root: {} (store={}{})", settings.data_root, settings.state_store, prefix_info)
 
     # -- Initialise state fields (always present, possibly None) ----------------
+    _app.state.auth_token = auth_token
     _app.state.db_engine = None
     _app.state.db_session_factory = None
     _app.state.redis = None
@@ -144,6 +146,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Netherbrain Agent Runtime", lifespan=lifespan)
+app.add_middleware(BearerAuthMiddleware)
 
 # ---------------------------------------------------------------------------
 # API router -- all backend endpoints live under /api
@@ -152,8 +155,38 @@ api = APIRouter(prefix="/api")
 
 
 @api.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request) -> dict[str, str]:
+    """Service health check with infrastructure connectivity status."""
+    from sqlalchemy import text
+
+    result: dict[str, str] = {"status": "ok"}
+
+    # -- PostgreSQL ------------------------------------------------------------
+    engine = request.app.state.db_engine
+    if engine is not None:
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            result["postgres"] = "connected"
+        except Exception:
+            result["postgres"] = "error"
+            result["status"] = "degraded"
+    else:
+        result["postgres"] = "unavailable"
+
+    # -- Redis -----------------------------------------------------------------
+    redis_client = request.app.state.redis
+    if redis_client is not None:
+        try:
+            await redis_client.ping()
+            result["redis"] = "connected"
+        except Exception:
+            result["redis"] = "error"
+            result["status"] = "degraded"
+    else:
+        result["redis"] = "unavailable"
+
+    return result
 
 
 # -- CRUD routers ------------------------------------------------------------

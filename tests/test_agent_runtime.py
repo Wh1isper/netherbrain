@@ -9,4 +9,7 @@ def test_health():
     with TestClient(app) as client:
         response = client.get("/api/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
+        data = response.json()
+        assert data["status"] in ("ok", "degraded")
+        assert "postgres" in data
+        assert "redis" in data
