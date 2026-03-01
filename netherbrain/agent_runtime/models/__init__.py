@@ -1,5 +1,14 @@
 """Data models for the agent runtime."""
 
+from netherbrain.agent_runtime.models.api import (
+    ConversationResponse,
+    PresetCreate,
+    PresetResponse,
+    PresetUpdate,
+    WorkspaceCreate,
+    WorkspaceResponse,
+    WorkspaceUpdate,
+)
 from netherbrain.agent_runtime.models.enums import (
     ConversationStatus,
     EventType,
@@ -34,6 +43,8 @@ __all__ = [
     "AgentPreset",
     # Session
     "ConversationIndex",
+    # API schemas
+    "ConversationResponse",
     # Enums
     "ConversationStatus",
     "EnvironmentSpec",
@@ -41,6 +52,9 @@ __all__ = [
     "MailboxMessage",
     "MailboxSourceType",
     "ModelPreset",
+    "PresetCreate",
+    "PresetResponse",
+    "PresetUpdate",
     # Events
     "ProtocolEvent",
     "RunSummary",
@@ -55,5 +69,8 @@ __all__ = [
     "ToolsetSpec",
     "Transport",
     "UsageSummary",
+    "WorkspaceCreate",
     "WorkspaceIndex",
+    "WorkspaceResponse",
+    "WorkspaceUpdate",
 ]

@@ -3,12 +3,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import redis.asyncio as aioredis
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRouter
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
+from sse_starlette.sse import AppStatus
 
+from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
 from netherbrain.agent_runtime.log import setup_logging
 from netherbrain.agent_runtime.registry import SessionRegistry
 from netherbrain.agent_runtime.settings import get_settings
@@ -32,23 +35,76 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     logger.info("Agent Runtime starting (host={}, port={})", settings.host, settings.port)
     logger.info("State store: {} (path={})", settings.state_store, settings.state_store_path)
 
+    # -- Initialise state fields (always present, possibly None) ----------------
+    _app.state.db_engine = None
+    _app.state.db_session_factory = None
+    _app.state.redis = None
+
+    # -- Database --------------------------------------------------------------
     if settings.database_url:
-        logger.info("PostgreSQL: configured")
+        engine = create_engine(settings.database_url)
+        _app.state.db_engine = engine
+        _app.state.db_session_factory = create_session_factory(engine)
+        logger.info("PostgreSQL: connected (pool_size=5, max_overflow=10)")
     else:
         logger.warning("NETHER_DATABASE_URL not set -- database features disabled")
 
+    # -- Redis -----------------------------------------------------------------
     if settings.redis_url:
-        logger.info("Redis: configured")
+        _app.state.redis = aioredis.from_url(
+            settings.redis_url,
+            decode_responses=False,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True,
+        )
+        logger.info("Redis: connected")
     else:
         logger.warning("NETHER_REDIS_URL not set -- stream transport disabled")
 
-    # TODO: initialise DB connection pool, Redis client, run startup recovery
+    # -- SSE -------------------------------------------------------------------
+    # Let SSE streams complete naturally on shutdown instead of being
+    # terminated immediately.  Uvicorn's graceful shutdown will wait for
+    # open connections to close, giving active streams time to finish.
+    AppStatus.disable_automatic_graceful_drain()
+
+    # TODO: recover interrupted sessions from DB (status=committed)
 
     yield
 
     # -- Shutdown --------------------------------------------------------------
     logger.info("Agent Runtime shutting down (active_sessions={})", registry.active_count)
-    # TODO: graceful shutdown -- interrupt active sessions, close pools
+
+    # 1. Stop accepting new sessions.
+    registry.begin_shutdown()
+
+    # 2. Wait for active sessions to complete naturally.
+    if registry.active_count > 0:
+        timeout = settings.graceful_shutdown_timeout
+        logger.info("Waiting for {} active sessions to finish (timeout={}s)...", registry.active_count, timeout)
+        drained = await registry.wait_until_drained(timeout=timeout)
+        if not drained:
+            # Last resort: force-interrupt remaining sessions.
+            interrupted = registry.interrupt_all()
+            logger.warning("Force-interrupted {} sessions after timeout", interrupted)
+            await registry.wait_until_drained(timeout=5.0)
+
+    # 3. Signal SSE streams to close.  Must happen AFTER session drain so
+    #    that SSE connections can deliver the terminal event before closing.
+    AppStatus.should_exit = True
+    logger.info("SSE: signalled streams to close")
+
+    # TODO: flush pending mailbox messages
+
+    # Close Redis client (returns pooled connections).
+    if _app.state.redis is not None:
+        await _app.state.redis.aclose()
+        logger.info("Redis: closed")
+
+    # Dispose DB engine (closes all pooled connections).
+    if _app.state.db_engine is not None:
+        await _app.state.db_engine.dispose()
+        logger.info("PostgreSQL: disposed")
 
 
 app = FastAPI(title="Netherbrain Agent Runtime", lifespan=lifespan)
@@ -63,6 +119,15 @@ api = APIRouter(prefix="/api")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+# -- CRUD routers ------------------------------------------------------------
+from netherbrain.agent_runtime.routers.conversations import router as conversations_router  # noqa: E402
+from netherbrain.agent_runtime.routers.presets import router as presets_router  # noqa: E402
+from netherbrain.agent_runtime.routers.workspaces import router as workspaces_router  # noqa: E402
+
+api.include_router(presets_router)
+api.include_router(workspaces_router)
+api.include_router(conversations_router)
 
 app.include_router(api)
 

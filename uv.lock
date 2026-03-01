@@ -1986,6 +1986,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "redis", extra = ["hiredis"] },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sse-starlette" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "ya-agent-sdk", extra = ["all"] },
 ]
@@ -2014,6 +2015,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "redis", extras = ["hiredis"], specifier = ">=7.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "sse-starlette", specifier = ">=3.3.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41.0" },
     { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.24.0" },
 ]

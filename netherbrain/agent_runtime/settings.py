@@ -58,6 +58,14 @@ class NetherSettings(BaseSettings):
     # -- Server ----------------------------------------------------------------
     host: str = "0.0.0.0"  # noqa: S104
     port: int = 8000
+    graceful_shutdown_timeout: int = 7200
+    """Seconds to wait for active sessions to finish during shutdown.
+
+    Sessions can run up to 2 hours, so the default matches that ceiling.
+    After this timeout, remaining sessions are force-interrupted.
+    Note: uvicorn's ``--timeout-graceful-shutdown`` must be >= this value
+    for the wait to be effective.
+    """
 
     # -- Helpers ---------------------------------------------------------------
 

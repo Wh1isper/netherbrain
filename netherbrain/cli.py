@@ -24,6 +24,10 @@ def agent(host: str | None, port: int | None, reload: bool) -> None:
         port=port or settings.port,
         reload=reload,
         log_level="warning",  # uvicorn's own logging is intercepted by loguru
+        # Allow enough time for in-flight sessions to finish during shutdown.
+        # Add 60s buffer on top of the drain timeout for post-drain cleanup
+        # (SSE signal, Redis close, DB dispose).
+        timeout_graceful_shutdown=settings.graceful_shutdown_timeout + 60,
     )
 
 

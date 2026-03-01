@@ -125,6 +125,8 @@ tests/
 - Schema setup uses Alembic `upgrade head` with the packaged `alembic.ini` (tests the real migration path).
 - After setting test env vars, call `_get_settings_cached.cache_clear()` so `get_settings()` picks them up.
 - Fixtures: `db_session` (async SQLAlchemy session), `redis_client` (async Redis client), `async_engine` (session-scoped).
+- CRUD API tests use `httpx.AsyncClient` + `ASGITransport` with `get_db` dependency override.
+- Test directory: `tests/agent_runtime/` for agent-runtime integration tests, with its own `conftest.py` providing the `client` fixture.
 
 ## Documentation Conventions
 
