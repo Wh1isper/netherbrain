@@ -20,11 +20,28 @@ from netherbrain.agent_runtime.models.enums import (
 # -- Run summary -------------------------------------------------------------
 
 
-class UsageSummary(BaseModel):
+class ModelUsageSummary(BaseModel):
+    """Token usage for a single model (stored in PG JSONB).
+
+    Fields aligned with ``pydantic_ai.RunUsage`` naming conventions.
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    reasoning_tokens: int = 0
     total_tokens: int = 0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    model_requests: int = 0
+    requests: int = 0
+
+
+class UsageSummary(BaseModel):
+    """Aggregated token usage by model_id (stored in PG JSONB).
+
+    Different models have different costs, so usage is tracked per model.
+    """
+
+    model_usages: dict[str, ModelUsageSummary] = Field(default_factory=dict)
 
 
 class RunSummary(BaseModel):
@@ -65,6 +82,34 @@ class SessionState(BaseModel):
     context_state: dict = Field(default_factory=dict, description="SDK ResumableState export")
     message_history: list = Field(default_factory=list, description="pydantic-ai ModelMessage list")
     environment_state: dict = Field(default_factory=dict, description="Environment resource snapshot")
+
+
+# -- Deferred tools (display data for AWAITING_TOOL_RESULTS) -----------------
+
+
+class DeferredToolCall(BaseModel):
+    """A single pending tool call awaiting external input."""
+
+    tool_call_id: str
+    tool_name: str
+    args: str = ""
+
+
+class DeferredTools(BaseModel):
+    """Simplified representation of pending tool requests.
+
+    Stored as JSONB on the session row so clients can render
+    approval UI without loading the full SDK context_state.
+    """
+
+    calls: list[DeferredToolCall] = Field(
+        default_factory=list,
+        description="Tools requiring external execution results",
+    )
+    approvals: list[DeferredToolCall] = Field(
+        default_factory=list,
+        description="Tools requiring human-in-the-loop approval",
+    )
 
 
 # -- Conversation ------------------------------------------------------------

@@ -31,7 +31,7 @@ from netherbrain.agent_runtime.models.preset import (
     ToolConfigSpec,
     ToolsetSpec,
 )
-from netherbrain.agent_runtime.models.session import RunSummary
+from netherbrain.agent_runtime.models.session import DeferredTools, RunSummary
 
 # ---------------------------------------------------------------------------
 # Preset
@@ -179,6 +179,7 @@ class SessionResponse(BaseModel):
     preset_id: str | None = None
     input: list[dict] | None = None
     final_message: str | None = None
+    deferred_tools: DeferredTools | None = None
     created_at: datetime
 
 

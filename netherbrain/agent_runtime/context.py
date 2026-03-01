@@ -14,12 +14,13 @@ extra info via the SDK context's metadata or a dedicated side-channel.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from netherbrain.agent_runtime.models.enums import SessionType, Transport
 
 if TYPE_CHECKING:
-    pass  # Future: AgentContext, AgentStreamer, EventProcessor, ...
+    from ya_agent_sdk.agents.main import AgentStreamer
+    from ya_agent_sdk.context import AgentContext
 
 
 @dataclass
@@ -42,10 +43,11 @@ class RuntimeSession:
     transport: Transport = Transport.SSE
 
     # -- Live references (set during execution) --------------------------------
-    # These will be typed properly when the execution layer is implemented.
-    sdk_context: Any = None  # AgentContext from ya-agent-sdk
-    streamer: Any = None  # AgentStreamer -- live handle for interrupt
-    event_processor: Any = None  # EventProcessor instance
+    sdk_context: AgentContext | None = None
+    """AgentContext from ya-agent-sdk.  Used for steering via ``bus.send()``."""
+
+    streamer: AgentStreamer | None = None
+    """Live AgentStreamer handle.  Used for interrupt via ``streamer.interrupt()``."""
 
     # -- Async subagent tracking -----------------------------------------------
     async_subagent_registry: dict[str, str] = field(default_factory=dict)

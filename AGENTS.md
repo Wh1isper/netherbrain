@@ -56,13 +56,24 @@ netherbrain/
     store/             # State store for session persistence (large blobs)
       base.py          # StateStore async Protocol
       local.py         # Local filesystem implementation (atomic writes)
-    execution/         # Execution pipeline (Phase 3+)
+    execution/         # Execution pipeline
       resolver.py      # Config resolver (preset + override + workspace -> ResolvedConfig)
       environment.py   # Environment setup (project paths, virtual workspace, SDK Environment factory)
       runtime.py       # SDK adapter (ResolvedConfig -> create_agent -> AgentRuntime)
       input.py         # Input mapping (InputPart list -> SDK UserPrompt)
       prompt.py        # System prompt rendering (Jinja2 templates)
+      events.py        # Internal pipeline events (PipelineStarted, etc.)
+      hooks.py         # Stream hooks (UsageSnapshotEmitter for real-time usage tracking)
       coordinator.py   # Execution orchestration (setup -> run -> finalize pipeline)
+    streaming/         # Protocol adapters (internal -> external events)
+      protocols/
+        base.py        # ProtocolAdapter abstract interface
+        agui.py        # AGUIProtocol (ag_ui.core types)
+    transport/         # Event delivery backends
+      base.py          # EventTransport protocol
+      sse.py           # SSE transport (queue-backed)
+      redis_stream.py  # Redis Stream transport (XADD)
+      bridge.py        # Stream-to-SSE bridge (XREAD + resume)
   im_gateway/          # IM bot gateway
     gateway.py         # Gateway logic
 ui/                    # Frontend (Vite + React + TypeScript)

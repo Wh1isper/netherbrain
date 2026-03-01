@@ -1,128 +1,202 @@
 # 04 - Events and Streaming
 
-Event protocol and transport layer. Internal events are normalized into a stable protocol, then delivered via SSE or Redis Stream.
+Two-layer event architecture with explicit internal/external separation. Internal events flow through the SDK streamer and are converted by a protocol adapter into AG-UI events, delivered via SSE or Redis Stream.
 
-## Event Layers
+## Architecture
 
 ```mermaid
 flowchart TB
     subgraph Sources["Event Sources"]
         PAI["pydantic-ai<br/>(model stream, tool calls)"]
         SDK["ya-agent-sdk<br/>(lifecycle, subagent, compact, handoff)"]
-        RT["runtime<br/>(execution lifecycle)"]
+        RT["Execution Coordinator<br/>(pipeline lifecycle)"]
     end
 
-    subgraph EP["Event Processor"]
-        NORM["Normalize"]
-        BUF["Buffer"]
+    subgraph Internal["Internal Events"]
+        SE["StreamEvent<br/>(agent_id, agent_name, event)"]
+        PE["Pipeline Events<br/>(PipelineStarted, PipelineCompleted,<br/>UsageSnapshot, PipelineFailed)"]
     end
 
-    subgraph Outputs
-        PROTO["Protocol Event Stream<br/>(to Transport)"]
-        DM["final_message<br/>(extract after execution)"]
+    subgraph Streaming["Streaming Layer"]
+        PA["ProtocolAdapter<br/>(pluggable interface)"]
+        AGUI["AGUIProtocol<br/>(stateful converter)"]
     end
 
-    PAI & SDK & RT -->|"internal events"| NORM
-    NORM --> BUF
-    BUF --> PROTO
-    BUF -->|"compress()"| DM
+    subgraph External["AG-UI Protocol (ag_ui.core)"]
+        EVT["BaseEvent subclasses<br/>(RunStarted, TextMessage*, Reasoning*,<br/>ToolCall*, CustomEvent)"]
+    end
+
+    subgraph Transport["Transport Layer"]
+        SSE["SSE Transport<br/>(queue-backed)"]
+        RDS["Redis Stream Transport<br/>(XADD + TTL)"]
+        BRG["Stream-to-SSE Bridge<br/>(XREAD + resume)"]
+    end
+
+    PAI & SDK --> SE
+    RT --> PE
+    SE & PE --> PA --> AGUI --> EVT
+    EVT --> SSE & RDS
+    RDS --> BRG
 ```
 
-## Protocol Events
+## Internal Events
 
-### Event Envelope
+Internal events are the raw event stream produced during agent execution. They consist of two categories that flow through the same `StreamEvent` channel.
 
-| Field      | Type     | Description                       |
-| ---------- | -------- | --------------------------------- |
-| event_id   | string   | Unique event identifier           |
-| event_type | string   | Event type                        |
-| session_id | string   | Producing session                 |
-| timestamp  | ISO 8601 | When produced                     |
-| agent_id   | string   | Agent identity (main or subagent) |
-| payload    | object   | Event-specific data               |
+### SDK Events (from ya-agent-sdk)
 
-### Event Types
+`StreamEvent(agent_id, agent_name, event)` where `event` is:
+
+| Category        | Event Types                                                                                                                                                                      | Source       |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Model streaming | PartStartEvent, PartDeltaEvent, PartEndEvent                                                                                                                                     | pydantic-ai  |
+| Tool lifecycle  | FunctionToolCallEvent, FunctionToolResultEvent                                                                                                                                   | pydantic-ai  |
+| Agent lifecycle | AgentExecutionStartEvent, ModelRequestStartEvent, ModelRequestCompleteEvent, ToolCallsStartEvent, ToolCallsCompleteEvent, AgentExecutionCompleteEvent, AgentExecutionFailedEvent | ya-agent-sdk |
+| Sideband        | SubagentStartEvent, SubagentCompleteEvent, CompactStartEvent, CompactCompleteEvent, HandoffCompleteEvent, MessageReceivedEvent                                                   | ya-agent-sdk |
+
+### Pipeline Events (from Execution Coordinator)
+
+Custom events extending `ya-agent-sdk.events.AgentEvent`. Emitted by the coordinator to mark pipeline-level milestones.
+
+| Event             | Fields                        | When Emitted             |
+| ----------------- | ----------------------------- | ------------------------ |
+| PipelineStarted   | session_id, conversation_id   | Execution begins         |
+| PipelineCompleted | session_id, reply, usage      | Execution succeeds       |
+| PipelineFailed    | session_id, error, error_type | Execution fails          |
+| UsageSnapshot     | session_id, usage             | After each model request |
+
+### Design Principle
+
+Internal events are an implementation detail. They are never exposed to external consumers. Their structure may change across versions without breaking the external protocol. The protocol adapter is the sole coupling point.
+
+## Protocol Adapter
+
+The protocol adapter converts internal events to an external protocol. It is a pluggable interface, allowing different output formats without modifying the execution pipeline.
 
 ```mermaid
-flowchart TB
-    ROOT[Event Protocol]
+flowchart LR
+    subgraph Interface["ProtocolAdapter"]
+        ON_EVENT["on_event(StreamEvent)"]
+        ON_ERROR["on_error(code, message)"]
+    end
 
-    ROOT --> LC[Lifecycle]
-    ROOT --> CT[Content]
-    ROOT --> TL[Tool]
-    ROOT --> SA[Subagent]
-    ROOT --> CX[Context]
-    ROOT --> CTRL[Control]
+    subgraph Implementations
+        AGUI["AGUIProtocol"]
+        FUTURE["Future protocols..."]
+    end
 
-    LC --> LC1["run_started<br/>run_completed<br/>run_failed"]
-    CT --> CT1["message_start<br/>content_delta<br/>content_done<br/>message_end"]
-    TL --> TL1["tool_call_start<br/>tool_call_args_delta<br/>tool_call_result<br/>tool_call_end"]
-    SA --> SA1["subagent_started<br/>subagent_completed"]
-    CX --> CX1["compact_started<br/>compact_completed<br/>handoff_completed"]
-    CTRL --> CTRL1["interrupt_received<br/>steering_injected<br/>usage_snapshot"]
+    Interface --> AGUI
+    Interface -.-> FUTURE
 ```
+
+### Interface
+
+| Method   | When Called                                     | Yields                    |
+| -------- | ----------------------------------------------- | ------------------------- |
+| on_event | For each StreamEvent (SDK + pipeline lifecycle) | Zero or more AG-UI events |
+| on_error | On execution failure (from except block)        | AG-UI RunErrorEvent       |
+
+All events -- SDK streaming, sideband, and pipeline lifecycle -- flow through the unified `on_event()` method. The adapter inspects the inner event type and produces the appropriate AG-UI output. The only separate path is `on_error()`, which handles execution failures from the except block where no StreamEvent can be injected.
+
+## AG-UI Protocol (External Events)
+
+The `AGUIProtocol` adapter converts internal events to events from the `ag-ui-protocol` package (`ag_ui.core`). Standard AG-UI event types are used directly; runtime extensions use `CustomEvent`.
+
+### Standard AG-UI Events
+
+Used directly from `ag_ui.core`:
+
+| Category     | Event Types                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Lifecycle    | `RunStartedEvent`, `RunFinishedEvent`, `RunErrorEvent`                                                                               |
+| Text content | `TextMessageStartEvent`, `TextMessageContentEvent`, `TextMessageEndEvent`                                                            |
+| Reasoning    | `ReasoningStartEvent`, `ReasoningMessageStartEvent`, `ReasoningMessageContentEvent`, `ReasoningMessageEndEvent`, `ReasoningEndEvent` |
+| Tool calls   | `ToolCallStartEvent`, `ToolCallArgsEvent`, `ToolCallEndEvent`, `ToolCallResultEvent`                                                 |
+
+### Runtime Extension Events
+
+Delivered via `ag_ui.core.CustomEvent` with a descriptive `name` field:
+
+| CustomEvent name   | Internal Source                | Value Fields                                                                                                                             |
+| ------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| subagent_started   | SubagentStartEvent             | sub_agent_id, sub_agent_name, prompt_preview                                                                                             |
+| subagent_completed | SubagentCompleteEvent          | sub_agent_id, sub_agent_name, success, result_preview, error, duration_seconds                                                           |
+| compact_started    | CompactStartEvent              | message_count                                                                                                                            |
+| compact_completed  | CompactCompleteEvent           | original_message_count, compacted_message_count                                                                                          |
+| handoff_completed  | HandoffCompleteEvent           | original_message_count                                                                                                                   |
+| steering_received  | MessageReceivedEvent           | message_count                                                                                                                            |
+| usage_snapshot     | UsageSnapshot (post_node_hook) | model_usages: {model_id: {input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, total_tokens, requests}} |
 
 ### Source Mapping
 
-| Protocol Event     | Source      | Internal Event                    |
-| ------------------ | ----------- | --------------------------------- |
-| run_started        | runtime     | Execution begins                  |
-| run_completed      | runtime     | Execution succeeds                |
-| run_failed         | runtime     | Execution fails                   |
-| message_start      | pydantic-ai | First model stream event          |
-| content_delta      | pydantic-ai | Text/thinking delta               |
-| content_done       | pydantic-ai | End of content block              |
-| message_end        | pydantic-ai | End of model response             |
-| tool_call_start    | pydantic-ai | Tool call from model              |
-| tool_call_result   | pydantic-ai | Tool return                       |
-| tool_call_end      | pydantic-ai | Tool call complete                |
-| subagent_started   | SDK         | SubagentStartEvent                |
-| subagent_completed | SDK         | SubagentCompleteEvent             |
-| compact_started    | SDK         | CompactStartEvent                 |
-| compact_completed  | SDK         | CompactCompleteEvent              |
-| handoff_completed  | SDK         | HandoffCompleteEvent              |
-| interrupt_received | runtime     | Interrupt signal processed        |
-| steering_injected  | runtime     | Steering message bridged          |
-| usage_snapshot     | runtime     | Aggregated usage after model call |
+The AGUIProtocol adapter tracks streaming state (open text/reasoning/tool_call streams) to produce properly bracketed AG-UI events.
+
+| AG-UI Event                  | Internal Source                           |
+| ---------------------------- | ----------------------------------------- |
+| RunStartedEvent              | PipelineStarted                           |
+| RunFinishedEvent             | PipelineCompleted                         |
+| RunErrorEvent                | adapter.on_error()                        |
+| TextMessageStartEvent        | PartStartEvent(TextPart)                  |
+| TextMessageContentEvent      | PartDeltaEvent(TextPartDelta)             |
+| TextMessageEndEvent          | PartEndEvent(TextPart)                    |
+| ReasoningStartEvent          | PartStartEvent(ThinkingPart)              |
+| ReasoningMessageStartEvent   | PartStartEvent(ThinkingPart) with content |
+| ReasoningMessageContentEvent | PartDeltaEvent(ThinkingPartDelta)         |
+| ReasoningMessageEndEvent     | PartEndEvent(ThinkingPart)                |
+| ReasoningEndEvent            | PartEndEvent(ThinkingPart)                |
+| ToolCallStartEvent           | PartStartEvent(ToolCallPart)              |
+| ToolCallArgsEvent            | PartDeltaEvent(ToolCallPartDelta)         |
+| ToolCallEndEvent             | PartEndEvent(ToolCallPart)                |
+| ToolCallResultEvent          | FunctionToolResultEvent                   |
+
+### ToolCallResult Status
+
+`ToolCallResultEvent` includes an extra `status` field (via AG-UI's `extra='allow'` config) to indicate the outcome:
+
+| Status     | Meaning                                      |
+| ---------- | -------------------------------------------- |
+| `complete` | Tool executed successfully (ToolReturnPart)  |
+| `retry`    | Tool execution triggered retry (RetryPrompt) |
+| `cancel`   | Tool call cancelled (interrupt/cleanup)      |
 
 ### Terminal Events
 
-`run_completed` and `run_failed` are terminal. No further events after them. Transport uses terminal events to close connections or signal stream end.
+`RunFinishedEvent` and `RunErrorEvent` are terminal. No further events after them. Transport uses terminal events to close connections or signal stream end.
 
-## Event Processor
+### Stream Cleanup
 
-Single component handling normalization, buffering, and compression.
-
-- **Normalize**: Map internal events to protocol events (single coupling point)
-- **Buffer**: Accumulate for real-time delivery and post-execution compression
-- **Compress**: After execution, extract the final model text output as `final_message` for PG storage
+On interrupt or error, the adapter closes any open streams (text, reasoning, tool calls) before emitting the terminal event. Open tool calls receive a `ToolCallEndEvent` + `ToolCallResultEvent(content="")`.
 
 ## Transport
 
-Transport selection is per-request. Both deliver identical event sequences.
+Transport selection is per-request. Both deliver identical AG-UI event sequences.
 
 | Transport    | Delivery    | Use Case                           |
 | ------------ | ----------- | ---------------------------------- |
-| SSE          | Pull (HTTP) | Direct API callers, simple UIs     |
+| SSE          | Pull (HTTP) | Direct API callers, Web UI         |
 | Redis Stream | Push (XADD) | IM gateway, multi-consumer, replay |
 
 ### SSE Transport
 
-Standard Server-Sent Events over HTTP. Caller holds an open connection.
+Queue-backed Server-Sent Events over HTTP. An `asyncio.Queue` decouples the execution pipeline (producer) from the HTTP response (consumer). The agent runs to completion regardless of consumer speed or disconnection.
+
+SSE wire format follows AG-UI conventions with an `id` field for reconnection:
 
 ```
-event: {event_type}
-data: {event envelope JSON}
+id: {event_id}
+data: {AG-UI event JSON (camelCase)}
 
 ```
 
-Connection closes after terminal event. No built-in resume support; use Redis Stream transport for resumable streaming.
+AG-UI events serialize with `model_dump_json(by_alias=True, exclude_none=True)`, producing camelCase field names per the protocol spec.
+
+Connection closes after terminal event.
 
 ### Redis Stream Transport
 
-Events published to a Redis Stream keyed by session. Short TTL -- streams are ephemeral buffers, not durable storage. Display messages are persisted in the State Store at session commit time.
+Events published to a Redis Stream keyed by session. Short TTL -- streams are ephemeral buffers, not durable storage.
 
-All Redis keys use the `nether:` application prefix to avoid collisions in shared Redis instances. Stream keys follow the pattern `nether:stream:{session_id}`.
+All Redis keys use the `nether:` application prefix. Stream keys follow `nether:stream:{session_id}`.
 
 ```mermaid
 sequenceDiagram
@@ -143,7 +217,7 @@ sequenceDiagram
     RD-->>C: events
 ```
 
-Stream TTL is short (minutes, not hours). Redis is purely a live buffer during execution, not a data source. After a session commits, callers should retrieve `final_message` from the session index (PG) -- this is the preferred access path for completed sessions.
+Stream TTL is short (minutes). After session commit, callers retrieve `final_message` from the session index (PG).
 
 ### Stream-to-SSE Bridge
 
@@ -156,6 +230,8 @@ Accept: text/event-stream
 Last-Event-ID: {cursor}
 ```
 
+The bridge uses Redis stream entry IDs as the SSE `id:` field, enabling direct reconnection. For direct SSE transport, unique UUIDs are used.
+
 | Run State                          | Last-Event-ID | Behavior                            |
 | ---------------------------------- | ------------- | ----------------------------------- |
 | Active, stream exists              | absent        | Replay from beginning + live events |
@@ -163,9 +239,52 @@ Last-Event-ID: {cursor}
 | Completed, stream in TTL           | any           | Replay remaining + terminal + close |
 | Session committed / stream expired | any           | 410 Gone; use session index instead |
 
-For completed sessions, `final_message` from the session index (PG) is the canonical source. The bridge is only useful during live execution.
+### Usage Tracking
 
-This enables callers to consume async runs with SSE semantics during live execution.
+Real-time token usage is tracked via the SDK's `post_node_hook` mechanism. After each model request completes, a `UsageSnapshotEmitter` reads `ctx.run.usage()` and injects a `UsageSnapshot` event into the SDK's `output_queue` as a `StreamEvent`. This event flows through the adapter like any other event and is converted to a `CustomEvent(usage_snapshot)` with per-model token counts.
+
+Usage is aggregated by `model_id` because different models have different pricing. The main agent's model_id comes from `config.model.name`. Extra usages from subagents, compact filters, and image understanding are collected from `runtime.ctx.extra_usages` at run completion.
+
+During streaming, `UsageSnapshot` contains only the main model's usage (subagent/compact usage is only available at run end). The final `RunSummary` (stored in PG) contains the full aggregated usage across all models.
+
+Token fields per model (aligned with `pydantic_ai.RunUsage`):
+
+| Field              | Source in RunUsage           |
+| ------------------ | ---------------------------- |
+| input_tokens       | input_tokens                 |
+| output_tokens      | output_tokens                |
+| cache_read_tokens  | cache_read_tokens            |
+| cache_write_tokens | cache_write_tokens           |
+| reasoning_tokens   | details["reasoning_tokens"]  |
+| total_tokens       | input_tokens + output_tokens |
+| requests           | requests                     |
+
+## Project Structure
+
+```
+agent_runtime/
+  execution/
+    events.py          # Internal pipeline events (PipelineStarted, etc.)
+    hooks.py           # Usage tracking hooks (UsageSnapshotEmitter)
+    coordinator.py     # Emits internal events, calls protocol adapter
+  streaming/
+    protocols/
+      base.py          # ProtocolAdapter abstract interface (on_event + on_error)
+      agui.py          # AGUIProtocol implementation (ag_ui.core types)
+  transport/
+    base.py            # EventTransport protocol
+    sse.py             # SSE transport (queue-backed)
+    redis_stream.py    # Redis Stream transport (XADD)
+    bridge.py          # Stream-to-SSE bridge (XREAD + resume)
+  models/
+    events.py          # AG-UI re-exports, extension event names, helpers
+```
+
+## Dependencies
+
+- `ag-ui-protocol`: AG-UI event types and SSE encoder
+- `sse-starlette`: SSE response for FastAPI
+- `redis`: Redis Stream transport
 
 ## Access Patterns
 

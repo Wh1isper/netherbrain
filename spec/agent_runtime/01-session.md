@@ -57,19 +57,30 @@ See [03-execution.md](03-execution.md) for input mapping behavior.
 
 Captured at commit time. Persisted in PG index for queryability.
 
-| Field       | Type         | Description                  |
-| ----------- | ------------ | ---------------------------- |
-| duration_ms | int          | Run duration in milliseconds |
-| usage       | UsageSummary | Aggregated token usage       |
+| Field       | Type         | Description                     |
+| ----------- | ------------ | ------------------------------- |
+| duration_ms | int          | Run duration in milliseconds    |
+| usage       | UsageSummary | Aggregated token usage by model |
 
 ### UsageSummary
 
-| Field             | Type | Description               |
-| ----------------- | ---- | ------------------------- |
-| total_tokens      | int  | Total tokens consumed     |
-| prompt_tokens     | int  | Input tokens              |
-| completion_tokens | int  | Output tokens             |
-| model_requests    | int  | Number of model API calls |
+Aggregated by `model_id` (different models have different pricing).
+
+| Field        | Type                           | Description           |
+| ------------ | ------------------------------ | --------------------- |
+| model_usages | map[string, ModelUsageSummary] | Per-model token usage |
+
+### ModelUsageSummary
+
+| Field              | Type | Description                  |
+| ------------------ | ---- | ---------------------------- |
+| input_tokens       | int  | Input tokens consumed        |
+| output_tokens      | int  | Output tokens generated      |
+| cache_read_tokens  | int  | Tokens read from cache       |
+| cache_write_tokens | int  | Tokens written to cache      |
+| reasoning_tokens   | int  | Tokens used for reasoning    |
+| total_tokens       | int  | input_tokens + output_tokens |
+| requests           | int  | Number of model API calls    |
 
 ## Session Metadata
 

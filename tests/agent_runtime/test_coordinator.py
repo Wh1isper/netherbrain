@@ -11,6 +11,7 @@ from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import ToolApproved, ToolDenied
 
 from netherbrain.agent_runtime.execution.coordinator import (
+    _build_pipeline_usage,
     _build_run_summary,
     _check_deferred,
     _collect_approvals,
@@ -19,6 +20,7 @@ from netherbrain.agent_runtime.execution.coordinator import (
     _fill_uncovered,
     _get_output,
     _handle_interrupt,
+    _pipeline_usage_to_summary,
     _restore_parent_state,
     build_deferred_tool_results,
 )
@@ -42,14 +44,25 @@ def _mock_streamer(*, output: Any = "Hello!", has_run: bool = True) -> MagicMock
         streamer.run.result = result_mock
         streamer.run.all_messages.return_value = []
         usage = MagicMock()
-        usage.total_tokens = 100
         usage.input_tokens = 60
         usage.output_tokens = 40
+        usage.cache_read_tokens = 10
+        usage.cache_write_tokens = 5
+        usage.details = {"reasoning_tokens": 8}
         usage.requests = 2
         streamer.run.usage.return_value = usage
     else:
         streamer.run = None
     return streamer
+
+
+def _mock_runtime(*, extra_usages: list | None = None) -> MagicMock:
+    """Create a mock AgentRuntime with configurable extra usages."""
+    runtime = MagicMock()
+    runtime.ctx.extra_usages = extra_usages or []
+    runtime.ctx.export_state.return_value = MagicMock(model_dump=lambda: {})
+    runtime.env.export_resource_state = AsyncMock(return_value=None)
+    return runtime
 
 
 def _mock_resumable_state(*, deferred_metadata: dict | None = None) -> MagicMock:
@@ -138,36 +151,118 @@ def test_check_deferred_no_run() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _build_run_summary
+# _build_pipeline_usage / _build_run_summary
 # ---------------------------------------------------------------------------
+
+
+def test_build_pipeline_usage() -> None:
+    streamer = _mock_streamer()
+    runtime = _mock_runtime()
+    model_id = "anthropic:claude-sonnet-4"
+
+    usage = _build_pipeline_usage(runtime, streamer, model_id)
+
+    assert model_id in usage.model_usages
+    mu = usage.model_usages[model_id]
+    assert mu.input_tokens == 60
+    assert mu.output_tokens == 40
+    assert mu.cache_read_tokens == 10
+    assert mu.cache_write_tokens == 5
+    assert mu.reasoning_tokens == 8
+    assert mu.total_tokens == 100  # 60 + 40
+    assert mu.requests == 2
+
+
+def test_build_pipeline_usage_with_extra_usages() -> None:
+    streamer = _mock_streamer()
+
+    # Mock an ExtraUsageRecord
+    extra = MagicMock()
+    extra.model_id = "openai:gpt-4o-mini"
+    extra_usage = MagicMock()
+    extra_usage.input_tokens = 20
+    extra_usage.output_tokens = 10
+    extra_usage.cache_read_tokens = 0
+    extra_usage.cache_write_tokens = 0
+    extra_usage.details = {}
+    extra_usage.requests = 1
+    extra.usage = extra_usage
+
+    runtime = _mock_runtime(extra_usages=[extra])
+    model_id = "anthropic:claude-sonnet-4"
+
+    usage = _build_pipeline_usage(runtime, streamer, model_id)
+
+    assert len(usage.model_usages) == 2
+    assert model_id in usage.model_usages
+    assert "openai:gpt-4o-mini" in usage.model_usages
+    assert usage.model_usages["openai:gpt-4o-mini"].input_tokens == 20
+
+
+def test_build_pipeline_usage_no_run() -> None:
+    streamer = _mock_streamer(has_run=False)
+    runtime = _mock_runtime()
+
+    usage = _build_pipeline_usage(runtime, streamer, "test-model")
+
+    assert len(usage.model_usages) == 0
+    assert usage.total.input_tokens == 0
+
+
+def test_pipeline_usage_to_summary() -> None:
+    from netherbrain.agent_runtime.execution.events import ModelUsage, PipelineUsage
+
+    usage = PipelineUsage()
+    usage.add("model-a", ModelUsage(input_tokens=50, output_tokens=30, total_tokens=80, requests=1))
+    usage.add("model-b", ModelUsage(input_tokens=20, output_tokens=10, total_tokens=30, requests=1))
+
+    summary = _pipeline_usage_to_summary(usage)
+
+    assert len(summary.model_usages) == 2
+    assert summary.model_usages["model-a"].input_tokens == 50
+    assert summary.model_usages["model-b"].output_tokens == 10
 
 
 def test_build_run_summary() -> None:
     streamer = _mock_streamer()
-    summary = _build_run_summary(streamer, 1500)
+    runtime = _mock_runtime()
+    model_id = "anthropic:claude-sonnet-4"
+
+    summary, pipeline_usage = _build_run_summary(runtime, streamer, model_id, 1500)
 
     assert summary.duration_ms == 1500
-    assert summary.usage.total_tokens == 100
-    assert summary.usage.prompt_tokens == 60
-    assert summary.usage.completion_tokens == 40
-    assert summary.usage.model_requests == 2
+    assert model_id in summary.usage.model_usages
+    mu = summary.usage.model_usages[model_id]
+    assert mu.input_tokens == 60
+    assert mu.output_tokens == 40
+    assert mu.cache_read_tokens == 10
+    assert mu.cache_write_tokens == 5
+    assert mu.reasoning_tokens == 8
+    assert mu.total_tokens == 100
+    assert mu.requests == 2
+    # Also returns PipelineUsage for events
+    assert model_id in pipeline_usage.model_usages
 
 
 def test_build_run_summary_no_run() -> None:
     streamer = _mock_streamer(has_run=False)
-    summary = _build_run_summary(streamer, 500)
+    runtime = _mock_runtime()
+
+    summary, _pipeline_usage = _build_run_summary(runtime, streamer, "test-model", 500)
 
     assert summary.duration_ms == 500
-    assert summary.usage.total_tokens == 0
+    assert len(summary.usage.model_usages) == 0
 
 
 def test_build_run_summary_usage_raises() -> None:
     streamer = _mock_streamer()
     streamer.run.usage.side_effect = RuntimeError("no usage")
-    summary = _build_run_summary(streamer, 200)
+    runtime = _mock_runtime()
+
+    summary, _pipeline_usage = _build_run_summary(runtime, streamer, "test-model", 200)
 
     assert summary.duration_ms == 200
-    assert summary.usage.total_tokens == 0
+    assert len(summary.usage.model_usages) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +512,7 @@ async def test_execute_session_success(
 
     mock_runtime = MagicMock()
     mock_runtime.ctx.export_state.return_value = MagicMock(model_dump=lambda: {})
+    mock_runtime.ctx.extra_usages = []
     mock_runtime.env.export_resource_state = AsyncMock(return_value=None)
 
     mock_paths = MagicMock()

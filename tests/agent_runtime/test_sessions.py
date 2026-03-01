@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from netherbrain.agent_runtime.managers.sessions import SessionManager
 from netherbrain.agent_runtime.models.enums import SessionStatus, SessionType, Transport
-from netherbrain.agent_runtime.models.session import RunSummary, SessionState, UsageSummary
+from netherbrain.agent_runtime.models.session import ModelUsageSummary, RunSummary, SessionState, UsageSummary
 from netherbrain.agent_runtime.registry import SessionRegistry
 from netherbrain.agent_runtime.store.local import LocalStateStore
 
@@ -108,7 +108,11 @@ async def test_commit_session(manager: SessionManager, store: LocalStateStore, d
     )
     summary = RunSummary(
         duration_ms=1234,
-        usage=UsageSummary(total_tokens=100, prompt_tokens=80, completion_tokens=20, model_requests=1),
+        usage=UsageSummary(
+            model_usages={
+                "openai:gpt-4o": ModelUsageSummary(input_tokens=80, output_tokens=20, total_tokens=100, requests=1)
+            }
+        ),
     )
 
     committed = await manager.commit_session(

@@ -15,13 +15,12 @@ from netherbrain.agent_runtime.models.api import (
 from netherbrain.agent_runtime.models.enums import (
     ConversationStatus,
     EnvironmentMode,
-    EventType,
     MailboxSourceType,
     SessionStatus,
     SessionType,
     Transport,
 )
-from netherbrain.agent_runtime.models.events import ProtocolEvent
+from netherbrain.agent_runtime.models.events import BaseEvent, ExtensionEvent
 from netherbrain.agent_runtime.models.preset import (
     AgentPreset,
     EnvironmentSpec,
@@ -44,6 +43,8 @@ from netherbrain.agent_runtime.models.workspace import WorkspaceIndex
 __all__ = [
     # Preset
     "AgentPreset",
+    # Events
+    "BaseEvent",
     # Session
     "ConversationIndex",
     # API schemas
@@ -53,15 +54,13 @@ __all__ = [
     "ConversationUpdate",
     "EnvironmentMode",
     "EnvironmentSpec",
-    "EventType",
+    "ExtensionEvent",
     "MailboxMessage",
     "MailboxSourceType",
     "ModelPreset",
     "PresetCreate",
     "PresetResponse",
     "PresetUpdate",
-    # Events
-    "ProtocolEvent",
     "RunSummary",
     "SessionDetailResponse",
     "SessionIndex",

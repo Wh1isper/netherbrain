@@ -1845,6 +1845,7 @@ name = "netherbrain"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "ag-ui-protocol" },
     { name = "alembic" },
     { name = "anyio" },
     { name = "boto3" },
@@ -1861,6 +1862,7 @@ dependencies = [
     { name = "redis", extra = ["hiredis"] },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "sse-starlette" },
+    { name = "starlette" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "y-agent-environment" },
     { name = "ya-agent-sdk", extra = ["all"] },
@@ -1880,6 +1882,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ag-ui-protocol", specifier = ">=0.1.13" },
     { name = "alembic", specifier = ">=1.13" },
     { name = "anyio", specifier = ">=4.0.0" },
     { name = "boto3", specifier = ">=1.35.0" },
@@ -1891,14 +1894,15 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.1" },
     { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pydantic-ai", specifier = ">=0.2.0" },
+    { name = "pydantic-ai" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "redis", extras = ["hiredis"], specifier = ">=7.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "sse-starlette", specifier = ">=3.3.0" },
+    { name = "starlette", specifier = ">=0.52.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41.0" },
     { name = "y-agent-environment", specifier = ">=0.4.0" },
-    { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.26.1" },
+    { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.26.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -4029,7 +4033,7 @@ wheels = [
 
 [[package]]
 name = "ya-agent-sdk"
-version = "0.26.1"
+version = "0.26.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -4046,9 +4050,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "y-agent-environment" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e8/b5/4bcebba350fbe37ff9c7008237ca4f463ae9d104aa18692c79401743de51/ya_agent_sdk-0.26.1.tar.gz", hash = "sha256:d7915622f5ee044680f43f0018e31cf914531d4f4a4118bbe5779dd77a2c5d92", size = 741671, upload-time = "2026-03-01T08:56:14.747Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/9e/baa43a568120766b94f342e8120ad9ef92ecd7d6789c57527e24118e527f/ya_agent_sdk-0.26.2.tar.gz", hash = "sha256:8b232f382339b39c0c7a723d11dcfeda20b041a8cc896a3b29fee433a5866053", size = 743539, upload-time = "2026-03-01T13:00:25.948Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/50/a4d2c798e1983f6afc0739755fd973d0ee2d2e92783c8dc6382956850304/ya_agent_sdk-0.26.1-py3-none-any.whl", hash = "sha256:4034ea9c07ba3c1fb9dd35eda14891516ee94309fc9d76e9bf1a89ce06c6181a", size = 250210, upload-time = "2026-03-01T08:56:13.232Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/42/afe61af4bdb60b0942655a7dd27deb8ef2d53c0b8d373b519ea12ad306f9/ya_agent_sdk-0.26.2-py3-none-any.whl", hash = "sha256:904b36b6a733c41065656a322cb3d2bf6225b4e685af4fce9f59f42f43671836", size = 251475, upload-time = "2026-03-01T13:00:24.423Z" },
 ]
 
 [package.optional-dependencies]

@@ -21,22 +21,35 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from ag_ui.core import BaseEvent
 from pydantic_ai import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.messages import ModelMessagesTypeAdapter, ToolReturn
 from pydantic_ai.tools import ToolApproved, ToolDenied
 
 from netherbrain.agent_runtime.context import RuntimeSession
+from netherbrain.agent_runtime.execution.events import (
+    MAIN_AGENT_ID,
+    ModelUsage,
+    PipelineCompleted,
+    PipelineStarted,
+    PipelineUsage,
+)
+from netherbrain.agent_runtime.execution.hooks import UsageSnapshotEmitter
 from netherbrain.agent_runtime.execution.input import map_input_to_prompt
 from netherbrain.agent_runtime.execution.runtime import create_service_runtime
 from netherbrain.agent_runtime.models.enums import SessionStatus, Transport
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
-from netherbrain.agent_runtime.models.session import RunSummary, SessionState, UsageSummary
+from netherbrain.agent_runtime.models.session import ModelUsageSummary, RunSummary, SessionState, UsageSummary
+from netherbrain.agent_runtime.streaming.protocols.agui import AGUIProtocol
+from netherbrain.agent_runtime.streaming.protocols.base import ProtocolAdapter
+from netherbrain.agent_runtime.transport.base import EventTransport
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Sequence
+    from collections.abc import Sequence
 
     from sqlalchemy.ext.asyncio import AsyncSession
     from ya_agent_sdk.agents.main import AgentRuntime, AgentStreamer
@@ -202,6 +215,26 @@ def _check_deferred(streamer: AgentStreamer) -> bool:
     return isinstance(_get_output(streamer), DeferredToolRequests)
 
 
+def _serialize_deferred_tools(deferred: DeferredToolRequests) -> dict:
+    """Serialize ``DeferredToolRequests`` to a JSON-friendly dict.
+
+    Produces a lightweight representation for the session row so
+    clients can render approval UI without loading context_state.
+    """
+
+    def _serialize_call(part: Any) -> dict:
+        return {
+            "tool_call_id": part.tool_call_id,
+            "tool_name": part.tool_name,
+            "args": part.args_as_json_str() if part.args else "",
+        }
+
+    return {
+        "calls": [_serialize_call(c) for c in deferred.calls],
+        "approvals": [_serialize_call(a) for a in deferred.approvals],
+    }
+
+
 async def _export_session_state(
     runtime: AgentRuntime,
     streamer: AgentStreamer,
@@ -233,26 +266,59 @@ async def _export_session_state(
     )
 
 
-def _build_run_summary(
+def _build_pipeline_usage(
+    runtime: AgentRuntime,
     streamer: AgentStreamer,
-    duration_ms: int,
-) -> RunSummary:
-    """Build run summary from SDK usage data."""
-    usage = UsageSummary()
+    model_id: str,
+) -> PipelineUsage:
+    """Build aggregated usage from main run + extra usages (subagents, compact, etc.)."""
+    usage = PipelineUsage()
 
     if streamer.run:
         try:
             sdk_usage = streamer.run.usage()
-            usage = UsageSummary(
-                total_tokens=sdk_usage.total_tokens,
-                prompt_tokens=sdk_usage.input_tokens,
-                completion_tokens=sdk_usage.output_tokens,
-                model_requests=sdk_usage.requests,
-            )
+            usage.add(model_id, ModelUsage.from_run_usage(sdk_usage))
         except Exception:
-            logger.debug("Could not extract usage", exc_info=True)
+            logger.debug("Could not extract main usage", exc_info=True)
 
-    return RunSummary(duration_ms=duration_ms, usage=usage)
+    # Extra usages from subagents, image understanding, compact, etc.
+    try:
+        for record in runtime.ctx.extra_usages:
+            usage.add(record.model_id, ModelUsage.from_run_usage(record.usage))
+    except Exception:
+        logger.debug("Could not extract extra usages", exc_info=True)
+
+    return usage
+
+
+def _pipeline_usage_to_summary(usage: PipelineUsage) -> UsageSummary:
+    """Convert dataclass ``PipelineUsage`` to Pydantic ``UsageSummary`` for PG storage."""
+    from dataclasses import asdict
+
+    return UsageSummary(
+        model_usages={
+            model_id: ModelUsageSummary(**asdict(model_usage)) for model_id, model_usage in usage.model_usages.items()
+        }
+    )
+
+
+def _build_run_summary(
+    runtime: AgentRuntime,
+    streamer: AgentStreamer,
+    model_id: str,
+    duration_ms: int,
+) -> tuple[RunSummary, PipelineUsage]:
+    """Build run summary and pipeline usage from SDK data.
+
+    Returns both the Pydantic ``RunSummary`` (for PG storage) and the
+    dataclass ``PipelineUsage`` (for the ``PipelineCompleted`` event).
+    """
+    pipeline_usage = _build_pipeline_usage(runtime, streamer, model_id)
+    summary = RunSummary(
+        duration_ms=duration_ms,
+        usage=_pipeline_usage_to_summary(pipeline_usage),
+    )
+    return summary, pipeline_usage
 
 
 # ---------------------------------------------------------------------------
@@ -306,11 +372,47 @@ async def _handle_interrupt(
 
 
 # ---------------------------------------------------------------------------
+# Event delivery helpers
+# ---------------------------------------------------------------------------
+
+
+def _wrap_pipeline_event(event: Any) -> StreamEvent:
+    """Wrap a pipeline event (AgentEvent subclass) in a StreamEvent."""
+    from ya_agent_sdk.context import StreamEvent as _SE
+
+    return _SE(
+        agent_id=MAIN_AGENT_ID,
+        agent_name=MAIN_AGENT_ID,
+        event=event,
+    )
+
+
+async def _deliver(
+    events: AsyncIterator[BaseEvent],
+    transport: EventTransport,
+) -> None:
+    """Deliver protocol events to transport, swallowing transport errors.
+
+    Execution must run to completion regardless of transport failures
+    (spec: guaranteed delivery to state store, best-effort to transport).
+    """
+    async for event in events:
+        try:
+            await transport.send(event)
+        except Exception:
+            logger.warning(
+                "Transport send failed for event %s, continuing",
+                event.type,
+                exc_info=True,
+            )
+
+
+# ---------------------------------------------------------------------------
 # Main execution
 # ---------------------------------------------------------------------------
 
 
-async def execute_session(
+async def execute_session(  # noqa: C901
     config: ResolvedConfig,
     input_parts: Sequence[InputPart],
     *,
@@ -325,7 +427,8 @@ async def execute_session(
     transport: Transport = Transport.SSE,
     user_interactions: Sequence[UserInteraction] | None = None,
     tool_results: Sequence[ToolResult] | None = None,
-    on_event: Callable[[StreamEvent], Awaitable[None]] | None = None,
+    event_transport: EventTransport | None = None,
+    protocol_adapter: ProtocolAdapter | None = None,
 ) -> ExecutionResult:
     """Execute an agent session to completion.
 
@@ -360,9 +463,13 @@ async def execute_session(
         HITL approval decisions (when continuing from ``awaiting_tool_results``).
     tool_results:
         External tool results (when continuing from ``awaiting_tool_results``).
-    on_event:
-        Async callback for each SDK event.  Called during execution for
-        real-time event processing.  Phase 4 will plug in EventProcessor.
+    event_transport:
+        Transport backend for delivering protocol events (SSE or Redis
+        Stream).  If ``None``, protocol events are not delivered (useful
+        for testing or fire-and-forget execution).
+    protocol_adapter:
+        Protocol adapter for converting SDK events to protocol events.
+        Defaults to ``AGUIProtocol`` if not provided.
 
     Returns
     -------
@@ -372,6 +479,13 @@ async def execute_session(
     from ya_agent_sdk.agents.main import AgentInterrupted, stream_agent
 
     start_time = time.monotonic()
+
+    # -- Protocol adapter (default: AG-UI) -------------------------------------
+    adapter = protocol_adapter or AGUIProtocol()
+
+    # -- Usage tracking hook ---------------------------------------------------
+    model_id = config.model.name
+    usage_emitter = UsageSnapshotEmitter(session_id=session_id, model_id=model_id)
 
     # -- Restore parent state --------------------------------------------------
     resumable_state, resource_state = _restore_parent_state(parent_state)
@@ -397,6 +511,7 @@ async def execute_session(
         )
 
     # -- Register session in memory --------------------------------------------
+    stream_key = f"nether:stream:{session_id}" if transport == Transport.STREAM else None
     runtime_session = RuntimeSession(
         session_id=session_id,
         conversation_id=conversation_id,
@@ -404,6 +519,8 @@ async def execute_session(
         preset_id=config.preset_id,
         project_ids=config.project_ids,
         transport=transport,
+        sdk_context=runtime.ctx,
+        stream_key=stream_key,
     )
     registry.register(runtime_session)
 
@@ -415,24 +532,44 @@ async def execute_session(
     exported_state: SessionState | None = None
     exported_final: str | None = None
     exported_summary: RunSummary | None = None
+    exported_pipeline_usage: PipelineUsage | None = None
     is_deferred = False
 
     try:
+        # -- Emit PipelineStarted (flows through adapter.on_event) -------------
+        if event_transport:
+            started = _wrap_pipeline_event(
+                PipelineStarted(
+                    event_id=session_id,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                )
+            )
+            await _deliver(adapter.on_event(started), event_transport)
+
         async with stream_agent(
             runtime,
             user_prompt=user_prompt or None,
             deferred_tool_results=deferred_results,
+            post_node_hook=usage_emitter.post_node_hook,
         ) as streamer:
             runtime_session.streamer = streamer
 
+            # -- Stream SDK events through protocol adapter --------------------
+            # UsageSnapshot events arrive here via output_queue injection.
             async for event in streamer:
-                if on_event:
-                    await on_event(event)
+                if event_transport:
+                    await _deliver(adapter.on_event(event), event_transport)
 
             # Still inside stream_agent context -- runtime is alive.
             duration_ms = int((time.monotonic() - start_time) * 1000)
             exported_final = _extract_final_message(streamer)
-            exported_summary = _build_run_summary(streamer, duration_ms)
+            exported_summary, exported_pipeline_usage = _build_run_summary(
+                runtime,
+                streamer,
+                model_id,
+                duration_ms,
+            )
             exported_state = await _export_session_state(runtime, streamer)
             is_deferred = _check_deferred(streamer)
 
@@ -440,14 +577,38 @@ async def execute_session(
         status = SessionStatus.AWAITING_TOOL_RESULTS if is_deferred else SessionStatus.COMMITTED
 
         assert exported_state is not None  # noqa: S101
+
+        # Serialize deferred tools for display (if HITL pending).
+        deferred_tools_data: dict | None = None
+        deferred_req: DeferredToolRequests | None = None
+        if is_deferred:
+            output = _get_output(streamer)
+            if isinstance(output, DeferredToolRequests):
+                deferred_req = output
+                deferred_tools_data = _serialize_deferred_tools(output)
+
         await session_manager.commit_session(
             db,
             session_id,
             state=exported_state,
             final_message=exported_final,
+            deferred_tools=deferred_tools_data,
             run_summary=exported_summary,
             status=status,
         )
+
+        # -- Emit PipelineCompleted (flows through adapter.on_event) -----------
+        if event_transport:
+            completed = _wrap_pipeline_event(
+                PipelineCompleted(
+                    event_id=session_id,
+                    session_id=session_id,
+                    reply=exported_final,
+                    usage=exported_pipeline_usage or PipelineUsage(),
+                )
+            )
+            await _deliver(adapter.on_event(completed), event_transport)
+            await event_transport.close()
 
         logger.info(
             "Session %s completed: status=%s, duration=%dms",
@@ -456,19 +617,26 @@ async def execute_session(
             exported_summary.duration_ms if exported_summary else 0,
         )
 
-        deferred_req = _get_output(streamer) if is_deferred else None
-
         return ExecutionResult(
             session_id=session_id,
             status=status,
             final_message=exported_final,
             run_summary=exported_summary,
-            deferred_requests=deferred_req if isinstance(deferred_req, DeferredToolRequests) else None,
+            deferred_requests=deferred_req,
         )
 
     except AgentInterrupted:
         duration_ms = int((time.monotonic() - start_time) * 1000)
         summary = exported_summary or RunSummary(duration_ms=duration_ms)
+
+        # -- Emit run_error (interrupted) --------------------------------------
+        if event_transport:
+            await _deliver(
+                adapter.on_error(code="interrupted", message="Session interrupted"),
+                event_transport,
+            )
+            await event_transport.close()
+
         return await _handle_interrupt(
             session_id,
             session_manager,
@@ -482,6 +650,14 @@ async def execute_session(
         logger.exception("Session %s failed", session_id)
         duration_ms = int((time.monotonic() - start_time) * 1000)
         await session_manager.fail_session(db, session_id)
+
+        # -- Emit run_error (failure) ------------------------------------------
+        if event_transport:
+            await _deliver(
+                adapter.on_error(code="execution_error", message="Session execution failed"),
+                event_transport,
+            )
+            await event_transport.close()
 
         return ExecutionResult(
             session_id=session_id,

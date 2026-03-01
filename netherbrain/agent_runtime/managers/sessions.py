@@ -127,6 +127,7 @@ class SessionManager:
         *,
         state: SessionState,
         final_message: str | None = None,
+        deferred_tools: dict | None = None,
         run_summary: RunSummary | None = None,
         status: SessionStatus = SessionStatus.COMMITTED,
     ) -> SessionRow:
@@ -142,10 +143,12 @@ class SessionManager:
         # Write SDK state blob to state store.
         await self._store.write_state(session_id, state)
 
-        # Update PG index (status, final_message, run_summary).
+        # Update PG index (status, final_message, deferred_tools, run_summary).
         values: dict[str, Any] = {"status": status}
         if final_message is not None:
             values["final_message"] = final_message
+        if deferred_tools is not None:
+            values["deferred_tools"] = deferred_tools
         if run_summary is not None:
             values["run_summary"] = run_summary.model_dump()
 

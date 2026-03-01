@@ -8,6 +8,5 @@ This package contains the core execution components:
 - **input**: Input mapping (InputPart -> SDK UserPrompt)
 - **prompt**: System prompt rendering (Jinja2 templates)
 - **coordinator**: Execution orchestration (setup -> run -> finalize)
-- **events**: Event processing (SDK events -> protocol events) [Phase 4]
-- **transport**: Event delivery (SSE, Redis Stream) [Phase 4]
+- **events**: Internal pipeline events (PipelineStarted, PipelineCompleted, etc.)
 """
