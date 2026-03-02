@@ -23,7 +23,9 @@ import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from netherbrain.agent_runtime.managers.execution import ExecutionManager
 from netherbrain.agent_runtime.managers.sessions import SessionManager
+from netherbrain.agent_runtime.registry import SessionRegistry
 
 
 async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
@@ -83,3 +85,29 @@ async def get_session_manager(request: Request) -> SessionManager:
 
 SessionMgr = Annotated[SessionManager, Depends(get_session_manager)]
 """Annotated dependency: SessionManager singleton."""
+
+
+async def get_execution_manager(request: Request) -> ExecutionManager:
+    """Return the ExecutionManager singleton initialised in app lifespan."""
+    manager: ExecutionManager | None = request.app.state.execution_manager
+    if manager is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Execution manager not initialised (database not configured).",
+        )
+    return manager
+
+
+ExecutionMgr = Annotated[ExecutionManager, Depends(get_execution_manager)]
+"""Annotated dependency: ExecutionManager singleton."""
+
+
+async def get_registry(request: Request) -> SessionRegistry:
+    """Return the module-level SessionRegistry."""
+    from netherbrain.agent_runtime.app import registry
+
+    return registry
+
+
+RegistryDep = Annotated[SessionRegistry, Depends(get_registry)]
+"""Annotated dependency: SessionRegistry singleton."""

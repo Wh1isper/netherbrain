@@ -57,6 +57,7 @@ Create a new agent preset.
 | toolsets      | JSON    | Yes      | list[ToolsetSpec]                                           |
 | environment   | JSON?   | No       | EnvironmentSpec (mode, workspace_id/project_ids)            |
 | subagents     | JSON?   | No       | SubagentSpec                                                |
+| mcp_servers   | JSON?   | No       | list[McpServerSpec] (external MCP server connections)       |
 | is_default    | bool    | No       | Set as default preset (default: false)                      |
 
 ### GET /api/presets/list
@@ -80,6 +81,7 @@ Update a preset. Only provided fields are updated.
 | toolsets      | JSON?   | No       | Update toolsets      |
 | environment   | JSON?   | No       | Update environment   |
 | subagents     | JSON?   | No       | Update subagents     |
+| mcp_servers   | JSON?   | No       | Update MCP servers   |
 | is_default    | bool?   | No       | Set as default       |
 
 ### POST /api/presets/{preset_id}/delete

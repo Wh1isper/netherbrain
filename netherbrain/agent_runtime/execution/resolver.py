@@ -29,6 +29,7 @@ from netherbrain.agent_runtime.db.tables import Workspace as WorkspaceRow
 from netherbrain.agent_runtime.models.enums import EnvironmentMode
 from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
+    McpServerSpec,
     ModelPreset,
     SubagentSpec,
     ToolConfigSpec,
@@ -81,6 +82,7 @@ class ConfigOverride(BaseModel):
     environment: EnvironmentSpec | None = None
     tool_config: ToolConfigSpec | None = None
     subagents: SubagentSpec | None = None
+    mcp_servers: list[McpServerSpec] | None = None
 
 
 class ResolvedConfig(BaseModel):
@@ -102,6 +104,9 @@ class ResolvedConfig(BaseModel):
     project_ids: list[str] = Field(default_factory=list)
     container_id: str | None = None
     container_workdir: str | None = None
+
+    # External MCP server connections
+    mcp_servers: list[McpServerSpec] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +196,13 @@ async def resolve_config(
         parent_project_ids=parent_project_ids,
     )
 
-    # -- 4. Build ResolvedConfig -----------------------------------------------
+    # -- 4. Merge MCP servers (override replaces preset list entirely) ----------
+    mcp_servers = _first(
+        override and override.mcp_servers,
+        [McpServerSpec(**s) for s in preset.mcp_servers] if preset.mcp_servers else [],
+    )
+
+    # -- 5. Build ResolvedConfig -----------------------------------------------
     return ResolvedConfig(
         preset_id=preset.preset_id,
         model=model,
@@ -203,6 +214,7 @@ async def resolve_config(
         project_ids=resolved_projects,
         container_id=container_id,
         container_workdir=container_workdir,
+        mcp_servers=mcp_servers,
     )
 
 

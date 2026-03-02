@@ -69,6 +69,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _app.state.db_session_factory = None
     _app.state.redis = None
     _app.state.session_manager = None
+    _app.state.execution_manager = None
 
     # -- Database --------------------------------------------------------------
     if settings.database_url:
@@ -103,6 +104,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         store = _create_state_store(settings)
         _app.state.session_manager = SessionManager(store=store, registry=registry)
         logger.info("SessionManager: initialised")
+
+        # ExecutionManager: orchestrates config resolution and launch.
+        from netherbrain.agent_runtime.managers.execution import ExecutionManager
+
+        _app.state.execution_manager = ExecutionManager(
+            session_manager=_app.state.session_manager,
+            registry=registry,
+            settings=settings,
+            session_factory=_app.state.db_session_factory,
+            redis=_app.state.redis,
+        )
+        logger.info("ExecutionManager: initialised")
 
         # Startup recovery: mark orphaned sessions as failed.
         async with _app.state.db_session_factory() as db:

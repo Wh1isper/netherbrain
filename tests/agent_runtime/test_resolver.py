@@ -46,6 +46,7 @@ async def _create_preset(
         toolsets=kwargs.get("toolsets", []),
         environment=environment or {},
         subagents=kwargs.get("subagents", {}),
+        mcp_servers=kwargs.get("mcp_servers", []),
         is_default=is_default,
     )
     db.add(row)
@@ -410,3 +411,48 @@ async def test_preset_env_overrides_parent(db_session: AsyncSession) -> None:
     cfg = await resolve_config(db_session, parent_project_ids=["parent-proj"])
 
     assert cfg.project_ids == ["preset-proj"]
+
+
+# ---------------------------------------------------------------------------
+# MCP servers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_mcp_servers_from_preset(db_session: AsyncSession) -> None:
+    mcp_servers = [
+        {"url": "http://localhost:8080/mcp", "transport": "streamable_http"},
+        {"url": "http://localhost:3001/sse", "transport": "sse", "tool_prefix": "ext"},
+    ]
+    await _create_preset(db_session, "p1", is_default=True, mcp_servers=mcp_servers)
+
+    cfg = await resolve_config(db_session)
+
+    assert len(cfg.mcp_servers) == 2
+    assert cfg.mcp_servers[0].url == "http://localhost:8080/mcp"
+    assert cfg.mcp_servers[1].tool_prefix == "ext"
+
+
+@pytest.mark.integration
+async def test_mcp_servers_override_replaces_preset(db_session: AsyncSession) -> None:
+    mcp_servers_preset = [{"url": "http://preset-server/mcp"}]
+    await _create_preset(db_session, "p1", is_default=True, mcp_servers=mcp_servers_preset)
+
+    from netherbrain.agent_runtime.models.preset import McpServerSpec
+
+    override = ConfigOverride(
+        mcp_servers=[McpServerSpec(url="http://override-server/mcp")],
+    )
+    cfg = await resolve_config(db_session, override=override)
+
+    assert len(cfg.mcp_servers) == 1
+    assert cfg.mcp_servers[0].url == "http://override-server/mcp"
+
+
+@pytest.mark.integration
+async def test_mcp_servers_empty_by_default(db_session: AsyncSession) -> None:
+    await _create_preset(db_session, "p1", is_default=True)
+
+    cfg = await resolve_config(db_session)
+
+    assert cfg.mcp_servers == []

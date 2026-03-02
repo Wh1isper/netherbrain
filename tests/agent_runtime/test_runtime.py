@@ -11,7 +11,11 @@ from netherbrain.agent_runtime.execution.runtime import (
     resolve_model_settings,
     resolve_tools,
 )
-from netherbrain.agent_runtime.models.preset import ModelPreset, SubagentSpec, ToolsetSpec
+
+# ---------------------------------------------------------------------------
+# MCP server types
+# ---------------------------------------------------------------------------
+from netherbrain.agent_runtime.models.preset import McpServerSpec, McpTransport, ModelPreset, SubagentSpec, ToolsetSpec
 
 # ---------------------------------------------------------------------------
 # resolve_tools
@@ -272,3 +276,115 @@ def test_create_service_runtime_tools_mapped(mock_create_agent: MagicMock, tmp_p
     tool_classes = call_kwargs["tools"]
     # Should include shell + web + subagent introspection tools.
     assert len(tool_classes) > 0
+
+
+# ---------------------------------------------------------------------------
+# resolve_mcp_servers
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_mcp_servers_empty() -> None:
+    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
+
+    assert resolve_mcp_servers([]) == []
+
+
+def test_resolve_mcp_servers_streamable_http() -> None:
+    from pydantic_ai.mcp import MCPServerStreamableHTTP
+
+    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
+
+    specs = [McpServerSpec(url="http://localhost:8080/mcp")]
+    servers = resolve_mcp_servers(specs)
+
+    assert len(servers) == 1
+    assert isinstance(servers[0], MCPServerStreamableHTTP)
+    assert servers[0].url == "http://localhost:8080/mcp"
+
+
+def test_resolve_mcp_servers_sse() -> None:
+    from pydantic_ai.mcp import MCPServerSSE
+
+    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
+
+    specs = [McpServerSpec(url="http://localhost:3001/sse", transport=McpTransport.SSE)]
+    servers = resolve_mcp_servers(specs)
+
+    assert len(servers) == 1
+    assert isinstance(servers[0], MCPServerSSE)
+    assert servers[0].url == "http://localhost:3001/sse"
+
+
+def test_resolve_mcp_servers_with_headers_and_prefix() -> None:
+    from pydantic_ai.mcp import MCPServerStreamableHTTP
+
+    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
+
+    specs = [
+        McpServerSpec(
+            url="http://mcp.example.com/api",
+            headers={"Authorization": "Bearer secret"},
+            tool_prefix="ext",
+            timeout=30.0,
+        )
+    ]
+    servers = resolve_mcp_servers(specs)
+
+    assert len(servers) == 1
+    server = servers[0]
+    assert isinstance(server, MCPServerStreamableHTTP)
+    assert server.url == "http://mcp.example.com/api"
+    assert server.headers == {"Authorization": "Bearer secret"}
+    assert server.tool_prefix == "ext"
+    assert server.timeout == 30.0
+
+
+def test_resolve_mcp_servers_multiple() -> None:
+    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
+
+    specs = [
+        McpServerSpec(url="http://server1/mcp"),
+        McpServerSpec(url="http://server2/sse", transport=McpTransport.SSE),
+    ]
+    servers = resolve_mcp_servers(specs)
+    assert len(servers) == 2
+
+
+@patch("netherbrain.agent_runtime.execution.runtime.create_agent")
+def test_create_service_runtime_with_mcp_servers(mock_create_agent: MagicMock, tmp_path: Path) -> None:
+    from netherbrain.agent_runtime.execution.runtime import create_service_runtime
+
+    mock_runtime = MagicMock()
+    mock_create_agent.return_value = mock_runtime
+
+    config = _make_config(
+        mcp_servers=[
+            McpServerSpec(url="http://localhost:8080/mcp"),
+            McpServerSpec(url="http://localhost:3001/sse", transport=McpTransport.SSE),
+        ],
+    )
+    settings = _make_settings(tmp_path)
+
+    create_service_runtime(config, settings)
+
+    call_kwargs = mock_create_agent.call_args[1]
+    # Should pass MCP toolsets.
+    assert call_kwargs["toolsets"] is not None
+    assert len(call_kwargs["toolsets"]) == 2
+
+
+@patch("netherbrain.agent_runtime.execution.runtime.create_agent")
+def test_create_service_runtime_no_mcp_passes_none(mock_create_agent: MagicMock, tmp_path: Path) -> None:
+    from netherbrain.agent_runtime.execution.runtime import create_service_runtime
+
+    mock_runtime = MagicMock()
+    mock_create_agent.return_value = mock_runtime
+
+    config = _make_config()
+    settings = _make_settings(tmp_path)
+
+    create_service_runtime(config, settings)
+
+    call_kwargs = mock_create_agent.call_args[1]
+    # No MCP servers -> toolsets should be None.
+    assert call_kwargs["toolsets"] is None

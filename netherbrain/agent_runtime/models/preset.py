@@ -8,11 +8,36 @@ resolution, and later mapped to/from database rows.
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
 
 from netherbrain.agent_runtime.models.enums import EnvironmentMode
+
+# -- MCP server connections ---------------------------------------------------
+
+
+class McpTransport(StrEnum):
+    """Network transport for external MCP server connections."""
+
+    STREAMABLE_HTTP = "streamable_http"
+    SSE = "sse"
+
+
+class McpServerSpec(BaseModel):
+    """External MCP server connection (non-stdio).
+
+    Each entry creates a pydantic-ai MCP client toolset at runtime.
+    Only network-based transports are supported.
+    """
+
+    url: str = Field(description="HTTP endpoint URL of the MCP server")
+    transport: McpTransport = McpTransport.STREAMABLE_HTTP
+    headers: dict[str, str] | None = Field(default=None, description="Custom HTTP headers (e.g., auth tokens)")
+    tool_prefix: str | None = Field(default=None, description="Namespace prefix for tools")
+    timeout: float | None = Field(default=None, description="Connection timeout in seconds")
+
 
 # -- Preset components -------------------------------------------------------
 
@@ -103,6 +128,7 @@ class AgentPreset(BaseModel):
     environment: EnvironmentSpec = Field(default_factory=EnvironmentSpec)
     tool_config: ToolConfigSpec = Field(default_factory=ToolConfigSpec)
     subagents: SubagentSpec = Field(default_factory=SubagentSpec)
+    mcp_servers: list[McpServerSpec] = Field(default_factory=list)
     is_default: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None

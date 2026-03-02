@@ -235,6 +235,33 @@ class SessionManager:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    # -- Parent lookup ---------------------------------------------------------
+
+    async def find_latest_committed_session(
+        self,
+        db: AsyncSession,
+        conversation_id: str,
+    ) -> SessionRow | None:
+        """Find the latest committed (or awaiting_tool_results) session.
+
+        Used by ``/conversations/run`` (continue) and ``/conversations/fork``
+        to locate the parent session for state restoration.
+        """
+        stmt = (
+            select(SessionRow)
+            .where(
+                SessionRow.conversation_id == conversation_id,
+                SessionRow.status.in_([
+                    SessionStatus.COMMITTED,
+                    SessionStatus.AWAITING_TOOL_RESULTS,
+                ]),
+            )
+            .order_by(SessionRow.created_at.desc())
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
     # -- Turns -----------------------------------------------------------------
 
     async def get_conversation_turns(

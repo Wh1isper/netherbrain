@@ -1902,7 +1902,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.52.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41.0" },
     { name = "y-agent-environment", specifier = ">=0.4.0" },
-    { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.26.2" },
+    { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.27.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -4033,7 +4033,7 @@ wheels = [
 
 [[package]]
 name = "ya-agent-sdk"
-version = "0.26.2"
+version = "0.27.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -4050,9 +4050,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "y-agent-environment" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/9e/baa43a568120766b94f342e8120ad9ef92ecd7d6789c57527e24118e527f/ya_agent_sdk-0.26.2.tar.gz", hash = "sha256:8b232f382339b39c0c7a723d11dcfeda20b041a8cc896a3b29fee433a5866053", size = 743539, upload-time = "2026-03-01T13:00:25.948Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/54/258673680b61ab6980c6617d5c87eeb6962779cfd370e490e6d08978f518/ya_agent_sdk-0.27.0.tar.gz", hash = "sha256:1bb737224bfe421a6c89687a47ec8c5999232f99dc304e5042b108a3d80501a3", size = 744329, upload-time = "2026-03-02T07:14:12.947Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/42/afe61af4bdb60b0942655a7dd27deb8ef2d53c0b8d373b519ea12ad306f9/ya_agent_sdk-0.26.2-py3-none-any.whl", hash = "sha256:904b36b6a733c41065656a322cb3d2bf6225b4e685af4fce9f59f42f43671836", size = 251475, upload-time = "2026-03-01T13:00:24.423Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/6d/1a16388fa436f42813a29baa61fc89540c7e29451b851f6e25d7578df13c/ya_agent_sdk-0.27.0-py3-none-any.whl", hash = "sha256:157574ba5c606bcc172c77b26ac485be95b8636292e62fd665b9162e5eff245e", size = 251924, upload-time = "2026-03-02T07:14:11.406Z" },
 ]
 
 [package.optional-dependencies]

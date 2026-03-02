@@ -59,6 +59,7 @@ Core agent execution pipeline.
 - [x] Display messages compression: compress AGUIProtocol buffer into AG-UI chunk events at commit time
 - [x] Write display_messages.json to State Store during session commit
 - [x] Deferred tool handling (awaiting_tool_results status, user_interactions, tool_results)
+- [x] External MCP server support (McpServerSpec in preset, SSE/Streamable HTTP transports)
 
 ## Phase 4: Event Protocol and Transport
 
@@ -79,34 +80,34 @@ Event processing and delivery.
 
 High-level conversation operations.
 
-- [ ] `POST /api/conversations/run` (new conversation or continue)
-- [ ] `POST /api/conversations/{id}/fork` (fork new conversation from session)
-- [ ] `POST /api/conversations/{id}/interrupt` (interrupt all active sessions)
-- [ ] `POST /api/conversations/{id}/steer` (steer active agent session)
-- [ ] `GET /api/conversations/{id}/events` (stream-to-SSE bridge for active session)
-- [ ] `POST /api/conversations/{id}/update` (title, metadata, status, default_preset_id)
-- [ ] `GET /api/conversations/{id}/turns` (display messages across sessions)
-- [ ] `GET /api/conversations/{id}/sessions` (list sessions with status)
-- [ ] Concurrency guard: at most one running agent session per conversation (409)
+- [x] `POST /api/conversations/run` (new conversation or continue)
+- [x] `POST /api/conversations/{id}/fork` (fork new conversation from session)
+- [x] `POST /api/conversations/{id}/interrupt` (interrupt all active sessions)
+- [x] `POST /api/conversations/{id}/steer` (steer active agent session)
+- [x] `GET /api/conversations/{id}/events` (stream-to-SSE bridge for active session)
+- [x] `POST /api/conversations/{id}/update` (title, metadata, status, default_preset_id)
+- [x] `GET /api/conversations/{id}/turns` (display messages across sessions)
+- [x] `GET /api/conversations/{id}/sessions` (list sessions with status)
+- [x] Concurrency guard: at most one running agent session per conversation (409)
 
 ## Phase 6: Session API (Lower-Level)
 
 Direct session control.
 
-- [ ] `POST /api/sessions/execute` (explicit session creation and execution)
-- [ ] `GET /api/sessions/{id}/get` (PG index + display_messages by default, optional SDK state)
-- [ ] `GET /api/sessions/{id}/status` (check registry then PG)
-- [ ] `GET /api/sessions/{id}/events` (stream-to-SSE bridge with resume)
-- [ ] `POST /api/sessions/{id}/interrupt`
-- [ ] `POST /api/sessions/{id}/steer`
+- [x] `POST /api/sessions/execute` (explicit session creation and execution)
+- [x] `GET /api/sessions/{id}/get` (PG index + display_messages by default, optional SDK state)
+- [x] `GET /api/sessions/{id}/status` (check registry then PG)
+- [x] `GET /api/sessions/{id}/events` (stream-to-SSE bridge with resume)
+- [x] `POST /api/sessions/{id}/interrupt`
+- [x] `POST /api/sessions/{id}/steer`
 
 ## Phase 7: Control (Interrupt and Steering)
 
 In-process control via session registry.
 
-- [ ] Interrupt handler: `registry.get()` -> `streamer.interrupt()` -> partial commit
-- [ ] Steering handler: `registry.get()` -> `context.bus.send()` -> consumed at next turn
-- [ ] Input mapping for steering (same format as run)
+- [x] Interrupt handler: `registry.get()` -> `streamer.interrupt()` -> partial commit
+- [x] Steering handler: `registry.get()` -> `context.send_message()` -> consumed at next turn
+- [x] Input mapping for steering (same format as run)
 
 ## Phase 8: Async Agents and Mailbox
 

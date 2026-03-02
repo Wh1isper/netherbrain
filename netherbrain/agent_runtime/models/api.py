@@ -24,8 +24,10 @@ from netherbrain.agent_runtime.models.enums import (
     SessionType,
     Transport,
 )
+from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
+    McpServerSpec,
     ModelPreset,
     SubagentSpec,
     ToolConfigSpec,
@@ -50,6 +52,7 @@ class PresetCreate(BaseModel):
     environment: EnvironmentSpec = Field(default_factory=EnvironmentSpec)
     tool_config: ToolConfigSpec = Field(default_factory=ToolConfigSpec)
     subagents: SubagentSpec = Field(default_factory=SubagentSpec)
+    mcp_servers: list[McpServerSpec] = Field(default_factory=list)
     is_default: bool = False
 
 
@@ -68,6 +71,7 @@ class PresetUpdate(BaseModel):
     environment: EnvironmentSpec | None = None
     tool_config: ToolConfigSpec | None = None
     subagents: SubagentSpec | None = None
+    mcp_servers: list[McpServerSpec] | None = None
     is_default: bool | None = None
 
 
@@ -85,6 +89,7 @@ class PresetResponse(BaseModel):
     environment: EnvironmentSpec
     tool_config: ToolConfigSpec
     subagents: SubagentSpec
+    mcp_servers: list[McpServerSpec]
     is_default: bool
     created_at: datetime
     updated_at: datetime
@@ -187,4 +192,106 @@ class SessionDetailResponse(BaseModel):
     """Session index with optional hydrated SDK state."""
 
     index: SessionResponse
+    display_messages: list[dict] | None = None
     state: dict | None = None
+
+
+class SessionStatusResponse(BaseModel):
+    """Current session execution status."""
+
+    session_id: str
+    status: SessionStatus
+    transport: Transport | None = None
+    stream_key: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Execution requests
+# ---------------------------------------------------------------------------
+
+
+class _ExecutionInputMixin(BaseModel):
+    """Shared fields for endpoints that accept user input."""
+
+    input: list[InputPart] | None = None
+    user_interactions: list[UserInteraction] | None = None
+    tool_results: list[ToolResult] | None = None
+
+
+class ConversationRunRequest(_ExecutionInputMixin):
+    """Request body for POST /api/conversations/run."""
+
+    conversation_id: str | None = Field(
+        default=None,
+        description="Existing conversation to continue. Null = new conversation.",
+    )
+    preset_id: str | None = Field(
+        default=None,
+        description="Agent preset. Required for new conversations.",
+    )
+    workspace_id: str | None = None
+    project_ids: list[str] | None = None
+    metadata: dict | None = None
+    config_override: dict | None = None
+    transport: Transport = Transport.SSE
+
+
+class ConversationForkRequest(_ExecutionInputMixin):
+    """Request body for POST /api/conversations/{id}/fork."""
+
+    preset_id: str
+    from_session_id: str | None = Field(
+        default=None,
+        description="Fork point. Default: latest committed session.",
+    )
+    workspace_id: str | None = None
+    project_ids: list[str] | None = None
+    metadata: dict | None = None
+    config_override: dict | None = None
+    transport: Transport = Transport.SSE
+
+
+class SteerRequest(BaseModel):
+    """Request body for steering an active session."""
+
+    input: list[InputPart]
+
+
+class SessionExecuteRequest(_ExecutionInputMixin):
+    """Request body for POST /api/sessions/execute."""
+
+    preset_id: str
+    parent_session_id: str | None = None
+    fork: bool = False
+    workspace_id: str | None = None
+    project_ids: list[str] | None = None
+    config_override: dict | None = None
+    transport: Transport = Transport.SSE
+
+
+# ---------------------------------------------------------------------------
+# Execution responses
+# ---------------------------------------------------------------------------
+
+
+class ActiveSessionInfo(BaseModel):
+    """Info about a currently active session."""
+
+    session_id: str
+    stream_key: str | None = None
+    transport: Transport
+
+
+class ExecuteAcceptedResponse(BaseModel):
+    """Response for transport=stream (202 Accepted)."""
+
+    session_id: str
+    conversation_id: str
+    stream_key: str
+
+
+class ConversationBusyResponse(BaseModel):
+    """409 response when conversation already has an active agent session."""
+
+    error: str = "conversation_busy"
+    active_session: ActiveSessionInfo

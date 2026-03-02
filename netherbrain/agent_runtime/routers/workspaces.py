@@ -43,7 +43,7 @@ async def handle_list_workspaces(
     try:
         return await list_workspaces(db, metadata_contains=metadata_contains, limit=limit, offset=offset)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from None
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
 
 
 @router.get("/{workspace_id}/get", response_model=WorkspaceResponse)

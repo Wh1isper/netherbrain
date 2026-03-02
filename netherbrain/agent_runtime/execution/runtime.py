@@ -35,7 +35,14 @@ from netherbrain.agent_runtime.execution.environment import (
 )
 from netherbrain.agent_runtime.execution.prompt import render_system_prompt
 from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
-from netherbrain.agent_runtime.models.preset import ModelPreset, SubagentSpec, ToolConfigSpec, ToolsetSpec
+from netherbrain.agent_runtime.models.preset import (
+    McpServerSpec,
+    McpTransport,
+    ModelPreset,
+    SubagentSpec,
+    ToolConfigSpec,
+    ToolsetSpec,
+)
 from netherbrain.agent_runtime.settings import NetherSettings
 
 if TYPE_CHECKING:
@@ -192,6 +199,52 @@ def resolve_subagent_configs(
 
 
 # ---------------------------------------------------------------------------
+# MCP server mapping
+# ---------------------------------------------------------------------------
+
+
+def resolve_mcp_servers(
+    specs: list[McpServerSpec],
+) -> list[Any]:
+    """Map ``McpServerSpec`` list to pydantic-ai MCP server toolsets.
+
+    Each spec becomes an ``MCPServerStreamableHTTP`` or ``MCPServerSSE``
+    instance that participates in the agent's tool selection.
+
+    Returns an empty list if no MCP servers are configured or if the
+    ``mcp`` optional dependency is not installed.
+    """
+    if not specs:
+        return []
+
+    try:
+        from pydantic_ai.mcp import MCPServerSSE, MCPServerStreamableHTTP
+    except ImportError:
+        logger.warning("pydantic-ai[mcp] not installed, skipping MCP server configuration")
+        return []
+
+    servers: list[Any] = []
+    for spec in specs:
+        kwargs: dict[str, Any] = {}
+        if spec.headers:
+            kwargs["headers"] = spec.headers
+        if spec.tool_prefix:
+            kwargs["tool_prefix"] = spec.tool_prefix
+        if spec.timeout is not None:
+            kwargs["timeout"] = spec.timeout
+
+        if spec.transport == McpTransport.SSE:
+            server = MCPServerSSE(spec.url, **kwargs)
+        else:
+            server = MCPServerStreamableHTTP(spec.url, **kwargs)
+
+        servers.append(server)
+        logger.info("MCP server configured: %s (%s)", spec.url, spec.transport)
+
+    return servers
+
+
+# ---------------------------------------------------------------------------
 # Runtime factory
 # ---------------------------------------------------------------------------
 
@@ -258,6 +311,9 @@ def create_service_runtime(
     # -- Tool config -----------------------------------------------------------
     tool_config = resolve_tool_config(config.tool_config)
 
+    # -- MCP servers -----------------------------------------------------------
+    mcp_toolsets = resolve_mcp_servers(config.mcp_servers)
+
     # -- Create runtime --------------------------------------------------------
     runtime = create_agent(
         model=config.model.name,
@@ -266,6 +322,7 @@ def create_service_runtime(
         output_type=[str, DeferredToolRequests],
         env=env,
         tools=all_tools,
+        toolsets=mcp_toolsets or None,
         tool_config=tool_config,
         system_prompt=system_prompt,
         state=state,
@@ -275,9 +332,10 @@ def create_service_runtime(
     )
 
     logger.info(
-        "Created service runtime: model=%s, tools=%d, projects=%d",
+        "Created service runtime: model=%s, tools=%d, mcp_servers=%d, projects=%d",
         config.model.name,
         len(all_tools),
+        len(mcp_toolsets),
         len(config.project_ids),
     )
 

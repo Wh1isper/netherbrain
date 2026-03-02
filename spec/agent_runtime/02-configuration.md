@@ -88,20 +88,21 @@ Agent presets are stored in PostgreSQL with structured JSON columns. Manageable 
 
 ### Schema
 
-| Column        | Type        | Description                                     |
-| ------------- | ----------- | ----------------------------------------------- |
-| preset_id     | string (PK) | Unique identifier (slug)                        |
-| name          | string      | Human-readable display name                     |
-| description   | string?     | Preset description                              |
-| model         | JSONB       | Model selection and settings (ModelPreset)      |
-| system_prompt | text        | System prompt (Jinja2 template)                 |
-| toolsets      | JSONB       | Enabled toolsets and config (list[ToolsetSpec]) |
-| environment   | JSONB       | Shell mode and project config (EnvironmentSpec) |
-| tool_config   | JSONB       | Tool-level configuration (ToolConfigSpec)       |
-| subagents     | JSONB       | Subagent configuration (SubagentSpec)           |
-| is_default    | bool        | Whether this is the default preset              |
-| created_at    | timestamp   | Creation time                                   |
-| updated_at    | timestamp   | Last modification time                          |
+| Column        | Type        | Description                                           |
+| ------------- | ----------- | ----------------------------------------------------- |
+| preset_id     | string (PK) | Unique identifier (slug)                              |
+| name          | string      | Human-readable display name                           |
+| description   | string?     | Preset description                                    |
+| model         | JSONB       | Model selection and settings (ModelPreset)            |
+| system_prompt | text        | System prompt (Jinja2 template)                       |
+| toolsets      | JSONB       | Enabled toolsets and config (list[ToolsetSpec])       |
+| environment   | JSONB       | Shell mode and project config (EnvironmentSpec)       |
+| tool_config   | JSONB       | Tool-level configuration (ToolConfigSpec)             |
+| subagents     | JSONB       | Subagent configuration (SubagentSpec)                 |
+| mcp_servers   | JSONB       | External MCP server connections (list[McpServerSpec]) |
+| is_default    | bool        | Whether this is the default preset                    |
+| created_at    | timestamp   | Creation time                                         |
+| updated_at    | timestamp   | Last modification time                                |
 
 At most one preset has `is_default = true`. This is used when a conversation or request does not specify a preset_id.
 
@@ -113,6 +114,22 @@ At most one preset has `is_default = true`. This is used when a conversation or 
 | context_window | int?   | Override context window size                                |
 | temperature    | float? | Sampling temperature                                        |
 | max_tokens     | int?   | Max output tokens                                           |
+
+### McpServerSpec (JSON)
+
+Declares external MCP server connections. Each entry creates a pydantic-ai MCP client toolset at runtime. Only network-based transports are supported (no stdio -- subprocess spawning is not appropriate for a service).
+
+| Field       | Type    | Default           | Description                                                |
+| ----------- | ------- | ----------------- | ---------------------------------------------------------- |
+| url         | string  | (required)        | HTTP endpoint URL of the MCP server                        |
+| transport   | enum    | `streamable_http` | `streamable_http` or `sse`                                 |
+| headers     | dict?   | null              | Custom HTTP headers (e.g., auth tokens)                    |
+| tool_prefix | string? | null              | Namespace prefix for tools to avoid name collisions        |
+| timeout     | float?  | null              | Connection timeout in seconds (null = pydantic-ai default) |
+
+MCP servers are connected at session start and disconnected at session end. They participate in the agent's tool selection alongside built-in toolsets.
+
+Security note: `headers` may contain bearer tokens for authenticating to the MCP server. These are stored in the preset's JSONB column. For high-security deployments, consider using environment variable references instead of inline tokens.
 
 ### ToolsetSpec (JSON)
 
@@ -213,15 +230,17 @@ flowchart LR
     REQ["Request<br/>(preset_id + override<br/>+ workspace_id/project_ids)"] --> LOAD["Load Preset<br/>(from PG)"]
     LOAD --> MERGE["Merge Override"]
     MERGE --> RESOLVE_WS["Resolve Projects<br/>(workspace or inline)"]
-    RESOLVE_WS --> INJECT["Inject Env Vars<br/>(API keys -> ToolConfig)"]
+    RESOLVE_WS --> RESOLVE_MCP["Merge MCP Servers<br/>(preset + override)"]
+    RESOLVE_MCP --> INJECT["Inject Env Vars<br/>(API keys -> ToolConfig)"]
     INJECT --> RESOLVED["Resolved Config"]
 ```
 
 1. Load the referenced preset from PostgreSQL (or default preset if unspecified)
 2. Merge per-request inline overrides (override wins)
 3. Resolve project list: request `workspace_id` / `project_ids` overrides preset default; workspace_id is resolved from PG; for continue/fork, parent session's `project_ids` is the fallback
-4. Inject environment variable values (API keys into ToolConfig)
-5. Produce resolved config for execution
+4. Merge MCP servers: override replaces preset list entirely (if provided)
+5. Inject environment variable values (API keys into ToolConfig)
+6. Produce resolved config for execution
 
 ## Security Boundary
 

@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: 7ac0f5a66a60
+Revision ID: d23694f3365d
 Revises:
-Create Date: 2026-03-01 22:17:51.398809
+Create Date: 2026-03-02 12:34:20.854412
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "7ac0f5a66a60"
+revision: str = "d23694f3365d"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -44,6 +44,7 @@ def upgrade() -> None:
         sa.Column("environment", postgresql.JSONB(astext_type=sa.Text()), server_default="{}", nullable=False),
         sa.Column("tool_config", postgresql.JSONB(astext_type=sa.Text()), server_default="{}", nullable=False),
         sa.Column("subagents", postgresql.JSONB(astext_type=sa.Text()), server_default="{}", nullable=False),
+        sa.Column("mcp_servers", postgresql.JSONB(astext_type=sa.Text()), server_default="[]", nullable=False),
         sa.Column("is_default", sa.Boolean(), server_default="false", nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
