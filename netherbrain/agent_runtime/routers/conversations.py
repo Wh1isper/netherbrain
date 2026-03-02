@@ -24,9 +24,11 @@ from netherbrain.agent_runtime.managers.conversations import (
 )
 from netherbrain.agent_runtime.managers.execution import (
     ConversationBusyError,
+    EmptyMailboxError,
     InputRequiredError,
     NoActiveSessionError,
     NoCommittedSessionError,
+    NoDefaultPresetError,
     SessionContextNotReadyError,
     SessionNotInConversationError,
     SteeringTextRequiredError,
@@ -34,15 +36,20 @@ from netherbrain.agent_runtime.managers.execution import (
 from netherbrain.agent_runtime.models.api import (
     ActiveSessionInfo,
     ConversationBusyResponse,
+    ConversationDetailResponse,
+    ConversationFireRequest,
     ConversationForkRequest,
     ConversationResponse,
     ConversationRunRequest,
     ConversationUpdate,
     ExecuteAcceptedResponse,
+    LatestSessionInfo,
+    MailboxMessageResponse,
+    MailboxSummary,
     SessionResponse,
     SteerRequest,
 )
-from netherbrain.agent_runtime.models.enums import Transport
+from netherbrain.agent_runtime.models.enums import SessionStatus, SessionType, Transport
 from netherbrain.agent_runtime.transport.bridge import StreamGoneError, bridge_stream_to_sse
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -260,12 +267,52 @@ async def handle_list_conversations(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{conversation_id}/get", response_model=ConversationResponse)
-async def handle_get_conversation(conversation_id: str, db: DbSession) -> object:
+@router.get("/{conversation_id}/get", response_model=ConversationDetailResponse)
+async def handle_get_conversation(
+    conversation_id: str,
+    db: DbSession,
+    execution: ExecutionMgr,
+    manager: SessionMgr,
+) -> dict:
+    """Get conversation with enriched session and mailbox info."""
     try:
-        return await get_conversation(db, conversation_id)
+        conv = await get_conversation(db, conversation_id)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
+
+    # Build base response from ORM row.
+    result: dict = ConversationResponse.model_validate(conv).model_dump()
+
+    # Latest committed session.
+    latest_row = await manager.find_latest_committed_session(db, conversation_id)
+    if latest_row is not None:
+        result["latest_session"] = LatestSessionInfo(
+            session_id=latest_row.session_id,
+            status=SessionStatus(latest_row.status),
+            session_type=SessionType(latest_row.session_type),
+            project_ids=latest_row.project_ids,
+            preset_id=latest_row.preset_id,
+            created_at=latest_row.created_at,
+        )
+
+    # Active agent session (from in-memory registry).
+    try:
+        active = execution.get_active_session(conversation_id)
+        result["active_session"] = ActiveSessionInfo(
+            session_id=active.session_id,
+            stream_key=active.stream_key,
+            transport=active.transport,
+        )
+    except NoActiveSessionError:
+        pass
+
+    # Mailbox summary.
+    from netherbrain.agent_runtime.managers.mailbox import count_pending
+
+    pending = await count_pending(db, conversation_id=conversation_id)
+    result["mailbox"] = MailboxSummary(pending_count=pending)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -320,3 +367,77 @@ async def handle_list_conversation_sessions(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 
     return await manager.list_sessions(db, conversation_id, limit=limit, offset=offset)
+
+
+# ---------------------------------------------------------------------------
+# POST /conversations/{conversation_id}/fire
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{conversation_id}/fire")
+async def handle_fire(conversation_id: str, body: ConversationFireRequest, db: DbSession, execution: ExecutionMgr):
+    """Drain mailbox and launch a continuation session."""
+    try:
+        result = await execution.fire_conversation(
+            db,
+            conversation_id=conversation_id,
+            preset_id=body.preset_id,
+            input_parts=body.input,
+            user_interactions=body.user_interactions,
+            tool_results=body.tool_results,
+            workspace_id=body.workspace_id,
+            project_ids=body.project_ids,
+            config_override=body.config_override,
+            transport=body.transport,
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from None
+    except ConversationBusyError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=ConversationBusyResponse(
+                active_session=ActiveSessionInfo(
+                    session_id=exc.active_session.session_id,
+                    stream_key=exc.active_session.stream_key,
+                    transport=exc.active_session.transport,
+                ),
+            ).model_dump(),
+        )
+    except (EmptyMailboxError, NoDefaultPresetError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
+    except (NoPresetError, WorkspaceNotFoundError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from None
+    except (ProjectConflictError, ValueError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
+
+    return _launch_response(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /conversations/{conversation_id}/mailbox
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{conversation_id}/mailbox", response_model=list[MailboxMessageResponse])
+async def handle_mailbox(
+    conversation_id: str,
+    db: DbSession,
+    pending_only: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> list:
+    """Query mailbox messages for a conversation."""
+    from netherbrain.agent_runtime.managers.mailbox import query_mailbox
+
+    try:
+        await get_conversation(db, conversation_id)
+    except ConversationNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
+
+    return await query_mailbox(
+        db,
+        conversation_id=conversation_id,
+        pending_only=pending_only,
+        limit=limit,
+        offset=offset,
+    )

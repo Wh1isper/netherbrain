@@ -28,7 +28,7 @@ from netherbrain.agent_runtime.managers.conversations import (
     update_conversation,
 )
 from netherbrain.agent_runtime.models.api import ConversationUpdate
-from netherbrain.agent_runtime.models.enums import SessionStatus, Transport
+from netherbrain.agent_runtime.models.enums import MailboxSourceType, SessionStatus, Transport
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 
 if TYPE_CHECKING:
@@ -102,6 +102,20 @@ class NoCommittedSessionError(LookupError):
 
     def __init__(self, conversation_id: str) -> None:
         super().__init__(f"No committed sessions in conversation '{conversation_id}'")
+
+
+class EmptyMailboxError(ValueError):
+    """No pending mailbox messages for the conversation."""
+
+    def __init__(self, conversation_id: str) -> None:
+        super().__init__(f"No pending mailbox messages for conversation '{conversation_id}'")
+
+
+class NoDefaultPresetError(ValueError):
+    """No preset_id provided and conversation has no default_preset_id."""
+
+    def __init__(self, conversation_id: str) -> None:
+        super().__init__(f"No preset_id provided and conversation '{conversation_id}' has no default_preset_id")
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +312,141 @@ class ExecutionManager:
 
         self._send_steering(active, text)
         return active.session_id
+
+    async def fire_conversation(
+        self,
+        db: AsyncSession,
+        *,
+        conversation_id: str,
+        preset_id: str | None = None,
+        input_parts: Sequence[InputPart] | None = None,
+        user_interactions: Sequence[UserInteraction] | None = None,
+        tool_results: Sequence[ToolResult] | None = None,
+        workspace_id: str | None = None,
+        project_ids: list[str] | None = None,
+        config_override: dict | None = None,
+        transport: Transport = Transport.STREAM,
+    ) -> LaunchResult:
+        """Drain mailbox and launch a continuation session.
+
+        Raises
+        ------
+        ConversationNotFoundError: Conversation not found.
+        ConversationBusyError: Active agent session exists.
+        EmptyMailboxError: No pending mailbox messages.
+        NoDefaultPresetError: No preset resolvable.
+        NoPresetError / WorkspaceNotFoundError / ProjectConflictError: Config errors.
+        ValueError: Stream transport requested without Redis.
+        """
+        from netherbrain.agent_runtime.db.tables import Session as SessionRow
+        from netherbrain.agent_runtime.execution.mailbox_prompt import (
+            MailboxMessageWithContent,
+            render_mailbox_prompt,
+        )
+        from netherbrain.agent_runtime.managers.mailbox import (
+            count_pending,
+            drain_undelivered,
+        )
+
+        # Validate conversation exists.
+        conv = await get_conversation(db, conversation_id)
+
+        # Check no active agent session.
+        active = self._registry.active_agent_session(conversation_id)
+        if active is not None:
+            raise ConversationBusyError(active)
+
+        # Check mailbox has pending messages.
+        pending = await count_pending(db, conversation_id=conversation_id)
+        if pending == 0:
+            raise EmptyMailboxError(conversation_id)
+
+        # Resolve preset: explicit > conversation default.
+        effective_preset_id = preset_id or conv.default_preset_id
+        if not effective_preset_id:
+            raise NoDefaultPresetError(conversation_id)
+
+        # Find parent session for continuation.
+        parent_session_id, parent_state, parent_project_ids = await self._find_parent(db, conversation_id)
+
+        # Resolve config.
+        config = await self._resolve_config(
+            db,
+            preset_id=effective_preset_id,
+            config_override=config_override,
+            workspace_id=workspace_id,
+            project_ids=project_ids,
+            parent_project_ids=parent_project_ids,
+        )
+
+        # Drain mailbox (atomic claim with temporary marker).
+        # We use a temporary ID; will update to real session ID after launch.
+        temp_claim = uuid.uuid4().hex
+        drained = await drain_undelivered(db, conversation_id=conversation_id, delivered_to=temp_claim)
+
+        if not drained:
+            raise EmptyMailboxError(conversation_id)
+
+        # Load final_message for each drained source session.
+        enriched: list[MailboxMessageWithContent] = []
+        for msg in drained:
+            source_row = await db.get(SessionRow, msg.source_session_id)
+            enriched.append(
+                MailboxMessageWithContent(
+                    message_id=msg.message_id,
+                    source_session_id=msg.source_session_id,
+                    source_type=MailboxSourceType(msg.source_type),
+                    subagent_name=msg.subagent_name,
+                    final_message=source_row.final_message if source_row else None,
+                )
+            )
+
+        # Build user text from input parts (if any).
+        user_text: str | None = None
+        if input_parts:
+            text_parts = [p.text for p in input_parts if p.text]
+            user_text = "\n".join(text_parts) if text_parts else None
+
+        # Render mailbox prompt.
+        mailbox_prompt = render_mailbox_prompt(enriched, user_input=user_text)
+
+        # Build input for continuation (mailbox prompt as text).
+        from netherbrain.agent_runtime.models.enums import InputPartType
+        from netherbrain.agent_runtime.models.input import InputPart as _InputPart
+
+        continuation_input = [_InputPart(type=InputPartType.TEXT, text=mailbox_prompt)]
+
+        # Launch continuation session.
+        result = await launch_session(
+            db=db,
+            session_factory=self._session_factory,
+            session_manager=self._session_manager,
+            registry=self._registry,
+            settings=self._settings,
+            redis=self._redis,
+            config=config,
+            input_parts=continuation_input,
+            transport=transport,
+            parent_session_id=parent_session_id,
+            parent_state=parent_state,
+            conversation_id=conversation_id,
+            user_interactions=user_interactions,
+            tool_results=tool_results,
+        )
+
+        # Update drained messages: delivered_to = real session ID.
+        from sqlalchemy import update
+
+        from netherbrain.agent_runtime.db.tables import MailboxMessage
+
+        await db.execute(
+            update(MailboxMessage)
+            .where(MailboxMessage.delivered_to == temp_claim)
+            .values(delivered_to=result.session_id)
+        )
+        await db.commit()
+
+        return result
 
     def get_active_session(self, conversation_id: str) -> RuntimeSession:
         """Get the active agent session for a conversation.

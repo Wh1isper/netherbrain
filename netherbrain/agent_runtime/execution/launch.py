@@ -80,6 +80,7 @@ async def launch_session(
     # Session classification
     session_type: SessionType = SessionType.AGENT,
     spawned_by: str | None = None,
+    subagent_name: str | None = None,
 ) -> LaunchResult:
     """Create a session, set up transport, and launch execution in background.
 
@@ -120,6 +121,8 @@ async def launch_session(
         Agent or async_subagent.
     spawned_by:
         For async subagents: the spawner session ID.
+    subagent_name:
+        For async subagents: the name from the parent's SubagentRef.
 
     Returns
     -------
@@ -171,6 +174,7 @@ async def launch_session(
             session_manager=session_manager,
             registry=registry,
             settings=settings,
+            redis=redis,
             config=config,
             input_parts=list(input_parts),
             session_id=session_id,
@@ -181,6 +185,7 @@ async def launch_session(
             user_interactions=list(user_interactions) if user_interactions else None,
             tool_results=list(tool_results) if tool_results else None,
             event_transport=event_transport,
+            subagent_name=subagent_name,
         ),
         name=f"execute-{session_id}",
     )
@@ -207,6 +212,7 @@ async def _run_execution(
     session_manager: SessionManager,
     registry: SessionRegistry,
     settings: NetherSettings,
+    redis: aioredis.Redis | None,
     config: ResolvedConfig,
     input_parts: list[InputPart],
     session_id: str,
@@ -217,6 +223,7 @@ async def _run_execution(
     user_interactions: list[UserInteraction] | None,
     tool_results: list[ToolResult] | None,
     event_transport: object,
+    subagent_name: str | None = None,
 ) -> None:
     """Background task wrapper for execute_session.
 
@@ -240,6 +247,9 @@ async def _run_execution(
                 user_interactions=user_interactions,
                 tool_results=tool_results,
                 event_transport=event_transport if isinstance(event_transport, EventTransport) else None,
+                subagent_name=subagent_name,
+                session_factory=session_factory,
+                redis=redis,
             )
             logger.info(
                 "Execution completed: session=%s status=%s",

@@ -48,6 +48,7 @@ netherbrain/
       workspaces.py    # Workspace CRUD functions
       conversations.py # Conversation CRUD functions
       sessions.py      # SessionManager class (create/commit/get/list, state store)
+      mailbox.py       # Mailbox CRUD (post, drain, query, count)
     routers/           # Thin HTTP adapters (parse params, call managers, translate errors)
       presets.py       # /api/presets/* endpoints
       workspaces.py    # /api/workspaces/* endpoints
@@ -65,6 +66,8 @@ netherbrain/
       events.py        # Internal pipeline events (PipelineStarted, etc.)
       hooks.py         # Stream hooks (UsageSnapshotEmitter for real-time usage tracking)
       coordinator.py   # Execution orchestration (setup -> run -> finalize pipeline)
+      delegate.py      # Async delegate tool (DelegateContext + tool factory)
+      mailbox_prompt.py # Mailbox message rendering for fire-continuation prompts
     streaming/         # Protocol adapters (internal -> external events)
       protocols/
         base.py        # ProtocolAdapter abstract interface
@@ -243,6 +246,14 @@ Chat-app style web interface served by the agent-runtime at root path (`/`).
 - **Responsive**: Desktop and mobile are both first-class.
 - **Tech stack**: Tailwind CSS + shadcn/ui + Zustand + react-markdown + Shiki.
 - **Two pages**: Chat (`/`, `/c/:id`) and Settings (`/settings`).
+
+## Observability
+
+- **Langfuse** integration for LLM tracing (generation spans, tool calls, cost tracking).
+- Configured via Langfuse's native env vars (`LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_HOST`), NOT `NETHER_*` prefixed.
+- Graceful degradation: when Langfuse is unavailable, all tracing becomes no-op.
+- `instrument.py` performs auth_check at import time; `costs/` provides per-model pricing tables.
+- SDK hooks (`model_wrapper`, `global_hooks`, `subagent_wrapper`) are injected via `create_agent` with `inherit_hooks=True`.
 
 ## CI/CD
 

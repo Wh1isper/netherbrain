@@ -74,6 +74,18 @@ Auto-generation behavior: if `AUTH_TOKEN` is not set or empty, the runtime gener
 | `GOOGLE_SEARCH_API_KEY` | Google search        |
 | `GOOGLE_SEARCH_CX`      | Google search engine |
 
+### Observability (Langfuse)
+
+Optional. Uses Langfuse's native env vars (not `NETHER_*` prefixed). Graceful degradation when unconfigured.
+
+| Variable                       | Required | Description                                     |
+| ------------------------------ | -------- | ----------------------------------------------- |
+| `LANGFUSE_SECRET_KEY`          | Yes      | Langfuse secret key                             |
+| `LANGFUSE_PUBLIC_KEY`          | Yes      | Langfuse public key                             |
+| `LANGFUSE_HOST`                | Yes      | Langfuse server URL                             |
+| `LANGFUSE_TRACING_ENVIRONMENT` | No       | Tracing environment tag (default: `dev`)        |
+| `OTEL_SERVICE_NAME`            | No       | Service name in traces (default: `netherbrain`) |
+
 ### Service Options
 
 | Variable     | Default     | Description    |

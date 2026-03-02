@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from netherbrain.agent_runtime.models.enums import (
     ConversationStatus,
+    MailboxSourceType,
     SessionStatus,
     SessionType,
     Transport,
@@ -153,6 +154,31 @@ class ConversationResponse(BaseModel):
     updated_at: datetime
 
 
+class LatestSessionInfo(BaseModel):
+    """Summary of the latest committed session in a conversation."""
+
+    session_id: str
+    status: SessionStatus
+    session_type: SessionType
+    project_ids: list[str]
+    preset_id: str | None = None
+    created_at: datetime
+
+
+class MailboxSummary(BaseModel):
+    """Mailbox summary for a conversation."""
+
+    pending_count: int
+
+
+class ConversationDetailResponse(ConversationResponse):
+    """Enriched conversation response with session and mailbox info."""
+
+    latest_session: LatestSessionInfo | None = None
+    active_session: ActiveSessionInfo | None = None
+    mailbox: MailboxSummary | None = None
+
+
 class ConversationUpdate(BaseModel):
     """Partial conversation update."""
 
@@ -251,6 +277,19 @@ class ConversationForkRequest(_ExecutionInputMixin):
     transport: Transport = Transport.SSE
 
 
+class ConversationFireRequest(_ExecutionInputMixin):
+    """Request body for POST /api/conversations/{id}/fire."""
+
+    preset_id: str | None = Field(
+        default=None,
+        description="Agent preset. Default: conversation's default_preset_id.",
+    )
+    workspace_id: str | None = None
+    project_ids: list[str] | None = None
+    config_override: dict | None = None
+    transport: Transport = Transport.STREAM
+
+
 class SteerRequest(BaseModel):
     """Request body for steering an active session."""
 
@@ -295,3 +334,17 @@ class ConversationBusyResponse(BaseModel):
 
     error: str = "conversation_busy"
     active_session: ActiveSessionInfo
+
+
+class MailboxMessageResponse(BaseModel):
+    """Serialized mailbox message returned to clients."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    message_id: str
+    conversation_id: str
+    source_session_id: str
+    source_type: MailboxSourceType
+    subagent_name: str
+    created_at: datetime
+    delivered_to: str | None = None

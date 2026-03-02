@@ -50,6 +50,9 @@ class RuntimeSession:
     """Live AgentStreamer handle.  Used for interrupt via ``streamer.interrupt()``."""
 
     # -- Async subagent tracking -----------------------------------------------
+    subagent_name: str | None = None
+    """For async_subagent sessions: the name from the parent's SubagentRef."""
+
     async_subagent_registry: dict[str, str] = field(default_factory=dict)
     """Map of subagent_name -> session_id for dispatched async subagents."""
 

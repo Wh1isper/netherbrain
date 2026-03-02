@@ -42,7 +42,7 @@ from netherbrain.agent_runtime.execution.hooks import UsageSnapshotEmitter
 from netherbrain.agent_runtime.execution.input import map_input_to_prompt
 from netherbrain.agent_runtime.execution.runtime import create_service_runtime
 from netherbrain.agent_runtime.instrument import agent_trace, pipeline_trace
-from netherbrain.agent_runtime.models.enums import SessionStatus, Transport
+from netherbrain.agent_runtime.models.enums import SessionStatus, SessionType, Transport
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 from netherbrain.agent_runtime.models.session import ModelUsageSummary, RunSummary, SessionState, UsageSummary
 from netherbrain.agent_runtime.streaming.compress import compress_display_messages
@@ -53,7 +53,8 @@ from netherbrain.agent_runtime.transport.base import EventTransport
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from sqlalchemy.ext.asyncio import AsyncSession
+    import redis.asyncio as aioredis
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
     from ya_agent_sdk.agents.main import AgentRuntime, AgentStreamer
     from ya_agent_sdk.context import ResumableState, StreamEvent
 
@@ -431,6 +432,57 @@ async def _deliver(
 
 
 # ---------------------------------------------------------------------------
+# Mailbox posting helper
+# ---------------------------------------------------------------------------
+
+
+async def _post_mailbox_if_subagent(
+    db: AsyncSession,
+    *,
+    subagent_name: str | None,
+    session_id: str,
+    conversation_id: str,
+    status: SessionStatus,
+) -> None:
+    """Post a mailbox message if this session is an async subagent.
+
+    Called after commit / fail / interrupt to notify the parent conversation.
+    """
+    if subagent_name is None:
+        return
+
+    from netherbrain.agent_runtime.managers.mailbox import post_message
+    from netherbrain.agent_runtime.models.enums import MailboxSourceType
+
+    source_type = (
+        MailboxSourceType.SUBAGENT_RESULT
+        if status in (SessionStatus.COMMITTED, SessionStatus.AWAITING_TOOL_RESULTS)
+        else MailboxSourceType.SUBAGENT_FAILED
+    )
+
+    try:
+        await post_message(
+            db,
+            conversation_id=conversation_id,
+            source_session_id=session_id,
+            source_type=source_type,
+            subagent_name=subagent_name,
+        )
+        logger.info(
+            "Mailbox posted: subagent=%s, session=%s, type=%s",
+            subagent_name,
+            session_id,
+            source_type,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to post mailbox message for subagent '%s' session %s",
+            subagent_name,
+            session_id,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main execution
 # ---------------------------------------------------------------------------
 
@@ -452,6 +504,9 @@ async def execute_session(  # noqa: C901
     tool_results: Sequence[ToolResult] | None = None,
     event_transport: EventTransport | None = None,
     protocol_adapter: ProtocolAdapter | None = None,
+    subagent_name: str | None = None,
+    session_factory: async_sessionmaker | None = None,
+    redis: aioredis.Redis | None = None,
 ) -> ExecutionResult:
     """Execute an agent session to completion.
 
@@ -493,6 +548,12 @@ async def execute_session(  # noqa: C901
     protocol_adapter:
         Protocol adapter for converting SDK events to protocol events.
         Defaults to ``AGUIProtocol`` if not provided.
+    subagent_name:
+        For async_subagent sessions: the name from the parent's SubagentRef.
+    session_factory:
+        DB session factory for background operations (async delegate tool).
+    redis:
+        Redis client for stream transport (async delegate tool).
 
     Returns
     -------
@@ -514,11 +575,36 @@ async def execute_session(  # noqa: C901
     resumable_state, resource_state = _restore_parent_state(parent_state)
 
     # -- Create runtime --------------------------------------------------------
+    # Build async delegate tool if subagents are configured.
+    extra_agent_tools = None
+    async_subagent_registry: dict[str, str] = {}
+
+    if config.subagents.async_enabled and config.subagents.refs and session_factory is not None:
+        from netherbrain.agent_runtime.execution.delegate import (
+            DelegateContext,
+            create_async_delegate_tool,
+        )
+
+        delegate_ctx = DelegateContext(
+            session_id=session_id,
+            conversation_id=conversation_id,
+            subagent_refs=config.subagents.refs,
+            async_subagent_registry=async_subagent_registry,
+            session_manager=session_manager,
+            registry=registry,
+            settings=settings,
+            session_factory=session_factory,
+            redis=redis,
+        )
+        delegate_tool = create_async_delegate_tool(delegate_ctx)
+        extra_agent_tools = [delegate_tool]
+
     runtime, paths = create_service_runtime(
         config,
         settings,
         state=resumable_state,
         resource_state=resource_state,
+        extra_agent_tools=extra_agent_tools,
     )
 
     # -- Map input -------------------------------------------------------------
@@ -541,7 +627,10 @@ async def execute_session(  # noqa: C901
         parent_session_id=parent_session_id,
         preset_id=config.preset_id,
         project_ids=config.project_ids,
+        session_type=SessionType.ASYNC_SUBAGENT if subagent_name else SessionType.AGENT,
         transport=transport,
+        subagent_name=subagent_name,
+        async_subagent_registry=async_subagent_registry,
         sdk_context=runtime.ctx,
         stream_key=stream_key,
     )
@@ -629,6 +718,15 @@ async def execute_session(  # noqa: C901
             status=status,
         )
 
+        # -- Post mailbox message if async subagent ----------------------------
+        await _post_mailbox_if_subagent(
+            db,
+            subagent_name=subagent_name,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            status=status,
+        )
+
         # -- Emit PipelineCompleted (flows through adapter.on_event) -----------
         if event_transport:
             completed = _wrap_pipeline_event(
@@ -669,7 +767,7 @@ async def execute_session(  # noqa: C901
             )
             await event_transport.close()
 
-        return await _handle_interrupt(
+        result = await _handle_interrupt(
             session_id,
             session_manager,
             db,
@@ -679,10 +777,30 @@ async def execute_session(  # noqa: C901
             adapter=adapter,
         )
 
+        # -- Post mailbox message if async subagent ----------------------------
+        await _post_mailbox_if_subagent(
+            db,
+            subagent_name=subagent_name,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            status=result.status,
+        )
+
+        return result
+
     except Exception:
         logger.exception("Session %s failed", session_id)
         duration_ms = int((time.monotonic() - start_time) * 1000)
         await session_manager.fail_session(db, session_id)
+
+        # -- Post mailbox message if async subagent ----------------------------
+        await _post_mailbox_if_subagent(
+            db,
+            subagent_name=subagent_name,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            status=SessionStatus.FAILED,
+        )
 
         # -- Emit run_error (failure) ------------------------------------------
         if event_transport:

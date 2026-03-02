@@ -113,12 +113,12 @@ In-process control via session registry.
 
 Async subagent orchestration.
 
-- [ ] `async_delegate` tool (check registry, self-call execute, update registry)
-- [ ] Mailbox: post `subagent_result` / `subagent_failed` on subagent terminal state
-- [ ] `POST /api/conversations/{id}/fire` (drain mailbox, render prompt, execute continuation)
-- [ ] `GET /api/conversations/{id}/mailbox` (query messages with delivery status)
-- [ ] Mailbox message rendering (single and multi-result templates)
-- [ ] Delivery tracking (`delivered_to` prevents duplicate delivery)
+- [x] `async_delegate` tool (check registry, self-call execute, update registry)
+- [x] Mailbox: post `subagent_result` / `subagent_failed` on subagent terminal state
+- [x] `POST /api/conversations/{id}/fire` (drain mailbox, render prompt, execute continuation)
+- [x] `GET /api/conversations/{id}/mailbox` (query messages with delivery status)
+- [x] Mailbox message rendering (single and multi-result templates)
+- [x] Delivery tracking (`delivered_to` prevents duplicate delivery)
 
 ## Phase 9: Authentication
 
@@ -153,4 +153,3 @@ Async subagent orchestration.
 ## In-Code TODOs
 
 - `app.py` -- Flush pending mailbox messages during shutdown
-- `runtime.py` -- Implement subagent config mapping (Phase 8)

@@ -188,14 +188,13 @@ def resolve_subagent_configs(
 ) -> list[Any]:
     """Map ``SubagentSpec`` to SDK ``SubagentConfig`` list.
 
-    Each ``SubagentRef`` in the spec becomes a SubagentConfig pointing
-    to a Netherbrain preset.  The actual agent creation is deferred to
-    the SDK's subagent infrastructure.
+    Synchronous (built-in) subagents are handled by the SDK's native
+    subagent infrastructure.  Async subagents are handled separately
+    via the ``async_delegate`` tool injected through ``extra_agent_tools``.
 
-    TODO: Implement once async subagent execution (Phase 8) is ready.
-    Currently returns an empty list.
+    Currently returns an empty list -- all subagent orchestration in
+    Netherbrain uses the async delegate pattern.
     """
-    # Phase 8: async_delegate + subagent refs -> SubagentConfig
     return []
 
 
@@ -257,6 +256,7 @@ def create_service_runtime(
     state: ResumableState | None = None,
     message_history: Sequence[ModelMessage] | None = None,
     resource_state: ResourceRegistryState | None = None,
+    extra_agent_tools: Sequence[Any] | None = None,
 ) -> tuple[AgentRuntime[AgentContext, str | DeferredToolRequests, Any], ProjectPaths]:
     """Create an SDK ``AgentRuntime`` from a fully resolved config.
 
@@ -282,6 +282,8 @@ def create_service_runtime(
         Optional conversation history for the agent.
     resource_state:
         Optional resource registry state to restore in the environment.
+    extra_agent_tools:
+        Optional pydantic-ai Tool instances to inject (e.g. async_delegate).
 
     Returns
     -------
@@ -334,6 +336,7 @@ def create_service_runtime(
         global_hooks=create_global_hooks(),
         subagent_wrapper=create_subagent_wrapper(),
         inherit_hooks=True,
+        agent_tools=list(extra_agent_tools) if extra_agent_tools else None,
     )
 
     logger.info(
