@@ -35,6 +35,7 @@ from netherbrain.agent_runtime.execution.environment import (
 )
 from netherbrain.agent_runtime.execution.prompt import render_system_prompt
 from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
+from netherbrain.agent_runtime.instrument import create_global_hooks, create_model_wrapper, create_subagent_wrapper
 from netherbrain.agent_runtime.models.preset import (
     McpServerSpec,
     McpTransport,
@@ -329,6 +330,10 @@ def create_service_runtime(
         subagent_configs=subagent_configs if subagent_configs else None,
         unified_subagents=True,
         agent_name="netherbrain",
+        model_wrapper=create_model_wrapper(),
+        global_hooks=create_global_hooks(),
+        subagent_wrapper=create_subagent_wrapper(),
+        inherit_hooks=True,
     )
 
     logger.info(

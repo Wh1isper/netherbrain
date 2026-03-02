@@ -41,6 +41,7 @@ from netherbrain.agent_runtime.execution.events import (
 from netherbrain.agent_runtime.execution.hooks import UsageSnapshotEmitter
 from netherbrain.agent_runtime.execution.input import map_input_to_prompt
 from netherbrain.agent_runtime.execution.runtime import create_service_runtime
+from netherbrain.agent_runtime.instrument import agent_trace, pipeline_trace
 from netherbrain.agent_runtime.models.enums import SessionStatus, Transport
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 from netherbrain.agent_runtime.models.session import ModelUsageSummary, RunSummary, SessionState, UsageSummary
@@ -569,15 +570,23 @@ async def execute_session(  # noqa: C901
             )
             await _deliver(adapter.on_event(started), event_transport)
 
-        async with stream_agent(
-            runtime,
-            user_prompt=user_prompt or None,
-            deferred_tool_results=deferred_results,
-            post_node_hook=usage_emitter.post_node_hook,
-        ) as streamer:
+        async with (
+            pipeline_trace(
+                session_id=session_id,
+                preset=config.preset_id or "default",
+                model=model_id,
+            ) as _trace,
+            agent_trace("main", model=model_id) as _agent_span,
+            stream_agent(
+                runtime,
+                user_prompt=user_prompt or None,
+                deferred_tool_results=deferred_results,
+                post_node_hook=usage_emitter.post_node_hook,
+            ) as streamer,
+        ):
             runtime_session.streamer = streamer
 
-            # -- Stream SDK events through protocol adapter --------------------
+            # -- Stream SDK events through protocol adapter ------------
             # UsageSnapshot events arrive here via output_queue injection.
             async for event in streamer:
                 if event_transport:

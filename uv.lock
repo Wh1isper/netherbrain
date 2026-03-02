@@ -215,6 +215,15 @@ wheels = [
 ]
 
 [[package]]
+name = "backoff"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/d7/5bbeb12c44d7c4f2fb5b56abce497eb5ed9f34d85701de869acedd602619/backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba", size = 17001, upload-time = "2022-10-05T19:19:32.061Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8", size = 15148, upload-time = "2022-10-05T19:19:30.546Z" },
+]
+
+[[package]]
 name = "beartype"
 version = "0.22.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1414,6 +1423,27 @@ wheels = [
 ]
 
 [[package]]
+name = "langfuse"
+version = "3.14.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "backoff" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ec/6b/7a945e8bc56cbf343b6f6171fd45870b0ea80ea38463b2db8dd5a9dc04a2/langfuse-3.14.5.tar.gz", hash = "sha256:2f543ec1540053d39b08a50ed5992caf1cd54d472a55cb8e5dcf6d4fcb7ff631", size = 235474, upload-time = "2026-02-23T10:42:47.721Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/a1/10f04224542d6a57073c4f339b6763836a0899c98966f1d4ffcf56d2cf61/langfuse-3.14.5-py3-none-any.whl", hash = "sha256:5054b1c705ec69bce2d7077ce7419727ac629159428da013790979ca9cae77d5", size = 421240, upload-time = "2026-02-23T10:42:46.085Z" },
+]
+
+[[package]]
 name = "logfire"
 version = "4.25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1854,6 +1884,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jinja2" },
+    { name = "langfuse" },
     { name = "loguru" },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "pydantic" },
@@ -1891,6 +1922,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.134.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "langfuse", specifier = ">=3.14.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.1" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -1902,7 +1934,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.52.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41.0" },
     { name = "y-agent-environment", specifier = ">=0.4.0" },
-    { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.27.0" },
+    { name = "ya-agent-sdk", extras = ["all"], specifier = ">=0.28.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -4018,7 +4050,7 @@ wheels = [
 
 [[package]]
 name = "y-agent-environment"
-version = "0.4.0"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -4026,14 +4058,14 @@ dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/62/77/90a031ba6afeb2436537687923fec247ac8d9bf49348511478fb593460d8/y_agent_environment-0.4.0.tar.gz", hash = "sha256:98180fb94a962f9ec8dcf2a775f15b0c14631389371ef1d72e84eef982b05c77", size = 78557, upload-time = "2026-02-14T11:36:00.292Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/39/575cc482e964c06f23eb3ffdf9a7341a369a1b46c364b4d0e40eaffb269a/y_agent_environment-0.4.1.tar.gz", hash = "sha256:45581fb0d39359523341b1f44ff1c549236ca4c227dba2f22c63070cc295ed8c", size = 78607, upload-time = "2026-03-02T13:06:36.098Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/ff/26da55cb64ca14ab4d278bc68f1f7c7767ab2de1d62bf94c4bc84bf55a98/y_agent_environment-0.4.0-py3-none-any.whl", hash = "sha256:677a4b1bc68d5fa877a3c5d757f6b251cb65cf39023dc8e69c729a403b610ce5", size = 24538, upload-time = "2026-02-14T11:35:59.306Z" },
+    { url = "https://files.pythonhosted.org/packages/73/c8/d0e1097e16562e2595e9f8d3bdffbd357c210f194821cb4a804f48c1cc4e/y_agent_environment-0.4.1-py3-none-any.whl", hash = "sha256:7955d4c9f6e9c21fc2a2be1bacc37a0228b771398d06839c9e838d7b24bcccab", size = 24625, upload-time = "2026-03-02T13:06:34.569Z" },
 ]
 
 [[package]]
 name = "ya-agent-sdk"
-version = "0.27.0"
+version = "0.28.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -4050,9 +4082,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "y-agent-environment" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/54/258673680b61ab6980c6617d5c87eeb6962779cfd370e490e6d08978f518/ya_agent_sdk-0.27.0.tar.gz", hash = "sha256:1bb737224bfe421a6c89687a47ec8c5999232f99dc304e5042b108a3d80501a3", size = 744329, upload-time = "2026-03-02T07:14:12.947Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/72/65d94686bbea16bde5ef2c7eee233930e96ee2e68b98dd4304f475fd62ca/ya_agent_sdk-0.28.0.tar.gz", hash = "sha256:d78f8e845bb768ca7e2c9c48979118c95f296e79f9de15e803e0280ec44ac5a2", size = 745870, upload-time = "2026-03-02T13:14:43.23Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1c/6d/1a16388fa436f42813a29baa61fc89540c7e29451b851f6e25d7578df13c/ya_agent_sdk-0.27.0-py3-none-any.whl", hash = "sha256:157574ba5c606bcc172c77b26ac485be95b8636292e62fd665b9162e5eff245e", size = 251924, upload-time = "2026-03-02T07:14:11.406Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/d2/c3059216b9093708178fef36039db65cb7ef6f824f8958b7f18037b1f617/ya_agent_sdk-0.28.0-py3-none-any.whl", hash = "sha256:d752660704d01e28601f17c669b3baa7b8a16d31bba7f843a727e3c6dcf5abb1", size = 252730, upload-time = "2026-03-02T13:14:41.931Z" },
 ]
 
 [package.optional-dependencies]
