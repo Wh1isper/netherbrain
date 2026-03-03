@@ -49,6 +49,7 @@ netherbrain/
       conversations.py # Conversation CRUD functions
       sessions.py      # SessionManager class (create/commit/get/list, state store)
       mailbox.py       # Mailbox CRUD (post, drain, query, count)
+      seed.py          # Seed data loader (TOML -> upsert presets/workspaces)
     routers/           # Thin HTTP adapters (parse params, call managers, translate errors)
       presets.py       # /api/presets/* endpoints
       workspaces.py    # /api/workspaces/* endpoints
@@ -259,3 +260,13 @@ Chat-app style web interface served by the agent-runtime at root path (`/`).
 
 - Push to main: quality checks, tests, then build and push `dev` image
 - Release: publish to PyPI, build and push tagged + `latest` image
+
+## Seed Data
+
+Presets and workspaces can be pre-seeded from a TOML file (`seed.toml`).
+
+- **On startup**: Set `NETHER_SEED_FILE=seed.toml` to auto-apply on every boot.
+- **Manual CLI**: `netherbrain db seed [file]` (default: `seed.toml`).
+- **Upsert semantics**: Creates if missing, updates if existing. Removing entries from the file does NOT delete them from the database.
+- **`preset_id` and `workspace_id` are required** in seed entries (no auto-generation).
+- The seed file format mirrors the `PresetCreate` / `WorkspaceCreate` API schemas in TOML.

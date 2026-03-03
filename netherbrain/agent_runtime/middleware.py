@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -41,8 +43,12 @@ class BearerAuthMiddleware:
         try:
             expected_token: str | None = scope["app"].state.auth_token
         except (KeyError, AttributeError):
-            # Lifespan hasn't run or token not configured -- skip auth.
-            await self.app(scope, receive, send)
+            # Lifespan hasn't run or state misconfigured -- fail closed.
+            response = JSONResponse(
+                status_code=503,
+                content={"detail": "Auth not initialized."},
+            )
+            await response(scope, receive, send)
             return
 
         if expected_token is None:
@@ -60,7 +66,7 @@ class BearerAuthMiddleware:
             await response(scope, receive, send)
             return
 
-        if token != expected_token:
+        if not hmac.compare_digest(token, expected_token):
             response = JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid authentication token."},

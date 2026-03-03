@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -38,6 +38,14 @@ Base.metadata.naming_convention = {
 
 class Preset(Base):
     __tablename__ = "presets"
+    __table_args__ = (
+        Index(
+            "ix_presets_is_default",
+            "is_default",
+            unique=True,
+            postgresql_where=text("is_default = true"),
+        ),
+    )
 
     preset_id: Mapped[str] = mapped_column(primary_key=True)
     name: Mapped[str]

@@ -10,6 +10,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from netherbrain.agent_runtime.db.tables import Workspace
@@ -28,10 +29,6 @@ async def create_workspace(db: AsyncSession, body: WorkspaceCreate) -> Workspace
     """Create a new workspace.  Raises ``DuplicateWorkspaceError`` if ID exists."""
     workspace_id = body.workspace_id or str(uuid.uuid4())
 
-    existing = await db.get(Workspace, workspace_id)
-    if existing is not None:
-        raise DuplicateWorkspaceError(workspace_id)
-
     workspace = Workspace(
         workspace_id=workspace_id,
         name=body.name,
@@ -39,7 +36,11 @@ async def create_workspace(db: AsyncSession, body: WorkspaceCreate) -> Workspace
         metadata_=body.metadata,
     )
     db.add(workspace)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise DuplicateWorkspaceError(workspace_id) from None
     await db.refresh(workspace)
     return workspace
 

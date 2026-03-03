@@ -124,10 +124,26 @@ Async subagent orchestration.
 
 - [x] Auth middleware: validate `Authorization: Bearer {token}` on all endpoints except health
 - [x] Skip auth for `GET /api/health`
+- [x] Auth middleware: fail-closed when app state unavailable (503)
+- [x] Auth middleware: constant-time token comparison (hmac.compare_digest)
 
 ## Phase 10: Health Endpoint Enhancement
 
 - [x] Enrich health response with PG and Redis connectivity status
+
+## Phase 10.5: Hardening and Seed Data
+
+- [x] Path traversal protection in file input handling (containment check)
+- [x] Path traversal protection in SPA fallback file serving
+- [x] Mailbox claim rollback on launch failure (fire_conversation)
+- [x] Router layering fix: move DB query from sessions router to manager
+- [x] Partial unique index on presets.is_default (DB migration)
+- [x] Race-safe preset/workspace creation (catch IntegrityError)
+- [x] Fix get_session_status return type annotation
+- [x] Harden base64 input decoding (validate=True)
+- [x] Seed data: TOML-based preseed for presets and workspaces
+- [x] Seed data: `netherbrain db seed <file>` CLI command
+- [x] Seed data: auto-apply on startup via NETHER_SEED_FILE setting
 
 ## Phase 11: Web UI
 
@@ -153,3 +169,14 @@ Async subagent orchestration.
 ## In-Code TODOs
 
 - `app.py` -- Flush pending mailbox messages during shutdown
+
+## Completed Fixes (from code review)
+
+- Auth middleware fail-closed, constant-time compare
+- Path traversal in input.py and SPA fallback
+- Mailbox claim rollback on launch failure
+- Router DB query moved to manager (sessions status)
+- Partial unique index on presets.is_default
+- Race-safe create for presets and workspaces
+- get_session_status return type fixed
+- base64 decode validation

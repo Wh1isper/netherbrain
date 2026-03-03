@@ -10,7 +10,6 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
-from netherbrain.agent_runtime.db.tables import Session as SessionRow
 from netherbrain.agent_runtime.deps import DbSession, ExecutionMgr, SessionMgr
 from netherbrain.agent_runtime.execution.resolver import (
     NoPresetError,
@@ -30,7 +29,7 @@ from netherbrain.agent_runtime.models.api import (
     SessionStatusResponse,
     SteerRequest,
 )
-from netherbrain.agent_runtime.models.enums import SessionStatus, Transport
+from netherbrain.agent_runtime.models.enums import Transport
 from netherbrain.agent_runtime.transport.bridge import StreamGoneError, bridge_stream_to_sse
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -111,20 +110,12 @@ async def handle_get_session(
 @router.get("/{session_id}/status", response_model=SessionStatusResponse)
 async def handle_get_session_status(session_id: str, db: DbSession, execution: ExecutionMgr) -> SessionStatusResponse:
     """Check session execution status. Registry first, then PG fallback."""
-    live_status = execution.get_session_status(session_id)
-    if live_status is not None:
-        s, transport, stream_key = live_status
-        return SessionStatusResponse(session_id=session_id, status=s, transport=transport, stream_key=stream_key)
+    try:
+        s, transport, stream_key = await execution.get_session_status_full(session_id, db)
+    except LookupError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.") from None
 
-    row = await db.get(SessionRow, session_id)
-    if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.")
-
-    return SessionStatusResponse(
-        session_id=session_id,
-        status=SessionStatus(row.status),
-        transport=Transport(row.transport),
-    )
+    return SessionStatusResponse(session_id=session_id, status=s, transport=transport, stream_key=stream_key)
 
 
 # ---------------------------------------------------------------------------

@@ -120,5 +120,59 @@ def history() -> None:
     command.history(_alembic_config(), verbose=True)
 
 
+@db.command()
+@click.argument("file", default="seed.toml")
+def seed(file: str) -> None:
+    """Seed presets and workspaces from a TOML file.
+
+    Upserts entities: creates if missing, updates if existing.
+    Default file: seed.toml in the current directory.
+    """
+    import asyncio
+
+    from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
+    from netherbrain.agent_runtime.managers.seed import apply_seed, load_seed_file
+    from netherbrain.agent_runtime.settings import NetherSettings
+
+    settings = NetherSettings()
+
+    if not settings.database_url:
+        click.echo("Error: NETHER_DATABASE_URL is required.", err=True)
+        raise SystemExit(1)
+
+    try:
+        data = load_seed_file(file)
+    except FileNotFoundError:
+        click.echo(f"Error: seed file not found: {file}", err=True)
+        raise SystemExit(1) from None
+    except Exception as exc:
+        click.echo(f"Error: failed to parse seed file: {exc}", err=True)
+        raise SystemExit(1) from None
+
+    async def _run() -> None:
+        engine = create_engine(settings.database_url)  # type: ignore[arg-type]
+        factory = create_session_factory(engine)
+        try:
+            async with factory() as db:
+                result = await apply_seed(db, data)
+        finally:
+            await engine.dispose()
+
+        if result.presets_created or result.presets_updated:
+            click.echo(f"Presets: {result.presets_created} created, {result.presets_updated} updated")
+        if result.workspaces_created or result.workspaces_updated:
+            click.echo(f"Workspaces: {result.workspaces_created} created, {result.workspaces_updated} updated")
+        if result.errors:
+            for err in result.errors:
+                click.echo(f"  Error: {err}", err=True)
+            raise SystemExit(1)
+        if result.total == 0:
+            click.echo("No changes (seed file may be empty).")
+        else:
+            click.echo("Seed complete.")
+
+    asyncio.run(_run())
+
+
 if __name__ == "__main__":
     main()

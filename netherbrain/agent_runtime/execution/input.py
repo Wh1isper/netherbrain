@@ -44,6 +44,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _assert_path_contained(clean_path: str, paths: ProjectPaths) -> None:
+    """Verify that a cleaned relative path stays within the project root.
+
+    Raises ``ValueError`` if path traversal (e.g., ``../``) escapes the root.
+    """
+    default_real = paths.default_real_path
+    if default_real is None:
+        return  # No project root to check against
+
+    root = default_real.resolve()
+    real_target = (root / clean_path).resolve()
+    if real_target != root and root not in real_target.parents:
+        msg = f"Path escapes project root: {clean_path}"
+        raise ValueError(msg)
+
+
 # ---------------------------------------------------------------------------
 # MIME classification
 # ---------------------------------------------------------------------------
@@ -196,6 +212,8 @@ def _resolve_file_path(path: str, paths: ProjectPaths) -> str:
 
     The input ``path`` is relative to the default project.
     Returns the virtual path string.
+
+    Raises ``ValueError`` if the resolved path escapes the project root.
     """
     default_virtual = paths.default_virtual_path
     if default_virtual is None:
@@ -204,6 +222,10 @@ def _resolve_file_path(path: str, paths: ProjectPaths) -> str:
 
     # Normalize: strip leading slash or "./", treat as relative
     clean = path.lstrip("/").lstrip("./")
+
+    # Containment check: ensure resolved path stays within project root.
+    _assert_path_contained(clean, paths)
+
     return str(default_virtual / clean)
 
 
@@ -343,6 +365,10 @@ def _map_file_inline(
     if default_real is None:
         msg = "Cannot read file without a project directory"
         raise ValueError(msg)
+
+    # Containment check: ensure resolved path stays within project root.
+    _assert_path_contained(clean, paths)
+
     real_file = default_real / clean
     if not real_file.exists():
         msg = f"File not found: {file_path}"
@@ -357,7 +383,7 @@ def _map_binary_part(
     paths: ProjectPaths | None,
 ) -> UserContent | str:
     """Map a binary InputPart to either inline content or a file reference."""
-    raw = base64.b64decode(part.data or "")
+    raw = base64.b64decode(part.data or "", validate=True)
     mime = part.mime or "application/octet-stream"
     if part.mode == ContentMode.INLINE:
         return _bytes_to_inline_content(raw, mime)

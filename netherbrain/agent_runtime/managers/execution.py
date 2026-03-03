@@ -417,28 +417,38 @@ class ExecutionManager:
         continuation_input = [_InputPart(type=InputPartType.TEXT, text=mailbox_prompt)]
 
         # Launch continuation session.
-        result = await launch_session(
-            db=db,
-            session_factory=self._session_factory,
-            session_manager=self._session_manager,
-            registry=self._registry,
-            settings=self._settings,
-            redis=self._redis,
-            config=config,
-            input_parts=continuation_input,
-            transport=transport,
-            parent_session_id=parent_session_id,
-            parent_state=parent_state,
-            conversation_id=conversation_id,
-            user_interactions=user_interactions,
-            tool_results=tool_results,
-        )
-
-        # Update drained messages: delivered_to = real session ID.
+        # If launch fails, revert the mailbox claim so messages can be
+        # re-delivered on the next fire attempt.
         from sqlalchemy import update
 
         from netherbrain.agent_runtime.db.tables import MailboxMessage
 
+        try:
+            result = await launch_session(
+                db=db,
+                session_factory=self._session_factory,
+                session_manager=self._session_manager,
+                registry=self._registry,
+                settings=self._settings,
+                redis=self._redis,
+                config=config,
+                input_parts=continuation_input,
+                transport=transport,
+                parent_session_id=parent_session_id,
+                parent_state=parent_state,
+                conversation_id=conversation_id,
+                user_interactions=user_interactions,
+                tool_results=tool_results,
+            )
+        except Exception:
+            # Revert claim: set delivered_to back to NULL.
+            await db.execute(
+                update(MailboxMessage).where(MailboxMessage.delivered_to == temp_claim).values(delivered_to=None)
+            )
+            await db.commit()
+            raise
+
+        # Update drained messages: delivered_to = real session ID.
         await db.execute(
             update(MailboxMessage)
             .where(MailboxMessage.delivered_to == temp_claim)
@@ -559,7 +569,7 @@ class ExecutionManager:
 
         self._send_steering(live, text)
 
-    def get_session_status(self, session_id: str) -> tuple[SessionStatus, Transport | None, str | None]:
+    def get_session_status(self, session_id: str) -> tuple[SessionStatus, Transport | None, str | None] | None:
         """Check live session status from registry.
 
         Returns (status, transport, stream_key) if found in registry,
@@ -567,8 +577,26 @@ class ExecutionManager:
         """
         live = self._registry.get(session_id)
         if live is None:
-            return None  # type: ignore[return-value]
+            return None
         return SessionStatus.CREATED, live.transport, live.stream_key
+
+    async def get_session_status_full(
+        self, session_id: str, db: AsyncSession
+    ) -> tuple[SessionStatus, Transport | None, str | None]:
+        """Get session status: registry first, PG fallback.
+
+        Raises ``LookupError`` if session not found anywhere.
+        """
+        live = self.get_session_status(session_id)
+        if live is not None:
+            return live
+
+        from netherbrain.agent_runtime.db.tables import Session as SessionRow
+
+        row = await db.get(SessionRow, session_id)
+        if row is None:
+            raise LookupError(session_id)
+        return SessionStatus(row.status), Transport(row.transport), None
 
     # -- Internal helpers ------------------------------------------------------
 

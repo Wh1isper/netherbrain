@@ -129,6 +129,10 @@ db-current: ## Show current database revision
 db-history: ## Show migration history
 	@uv run netherbrain db history
 
+.PHONY: db-seed
+db-seed: ## Seed presets and workspaces from seed.toml
+	@uv run netherbrain db seed
+
 .PHONY: db-migrate
 db-migrate: ## Generate a migration using temporary DB (MSG required)
 	@bash db-migrate.sh "$(MSG)"

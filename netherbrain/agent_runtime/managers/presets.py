@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from netherbrain.agent_runtime.db.tables import Preset
@@ -44,17 +45,17 @@ async def create_preset(db: AsyncSession, body: PresetCreate) -> Preset:
     """
     preset_id = body.preset_id or str(uuid.uuid4())
 
-    existing = await db.get(Preset, preset_id)
-    if existing is not None:
-        raise DuplicatePresetError(preset_id)
-
     if body.is_default:
         await _unset_all_defaults(db)
 
     row_data = _to_row_kwargs(body.model_dump(exclude={"preset_id"}))
     preset = Preset(preset_id=preset_id, **row_data)
     db.add(preset)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise DuplicatePresetError(preset_id) from None
     await db.refresh(preset)
     return preset
 

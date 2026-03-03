@@ -26,6 +26,34 @@ from netherbrain.agent_runtime.store.local import LocalStateStore
 registry = SessionRegistry()
 
 
+async def _apply_seed_file(seed_file: str | None, session_factory) -> None:
+    """Load and apply a seed TOML file.  Logs results; never raises."""
+    if not seed_file:
+        return
+    from netherbrain.agent_runtime.managers.seed import apply_seed, load_seed_file
+
+    try:
+        seed_data = load_seed_file(seed_file)
+        async with session_factory() as db:
+            result = await apply_seed(db, seed_data)
+            if result.total > 0:
+                logger.info(
+                    "Seed: {} presets ({} new, {} updated), {} workspaces ({} new, {} updated)",
+                    result.presets_created + result.presets_updated,
+                    result.presets_created,
+                    result.presets_updated,
+                    result.workspaces_created + result.workspaces_updated,
+                    result.workspaces_created,
+                    result.workspaces_updated,
+                )
+            if result.errors:
+                logger.warning("Seed: {} errors during seeding", len(result.errors))
+    except FileNotFoundError:
+        logger.warning("Seed file not found: {}", seed_file)
+    except Exception as exc:
+        logger.error("Seed: failed to load seed file: {}", exc)
+
+
 def _create_state_store(settings: NetherSettings) -> StateStore:
     """Create the state store backend based on configuration."""
     if settings.state_store == "s3":
@@ -122,6 +150,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             recovered = await SessionManager.recover_orphaned_sessions(db)
             if recovered > 0:
                 logger.info("Startup recovery: {} orphaned sessions marked as failed", recovered)
+
+        # Seed data: load presets and workspaces from TOML file.
+        await _apply_seed_file(settings.seed_file, _app.state.db_session_factory)
 
     yield
 
@@ -225,10 +256,12 @@ _UI_DIR = Path(os.getenv("NETHER_UI_DIR", "ui/dist"))
 if _UI_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=_UI_DIR / "assets"), name="ui-assets")
 
+    _ui_root = _UI_DIR.resolve()
+
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> FileResponse:
         """Serve the SPA index.html for all unmatched routes (client-side routing)."""
-        file_path = _UI_DIR / full_path
-        if file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(_UI_DIR / "index.html")
+        target = (_ui_root / full_path).resolve()
+        if _ui_root in target.parents and target.is_file():
+            return FileResponse(target)
+        return FileResponse(_ui_root / "index.html")

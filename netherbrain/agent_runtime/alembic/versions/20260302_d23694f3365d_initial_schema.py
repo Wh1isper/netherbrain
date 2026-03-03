@@ -50,6 +50,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("preset_id", name=op.f("pk_presets")),
     )
+    op.create_index(
+        "ix_presets_is_default", "presets", ["is_default"], unique=True, postgresql_where=sa.text("is_default = true")
+    )
     op.create_table(
         "workspaces",
         sa.Column("workspace_id", sa.String(), nullable=False),
@@ -111,6 +114,7 @@ def downgrade() -> None:
     op.drop_index("ix_sessions_conversation_id", table_name="sessions")
     op.drop_table("sessions")
     op.drop_table("workspaces")
+    op.drop_index("ix_presets_is_default", table_name="presets", postgresql_where=sa.text("is_default = true"))
     op.drop_table("presets")
     op.drop_table("conversations")
     # ### end Alembic commands ###

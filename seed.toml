@@ -1,0 +1,58 @@
+# Netherbrain Seed Data
+#
+# Declarative configuration for presets and workspaces.
+# Applied on startup (NETHER_SEED_FILE) or manually (netherbrain db seed).
+#
+# Upsert semantics: creates if missing, updates if existing.
+# Removing an entry does NOT delete it from the database.
+
+# -- Presets ------------------------------------------------------------------
+
+[[presets]]
+preset_id = "coding-agent"
+name = "Coding Agent"
+description = "General-purpose coding assistant with full tool access."
+is_default = true
+system_prompt = """
+You are a skilled software engineer working in a shared project directory.
+You can read, edit, and create files, run shell commands, and search the web.
+Be concise and direct. Write clean, well-tested code.
+"""
+
+[presets.model]
+name = "anthropic:claude-sonnet-4-20250514"
+
+[[presets.toolsets]]
+toolset_name = "core"
+enabled = true
+
+[[presets.toolsets]]
+toolset_name = "shell"
+enabled = true
+
+[[presets.toolsets]]
+toolset_name = "web"
+enabled = true
+
+[[presets.toolsets]]
+toolset_name = "filesystem"
+enabled = true
+
+[[presets]]
+preset_id = "chat-only"
+name = "Chat Only"
+description = "Pure conversation mode without tools or file access."
+system_prompt = "You are a helpful assistant."
+
+[presets.model]
+name = "anthropic:claude-sonnet-4-20250514"
+
+# -- Workspaces ---------------------------------------------------------------
+
+[[workspaces]]
+workspace_id = "default"
+name = "Default"
+projects = ["default"]
+
+[workspaces.metadata]
+source = "seed"
