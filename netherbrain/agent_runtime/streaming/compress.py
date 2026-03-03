@@ -2,8 +2,10 @@
 
 Collapses streaming triplets (Start + Content* + End) into single chunk
 events that capture the full content.  Atomic events (ToolCallResult,
-CustomEvent) are kept as-is.  Lifecycle events (RunStarted, RunFinished,
-etc.) are dropped since they can be derived from the session index.
+CustomEvent) are kept as-is.  Cumulative snapshot events (e.g.
+usage_snapshot) are deduplicated -- only the last occurrence is kept.
+Lifecycle events (RunStarted, RunFinished, etc.) are dropped since they
+can be derived from the session index.
 
 The output is a list of serialised AG-UI event dicts (camelCase keys),
 suitable for writing to ``display_messages.json`` in the state store.
@@ -37,10 +39,14 @@ from ag_ui.core import (
     ToolCallStartEvent,
 )
 
+from netherbrain.agent_runtime.models.events import ExtensionEvent
 from netherbrain.agent_runtime.store.base import DisplayMessages
 
 # Event types to drop entirely (derivable from session index).
 _DROP_TYPES = (RunStartedEvent, RunFinishedEvent, RunErrorEvent)
+
+# CustomEvent names that are cumulative snapshots -- only the last one is kept.
+_SNAPSHOT_NAMES = frozenset({ExtensionEvent.USAGE_SNAPSHOT})
 
 
 def compress_display_messages(buffer: list[BaseEvent]) -> DisplayMessages:
@@ -62,6 +68,7 @@ class _Compressor:
         self._text: _TextAcc | None = None
         self._tools: dict[str, _ToolAcc] = {}
         self._reasoning: _ReasoningAcc | None = None
+        self._snapshots: dict[str, BaseEvent] = {}  # name -> last event
 
     def process(self, event: BaseEvent) -> None:
         """Process a single event."""
@@ -83,12 +90,19 @@ class _Compressor:
             ),
         ):
             self._handle_reasoning(event)
-        elif isinstance(event, (ToolCallResultEvent, CustomEvent)):
+        elif isinstance(event, ToolCallResultEvent):
             self._result.append(event)
+        elif isinstance(event, CustomEvent):
+            if event.name in _SNAPSHOT_NAMES:
+                self._snapshots[event.name] = event
+            else:
+                self._result.append(event)
 
     def finish(self) -> DisplayMessages:
         """Flush unclosed accumulators and serialise to dicts."""
         self._flush_unclosed()
+        # Append retained snapshots (only the last of each kind).
+        self._result.extend(self._snapshots.values())
         return [json.loads(evt.model_dump_json(by_alias=True, exclude_none=True)) for evt in self._result]
 
     # -- Text handlers ---------------------------------------------------------

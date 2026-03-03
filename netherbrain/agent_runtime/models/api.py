@@ -348,3 +348,24 @@ class MailboxMessageResponse(BaseModel):
     subagent_name: str
     created_at: datetime
     delivered_to: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Toolsets (capability discovery)
+# ---------------------------------------------------------------------------
+
+
+class ToolsetInfo(BaseModel):
+    """Describes a single available toolset and its constituent tools."""
+
+    name: str
+    """Canonical toolset name used in ToolsetSpec.toolset_name."""
+
+    description: str
+    """Human-readable description of what this toolset provides."""
+
+    tools: list[str]
+    """Names of individual tools included in this toolset."""
+
+    is_alias: bool = False
+    """True for 'core', which expands to all built-in toolsets."""

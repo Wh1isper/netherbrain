@@ -9,43 +9,30 @@
 # -- Presets ------------------------------------------------------------------
 
 [[presets]]
-preset_id = "coding-agent"
-name = "Coding Agent"
-description = "General-purpose coding assistant with full tool access."
+preset_id = "general-agent"
+name = "General Agent"
+description = "Full-featured agent with access to all tools."
 is_default = true
 system_prompt = """
-You are a skilled software engineer working in a shared project directory.
-You can read, edit, and create files, run shell commands, and search the web.
-Be concise and direct. Write clean, well-tested code.
+You are a skilled assistant with access to files, shell, web, and more.
+Be concise and direct. Write clean, well-tested code when coding.
 """
 
 [presets.model]
-name = "anthropic:claude-sonnet-4-20250514"
+name = "homelab@anthropic:anth-subs/claude-sonnet-4-6"
 
 [[presets.toolsets]]
 toolset_name = "core"
 enabled = true
 
-[[presets.toolsets]]
-toolset_name = "shell"
-enabled = true
-
-[[presets.toolsets]]
-toolset_name = "web"
-enabled = true
-
-[[presets.toolsets]]
-toolset_name = "filesystem"
-enabled = true
-
 [[presets]]
 preset_id = "chat-only"
 name = "Chat Only"
-description = "Pure conversation mode without tools or file access."
+description = "Pure conversation mode without any tools."
 system_prompt = "You are a helpful assistant."
 
 [presets.model]
-name = "anthropic:claude-sonnet-4-20250514"
+name = "homelab@anthropic:anth-subs/claude-sonnet-4-6"
 
 # -- Workspaces ---------------------------------------------------------------
 

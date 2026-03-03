@@ -112,16 +112,35 @@ def test_compress_reasoning() -> None:
 
 
 def test_compress_custom_event_kept() -> None:
-    """CustomEvent is atomic and should be kept as-is."""
+    """Non-snapshot CustomEvent is atomic and should be kept as-is."""
     buffer = [
-        CustomEvent(name="usage_snapshot", value={"tokens": 100}),
+        CustomEvent(name="some_custom", value={"key": "val"}),
     ]
 
     result = compress_display_messages(buffer)
 
     assert len(result) == 1
-    assert result[0]["name"] == "usage_snapshot"
-    assert result[0]["value"] == {"tokens": 100}
+    assert result[0]["name"] == "some_custom"
+    assert result[0]["value"] == {"key": "val"}
+
+
+def test_compress_usage_snapshot_keeps_last_only() -> None:
+    """Multiple usage_snapshot events should be deduplicated to the last one."""
+    buffer = [
+        TextMessageStartEvent(message_id="m1", role="assistant"),
+        TextMessageContentEvent(message_id="m1", delta="Hello!"),
+        TextMessageEndEvent(message_id="m1"),
+        CustomEvent(name="usage_snapshot", value={"total_tokens": 100}),
+        CustomEvent(name="usage_snapshot", value={"total_tokens": 200}),
+        CustomEvent(name="usage_snapshot", value={"total_tokens": 372}),
+    ]
+
+    result = compress_display_messages(buffer)
+
+    assert len(result) == 2
+    assert result[0]["type"] == "TEXT_MESSAGE_CHUNK"
+    assert result[1]["name"] == "usage_snapshot"
+    assert result[1]["value"] == {"total_tokens": 372}
 
 
 def test_compress_lifecycle_events_dropped() -> None:

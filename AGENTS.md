@@ -55,6 +55,7 @@ netherbrain/
       workspaces.py    # /api/workspaces/* endpoints
       conversations.py # /api/conversations/* endpoints
       sessions.py      # /api/sessions/* endpoints
+      toolsets.py      # GET /api/toolsets (capability discovery, no DB)
     store/             # State store for session persistence (large blobs)
       base.py          # StateStore async Protocol
       local.py         # Local filesystem implementation (atomic writes)
@@ -171,6 +172,7 @@ Key rules:
 - Use `get_settings()` (cached via `lru_cache`) instead of instantiating `NetherSettings()` directly.
 - Do NOT create `NetherSettings()` at module level in app code -- it prevents test env var overrides.
 - CLI commands (`cli.py`) and Alembic `env.py` may create `NetherSettings()` directly since they run in isolated contexts.
+- `extra="ignore"` is set on `NetherSettings` so non-`NETHER_*` env vars (e.g. `HOMELAB_*`, `ANTHROPIC_API_KEY`) in `.env` are silently ignored.
 
 ## Database
 

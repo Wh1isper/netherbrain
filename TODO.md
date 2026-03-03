@@ -144,17 +144,46 @@ Async subagent orchestration.
 - [x] Seed data: TOML-based preseed for presets and workspaces
 - [x] Seed data: `netherbrain db seed <file>` CLI command
 - [x] Seed data: auto-apply on startup via NETHER_SEED_FILE setting
+- [x] settings.py: add `extra="ignore"` so non-`NETHER_*` env vars in `.env` are silently ignored
+- [x] Toolset capability discovery: `GET /api/toolsets` endpoint (returns available toolsets + tools, no DB)
+- [x] Toolset tests: 6 integration tests covering schema, registry completeness, core alias, auth
 
 ## Phase 11: Web UI
 
-- [ ] Admin: preset list page
-- [ ] Admin: preset create/edit form
-- [ ] Admin: preset delete with confirmation
-- [ ] Chat: conversation list
-- [ ] Chat: create new conversation
-- [ ] Chat: message input and send
-- [ ] Chat: SSE streaming response display
-- [ ] Chat: interrupt / steer controls
+### Foundation (done)
+
+- [x] Tech stack: Tailwind CSS v4 + shadcn/ui + Zustand + react-markdown + Shiki + lucide-react
+- [x] shadcn/ui components: button, input, textarea, dropdown-menu, scroll-area, separator, tabs, badge, dialog, tooltip, sheet, skeleton, select, label
+- [x] API client: `client.ts` (auth token, error handling), `types.ts` (TypeScript interfaces matching backend)
+- [x] API modules: `workspaces.ts`, `conversations.ts`, `presets.ts` (includes `listToolsets`)
+- [x] Zustand store: auth token, theme (dark/light), current workspace, conversation list, sidebar state
+- [x] App shell: auth gate (token input) + sidebar + main content + routing
+- [x] Routing: `/` `/c/:id` → Chat, `/settings` → Settings
+- [x] Sidebar: workspace selector dropdown, conversation list, theme toggle, settings nav, collapse/expand
+- [x] Default workspace: auto-create `webui-default` on first launch
+
+### Settings page
+
+- [x] Settings: preset list (name, model badge, default indicator)
+- [x] Settings: preset create/edit form (model, system prompt, toolset checklist from `/api/toolsets`, subagents)
+- [x] Settings: preset delete with confirmation dialog
+- [x] Settings: preset clone action
+- [x] Settings: workspace list (name, folders, default badge, filtered to `source: "webui"`)
+- [x] Settings: workspace create/edit form (name, folder list add/remove)
+- [x] Settings: workspace delete with confirmation (block default workspace delete)
+
+### Chat page
+
+- [ ] Chat: load and display conversation history (`GET /conversations/{id}/turns`)
+- [ ] Chat: message input (auto-resize textarea, Enter to send, Shift+Enter newline)
+- [ ] Chat: send message (`POST /conversations/run`) with SSE stream consumption
+- [ ] Chat: streaming text rendering (incremental, auto-scroll)
+- [ ] Chat: Markdown rendering with Shiki code highlight and copy button
+- [ ] Chat: tool call collapsible cards (collapsed: name + summary; expanded: args + output)
+- [ ] Chat: thinking/reasoning section (collapsed by default)
+- [ ] Chat: streaming state controls (Stop button → interrupt, Send while streaming → steer)
+- [ ] Chat: conversation header (editable title, preset badge)
+- [ ] Chat: SSE reconnect on drop (check status, reattach or reload turns)
 
 ## Phase 12: IM Gateway
 

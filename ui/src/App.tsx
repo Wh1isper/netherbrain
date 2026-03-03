@@ -1,30 +1,109 @@
-import { Routes, Route, NavLink } from "react-router-dom";
-import Chat from "./pages/Chat";
-import Config from "./pages/Config";
+import { useEffect, useState } from "react";
+import { Routes, Route } from "react-router-dom";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import Sidebar from "@/components/layout/Sidebar";
+import Chat from "@/pages/Chat";
+import Settings from "@/pages/Settings";
+import { useAppStore } from "@/stores/app";
+import { setAuthToken } from "@/api/client";
 
-export default function App() {
+// -- Auth gate ---------------------------------------------------------------
+
+function AuthGate({ onAuth }: { onAuth: (token: string) => void }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!value.trim()) return;
+    try {
+      setAuthToken(value.trim());
+      const res = await fetch("/api/health");
+      if (res.status === 401 || res.status === 403) {
+        setError("Invalid token. Please try again.");
+        setAuthToken(null);
+        return;
+      }
+      onAuth(value.trim());
+    } catch {
+      setError("Could not reach the server.");
+    }
+  };
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <nav
-        style={{
-          display: "flex",
-          gap: "1rem",
-          padding: "0.75rem 1.5rem",
-          borderBottom: "1px solid var(--color-border)",
-          backgroundColor: "var(--color-surface)",
-        }}
-      >
-        <strong style={{ marginRight: "auto" }}>Netherbrain</strong>
-        <NavLink to="/">Chat</NavLink>
-        <NavLink to="/config">Config</NavLink>
-      </nav>
+    <div className="flex h-full items-center justify-center bg-background">
+      <div className="w-full max-w-sm space-y-6 p-8 rounded-lg border border-border bg-card shadow-sm">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-foreground">Netherbrain</h1>
+          <p className="text-sm text-muted-foreground">Enter your API token to continue.</p>
+        </div>
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
+          <Input
+            type="password"
+            placeholder="Bearer token"
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setError("");
+            }}
+            autoFocus
+          />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <Button type="submit" className="w-full" disabled={!value.trim()}>
+            Sign in
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
-      <main style={{ flex: 1, overflow: "auto" }}>
+// -- App shell ---------------------------------------------------------------
+
+function AppShell() {
+  return (
+    <div className="flex h-full overflow-hidden">
+      <Sidebar />
+      <main className="flex-1 overflow-hidden">
         <Routes>
           <Route path="/" element={<Chat />} />
-          <Route path="/config" element={<Config />} />
+          <Route path="/c/:id" element={<Chat />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </div>
+  );
+}
+
+// -- Root --------------------------------------------------------------------
+
+export default function App() {
+  const { theme, authToken, setAuthToken: storeSetAuthToken } = useAppStore();
+
+  // Sync theme to <html> class
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+  }, [theme]);
+
+  // Sync persisted token into API client on mount
+  useEffect(() => {
+    if (authToken) {
+      setAuthToken(authToken);
+    }
+  }, [authToken]);
+
+  const handleAuth = (token: string) => {
+    storeSetAuthToken(token);
+  };
+
+  return (
+    <TooltipProvider>{authToken ? <AppShell /> : <AuthGate onAuth={handleAuth} />}</TooltipProvider>
   );
 }
