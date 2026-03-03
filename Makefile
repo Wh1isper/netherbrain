@@ -154,8 +154,11 @@ infra-status: ## Show dev infrastructure status
 	@bash dev/dev-setup.sh status
 
 .PHONY: infra-reset
-infra-reset: ## Stop dev infrastructure and remove all data
+infra-reset: ## Reset infra, recreate schema, and seed data
 	@bash dev/dev-setup.sh reset
+	@bash dev/dev-setup.sh up
+	@uv run netherbrain db upgrade
+	@$(MAKE) seeddata
 
 # =============================================================================
 # Help
