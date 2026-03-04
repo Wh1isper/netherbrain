@@ -1,9 +1,9 @@
-"""Seed data loader -- upserts presets and workspaces from a TOML file.
+"""Config importer -- upserts presets and workspaces from a TOML file.
 
 Reads a declarative TOML file and synchronises its contents into PostgreSQL
 using upsert semantics: create if missing, update if exists.
 
-The seed file is the "source of truth" for the entities it declares.
+The import file is the "source of truth" for the entities it declares.
 Entities removed from the file are NOT deleted from the database.
 """
 
@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SeedResult:
-    """Summary of a seed operation."""
+class ImportResult:
+    """Summary of an import operation."""
 
     presets_created: int = 0
     presets_updated: int = 0
@@ -38,26 +38,26 @@ class SeedResult:
         return self.presets_created + self.presets_updated + self.workspaces_created + self.workspaces_updated
 
 
-def load_seed_file(path: str | Path) -> dict:
-    """Parse a seed TOML file and return raw data.
+def load_import_file(path: str | Path) -> dict:
+    """Parse a TOML import file and return raw data.
 
     Raises ``FileNotFoundError`` if the file does not exist.
     Raises ``tomllib.TOMLDecodeError`` on invalid TOML.
     """
     p = Path(path)
     if not p.is_file():
-        msg = f"Seed file not found: {p}"
+        msg = f"Import file not found: {p}"
         raise FileNotFoundError(msg)
     with p.open("rb") as f:
         return tomllib.load(f)
 
 
-async def apply_seed(db: AsyncSession, data: dict) -> SeedResult:
-    """Apply parsed seed data to the database.
+async def apply_import(db: AsyncSession, data: dict) -> ImportResult:
+    """Apply parsed import data to the database.
 
     Upserts presets and workspaces. Returns a summary of changes.
     """
-    result = SeedResult()
+    result = ImportResult()
 
     # -- Presets ----------------------------------------------------------------
     for raw_preset in data.get("presets", []):
@@ -66,7 +66,7 @@ async def apply_seed(db: AsyncSession, data: dict) -> SeedResult:
         except Exception as exc:
             pid = raw_preset.get("preset_id", "<unknown>")
             result.errors.append(f"preset '{pid}': {exc}")
-            logger.warning("Seed: failed to upsert preset '%s': %s", pid, exc)
+            logger.warning("Import: failed to upsert preset '%s': %s", pid, exc)
 
     # -- Workspaces ------------------------------------------------------------
     for raw_workspace in data.get("workspaces", []):
@@ -75,7 +75,7 @@ async def apply_seed(db: AsyncSession, data: dict) -> SeedResult:
         except Exception as exc:
             wid = raw_workspace.get("workspace_id", "<unknown>")
             result.errors.append(f"workspace '{wid}': {exc}")
-            logger.warning("Seed: failed to upsert workspace '%s': %s", wid, exc)
+            logger.warning("Import: failed to upsert workspace '%s': %s", wid, exc)
 
     # -- Single commit for all changes -----------------------------------------
     if result.total > 0:
@@ -84,13 +84,13 @@ async def apply_seed(db: AsyncSession, data: dict) -> SeedResult:
     return result
 
 
-async def _upsert_preset(db: AsyncSession, raw: dict, result: SeedResult) -> None:
-    """Create or update a single preset from seed data."""
+async def _upsert_preset(db: AsyncSession, raw: dict, result: ImportResult) -> None:
+    """Create or update a single preset from import data."""
     # Validate through Pydantic (reuses API schema for consistency).
     body = PresetCreate(**raw)
     preset_id = body.preset_id
     if not preset_id:
-        msg = "preset_id is required in seed file"
+        msg = "preset_id is required in import file"
         raise ValueError(msg)
 
     existing = await db.get(Preset, preset_id)
@@ -105,21 +105,21 @@ async def _upsert_preset(db: AsyncSession, raw: dict, result: SeedResult) -> Non
         preset = Preset(preset_id=preset_id, **row_data)
         db.add(preset)
         result.presets_created += 1
-        logger.info("Seed: created preset '%s'", preset_id)
+        logger.info("Import: created preset '%s'", preset_id)
     else:
         # Update.
         for key, value in row_data.items():
             setattr(existing, key, value)
         result.presets_updated += 1
-        logger.info("Seed: updated preset '%s'", preset_id)
+        logger.info("Import: updated preset '%s'", preset_id)
 
 
-async def _upsert_workspace(db: AsyncSession, raw: dict, result: SeedResult) -> None:
-    """Create or update a single workspace from seed data."""
+async def _upsert_workspace(db: AsyncSession, raw: dict, result: ImportResult) -> None:
+    """Create or update a single workspace from import data."""
     body = WorkspaceCreate(**raw)
     workspace_id = body.workspace_id
     if not workspace_id:
-        msg = "workspace_id is required in seed file"
+        msg = "workspace_id is required in import file"
         raise ValueError(msg)
 
     existing = await db.get(Workspace, workspace_id)
@@ -134,7 +134,7 @@ async def _upsert_workspace(db: AsyncSession, raw: dict, result: SeedResult) -> 
         )
         db.add(workspace)
         result.workspaces_created += 1
-        logger.info("Seed: created workspace '%s'", workspace_id)
+        logger.info("Import: created workspace '%s'", workspace_id)
     else:
         # Update.
         if body.name is not None:
@@ -143,4 +143,4 @@ async def _upsert_workspace(db: AsyncSession, raw: dict, result: SeedResult) -> 
         if body.metadata is not None:
             existing.metadata_ = body.metadata
         result.workspaces_updated += 1
-        logger.info("Seed: updated workspace '%s'", workspace_id)
+        logger.info("Import: updated workspace '%s'", workspace_id)

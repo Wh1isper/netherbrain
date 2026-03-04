@@ -8,7 +8,7 @@ def main() -> None:
 
 @main.command()
 @click.option("--host", default=None, help="Bind host (default: from NETHER_HOST or 0.0.0.0).")
-@click.option("--port", default=None, type=int, help="Bind port (default: from NETHER_PORT or 8000).")
+@click.option("--port", default=None, type=int, help="Bind port (default: from NETHER_PORT or 9001).")
 @click.option("--reload", is_flag=True, default=False, help="Enable auto-reload for development.")
 def agent(host: str | None, port: int | None, reload: bool) -> None:
     """Start the Agent Runtime server."""
@@ -32,7 +32,7 @@ def agent(host: str | None, port: int | None, reload: bool) -> None:
 
 
 @main.command()
-@click.option("--runtime-url", default="http://localhost:8000", help="Agent Runtime service URL.")
+@click.option("--runtime-url", default="http://localhost:9001", help="Agent Runtime service URL.")
 def gateway(runtime_url: str) -> None:
     """Start the IM Gateway."""
     import asyncio
@@ -120,18 +120,17 @@ def history() -> None:
     command.history(_alembic_config(), verbose=True)
 
 
-@db.command()
-@click.argument("file", default="seed.toml")
-def seed(file: str) -> None:
-    """Seed presets and workspaces from a TOML file.
+@db.command(name="import")
+@click.argument("file")
+def import_(file: str) -> None:
+    """Import presets and workspaces from a TOML file.
 
     Upserts entities: creates if missing, updates if existing.
-    Default file: seed.toml in the current directory.
     """
     import asyncio
 
     from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
-    from netherbrain.agent_runtime.managers.seed import apply_seed, load_seed_file
+    from netherbrain.agent_runtime.managers.importer import apply_import, load_import_file
     from netherbrain.agent_runtime.settings import NetherSettings
 
     settings = NetherSettings()
@@ -141,12 +140,12 @@ def seed(file: str) -> None:
         raise SystemExit(1)
 
     try:
-        data = load_seed_file(file)
+        data = load_import_file(file)
     except FileNotFoundError:
-        click.echo(f"Error: seed file not found: {file}", err=True)
+        click.echo(f"Error: import file not found: {file}", err=True)
         raise SystemExit(1) from None
     except Exception as exc:
-        click.echo(f"Error: failed to parse seed file: {exc}", err=True)
+        click.echo(f"Error: failed to parse import file: {exc}", err=True)
         raise SystemExit(1) from None
 
     async def _run() -> None:
@@ -154,7 +153,7 @@ def seed(file: str) -> None:
         factory = create_session_factory(engine)
         try:
             async with factory() as db:
-                result = await apply_seed(db, data)
+                result = await apply_import(db, data)
         finally:
             await engine.dispose()
 
@@ -167,9 +166,9 @@ def seed(file: str) -> None:
                 click.echo(f"  Error: {err}", err=True)
             raise SystemExit(1)
         if result.total == 0:
-            click.echo("No changes (seed file may be empty).")
+            click.echo("No changes (import file may be empty).")
         else:
-            click.echo("Seed complete.")
+            click.echo("Import complete.")
 
     asyncio.run(_run())
 

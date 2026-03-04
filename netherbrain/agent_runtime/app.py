@@ -15,7 +15,6 @@ from sse_starlette.sse import AppStatus
 from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
 from netherbrain.agent_runtime.log import setup_logging
 from netherbrain.agent_runtime.managers.execution import ExecutionManager
-from netherbrain.agent_runtime.managers.seed import apply_seed, load_seed_file
 from netherbrain.agent_runtime.managers.sessions import SessionManager
 from netherbrain.agent_runtime.middleware import BearerAuthMiddleware
 from netherbrain.agent_runtime.registry import SessionRegistry
@@ -27,32 +26,6 @@ from netherbrain.agent_runtime.store.local import LocalStateStore
 # Shared singletons initialised during lifespan
 # ---------------------------------------------------------------------------
 registry = SessionRegistry()
-
-
-async def _apply_seed_file(seed_file: str | None, session_factory) -> None:
-    """Load and apply a seed TOML file.  Logs results; never raises."""
-    if not seed_file:
-        return
-    try:
-        seed_data = load_seed_file(seed_file)
-        async with session_factory() as db:
-            result = await apply_seed(db, seed_data)
-            if result.total > 0:
-                logger.info(
-                    "Seed: {} presets ({} new, {} updated), {} workspaces ({} new, {} updated)",
-                    result.presets_created + result.presets_updated,
-                    result.presets_created,
-                    result.presets_updated,
-                    result.workspaces_created + result.workspaces_updated,
-                    result.workspaces_created,
-                    result.workspaces_updated,
-                )
-            if result.errors:
-                logger.warning("Seed: {} errors during seeding", len(result.errors))
-    except FileNotFoundError:
-        logger.warning("Seed file not found: {}", seed_file)
-    except Exception as exc:
-        logger.error("Seed: failed to load seed file: {}", exc)
 
 
 def _create_state_store(settings: NetherSettings) -> StateStore:
@@ -149,9 +122,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             recovered = await SessionManager.recover_orphaned_sessions(db)
             if recovered > 0:
                 logger.info("Startup recovery: {} orphaned sessions marked as failed", recovered)
-
-        # Seed data: load presets and workspaces from TOML file.
-        await _apply_seed_file(settings.seed_file, _app.state.db_session_factory)
 
     yield
 

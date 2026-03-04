@@ -73,7 +73,7 @@ docker run -d \
 docker logs netherbrain | grep "generated token"
 ```
 
-Open `http://localhost:8000` for the web UI.
+Open `http://localhost:9001` for the web UI.
 
 ### From Source
 

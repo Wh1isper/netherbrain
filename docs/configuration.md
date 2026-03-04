@@ -74,20 +74,12 @@ ______________________________________________________________________
 | Variable                           | Required | Default   | Description                                         |
 | ---------------------------------- | -------- | --------- | --------------------------------------------------- |
 | `NETHER_HOST`                      | No       | `0.0.0.0` | Listen address                                      |
-| `NETHER_PORT`                      | No       | `8000`    | Listen port                                         |
+| `NETHER_PORT`                      | No       | `9001`    | Listen port                                         |
 | `NETHER_GRACEFUL_SHUTDOWN_TIMEOUT` | No       | `7200`    | Seconds to wait for active sessions during shutdown |
 
 The graceful shutdown timeout matches the maximum expected session duration (2 hours). During shutdown, the service drains active SSE connections and waits for running sessions to complete before exiting.
 
 ______________________________________________________________________
-
-## Seed Data
-
-| Variable           | Required | Default | Description                                       |
-| ------------------ | -------- | ------- | ------------------------------------------------- |
-| `NETHER_SEED_FILE` | No       | -       | Path to a TOML seed file applied on every startup |
-
-When set, the seed file is applied on startup with upsert semantics. See [Presets and Workspaces](./presets.md#seed-file) for the file format.
 
 ______________________________________________________________________
 
@@ -148,7 +140,7 @@ The IM Gateway has its own configuration, separate from the agent-runtime.
 
 | Variable             | Required | Description                                            |
 | -------------------- | -------- | ------------------------------------------------------ |
-| `RUNTIME_URL`        | Yes      | Agent runtime base URL (e.g., `http://localhost:8000`) |
+| `RUNTIME_URL`        | Yes      | Agent runtime base URL (e.g., `http://localhost:9001`) |
 | `RUNTIME_AUTH_TOKEN` | Yes      | Bearer token matching `NETHER_AUTH_TOKEN`              |
 | `DISCORD_BOT_TOKEN`  | Yes\*    | Discord bot token (\* required for Discord)            |
 | `DEFAULT_PRESET_ID`  | No       | Fallback agent preset when none is set                 |
@@ -183,6 +175,4 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com
 
-# Seed presets on startup
-NETHER_SEED_FILE=/etc/netherbrain/seed.toml
 ```

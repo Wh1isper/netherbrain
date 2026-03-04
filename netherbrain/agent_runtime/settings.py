@@ -64,13 +64,9 @@ class NetherSettings(BaseSettings):
     auth_token: str | None = None
     """Bearer token for API access.  Auto-generated at startup if empty."""
 
-    # -- Seed data -------------------------------------------------------------
-    seed_file: str | None = None
-    """Path to a TOML file for pre-seeding presets and workspaces on startup."""
-
     # -- Server ----------------------------------------------------------------
     host: str = "0.0.0.0"  # noqa: S104
-    port: int = 8000
+    port: int = 9001
     graceful_shutdown_timeout: int = 7200
     """Seconds to wait for active sessions to finish during shutdown.
 

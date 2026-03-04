@@ -11,7 +11,7 @@ check: check-server check-ui ## Run all quality checks (server + UI)
 .PHONY: dev
 dev: ## Run agent-runtime and UI dev server concurrently
 	@echo "Starting agent-runtime and UI dev server..."
-	@echo "Agent Runtime: http://localhost:8000"
+	@echo "Agent Runtime: http://localhost:9001"
 	@echo "UI Dev Server: http://localhost:5173"
 	@trap 'kill 0' EXIT; \
 		$(MAKE) run-agent & \
@@ -129,9 +129,9 @@ db-current: ## Show current database revision
 db-history: ## Show migration history
 	@uv run netherbrain db history
 
-.PHONY: db-seed
-db-seed: ## Seed presets and workspaces from seed.toml
-	@uv run netherbrain db seed
+.PHONY: db-import
+db-import: ## Import presets and workspaces from presets.toml
+	@uv run netherbrain db import presets.toml
 
 .PHONY: db-migrate
 db-migrate: ## Generate a migration using temporary DB (MSG required)
@@ -154,11 +154,11 @@ infra-status: ## Show dev infrastructure status
 	@bash dev/dev-setup.sh status
 
 .PHONY: infra-reset
-infra-reset: ## Reset infra, recreate schema, and seed data
+infra-reset: ## Reset infra, recreate schema, and import presets
 	@bash dev/dev-setup.sh reset
 	@bash dev/dev-setup.sh up
 	@uv run netherbrain db upgrade
-	@$(MAKE) seeddata
+	@$(MAKE) db-import
 
 # =============================================================================
 # Help

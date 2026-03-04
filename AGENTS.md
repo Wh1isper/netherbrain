@@ -49,7 +49,7 @@ netherbrain/
       conversations.py # Conversation CRUD functions
       sessions.py      # SessionManager class (create/commit/get/list, state store)
       mailbox.py       # Mailbox CRUD (post, drain, query, count)
-      seed.py          # Seed data loader (TOML -> upsert presets/workspaces)
+      importer.py      # Config importer (TOML -> upsert presets/workspaces)
     routers/           # Thin HTTP adapters (parse params, call managers, translate errors)
       presets.py       # /api/presets/* endpoints
       workspaces.py    # /api/workspaces/* endpoints
@@ -135,13 +135,14 @@ Key rules:
 
 ## CLI Commands
 
-- `netherbrain agent` - Start the agent runtime server (default: 0.0.0.0:8000)
+- `netherbrain agent` - Start the agent runtime server (default: 0.0.0.0:9001)
 - `netherbrain gateway` - Start the IM gateway (connects to agent-runtime)
 - `netherbrain db upgrade` - Run database migrations to latest
 - `netherbrain db downgrade` - Roll back database by one migration
 - `netherbrain db migrate <message>` - Autogenerate a migration from model changes
 - `netherbrain db current` - Show current database revision
 - `netherbrain db history` - Show migration history
+- `netherbrain db import` - Import presets and workspaces from a TOML file
 
 ## Dev Commands (Makefile)
 
@@ -164,7 +165,7 @@ Key rules:
 - `make infra-up` - Start dev PostgreSQL and Redis
 - `make infra-down` - Stop dev infrastructure (data preserved)
 - `make infra-status` - Show dev infrastructure status
-- `make infra-reset` - Stop and wipe dev infrastructure data
+- `make infra-reset` - Reset dev infrastructure (wipe data, recreate schema, import presets)
 
 ## Settings
 
@@ -263,12 +264,11 @@ Chat-app style web interface served by the agent-runtime at root path (`/`).
 - Push to main: quality checks, tests, then build and push `dev` image
 - Release: publish to PyPI, build and push tagged + `latest` image
 
-## Seed Data
+## Data Import
 
-Presets and workspaces can be pre-seeded from a TOML file (`seed.toml`).
+Presets and workspaces can be imported from a TOML file (`presets.toml`).
 
-- **On startup**: Set `NETHER_SEED_FILE=seed.toml` to auto-apply on every boot.
-- **Manual CLI**: `netherbrain db seed [file]` (default: `seed.toml`).
-- **Upsert semantics**: Creates if missing, updates if existing. Removing entries from the file does NOT delete them from the database.
-- **`preset_id` and `workspace_id` are required** in seed entries (no auto-generation).
-- The seed file format mirrors the `PresetCreate` / `WorkspaceCreate` API schemas in TOML.
+- **CLI only**: `netherbrain db import <file>`. Upsert semantics: creates if missing, updates if existing.
+- Removing entries from the file does NOT delete them from the database.
+- **`preset_id` and `workspace_id` are required** in entries (no auto-generation).
+- The file format mirrors the `PresetCreate` / `WorkspaceCreate` API schemas in TOML.

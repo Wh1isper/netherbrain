@@ -71,7 +71,7 @@ If `NETHER_AUTH_TOKEN` is not set, a token is generated and logged at startup.
 docker logs netherbrain | grep "generated token"
 ```
 
-The web UI is available at `http://localhost:8000`.
+The web UI is available at `http://localhost:9001`.
 
 ### 3. Run the gateway (optional)
 
@@ -80,7 +80,7 @@ To connect a Discord bot:
 ```bash
 docker run -d \
   --name netherbrain-gateway \
-  -e RUNTIME_URL="http://localhost:8000" \
+  -e RUNTIME_URL="http://localhost:9001" \
   -e RUNTIME_AUTH_TOKEN="<token-from-above>" \
   -e DISCORD_BOT_TOKEN="<your-discord-bot-token>" \
   --network host \
@@ -136,7 +136,7 @@ make run-agent
 make dev
 ```
 
-The service starts on `http://localhost:8000`. The auth token is logged at startup if not configured.
+The service starts on `http://localhost:9001`. The auth token is logged at startup if not configured.
 
 ______________________________________________________________________
 
@@ -144,7 +144,7 @@ ______________________________________________________________________
 
 ### Access the web UI
 
-Open `http://localhost:8000` in your browser. The web UI is currently a placeholder; full chat and configuration interfaces are under development. Use the API directly in the meantime.
+Open `http://localhost:9001` in your browser. The web UI is currently a placeholder; full chat and configuration interfaces are under development. Use the API directly in the meantime.
 
 ### Make your first API call
 
@@ -152,7 +152,7 @@ Open `http://localhost:8000` in your browser. The web UI is currently a placehol
 TOKEN="<your-auth-token>"
 
 # Start a new conversation
-curl -X POST http://localhost:8000/api/conversations/run \
+curl -X POST http://localhost:9001/api/conversations/run \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
@@ -165,7 +165,7 @@ curl -X POST http://localhost:8000/api/conversations/run \
 If no presets exist yet, create one first:
 
 ```bash
-curl -X POST http://localhost:8000/api/presets/create \
+curl -X POST http://localhost:9001/api/presets/create \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -178,12 +178,12 @@ curl -X POST http://localhost:8000/api/presets/create \
   }'
 ```
 
-Or use a [seed file](./presets.md#seed-file) to pre-configure presets on startup.
+Or use an [import file](./presets.md#import-file) to pre-configure presets via `netherbrain db import`.
 
 ### Check service health
 
 ```bash
-curl http://localhost:8000/api/health
+curl http://localhost:9001/api/health
 ```
 
 ______________________________________________________________________

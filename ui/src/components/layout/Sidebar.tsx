@@ -82,7 +82,9 @@ export default function Sidebar() {
     try {
       const { defaultWs, all } = await ensureDefaultWorkspace();
       setWorkspaces(all);
-      if (!currentWorkspaceIdRef.current) {
+      // Auto-select default workspace if none selected or stale ID not in list
+      const current = currentWorkspaceIdRef.current;
+      if (!current || !all.some((w) => w.workspace_id === current)) {
         setCurrentWorkspace(defaultWs.workspace_id);
       }
     } catch (err) {

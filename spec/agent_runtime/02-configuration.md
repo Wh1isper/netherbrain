@@ -92,7 +92,7 @@ Optional. Uses Langfuse's native env vars (not `NETHER_*` prefixed). Graceful de
 | ------------ | ----------- | -------------- |
 | `AUTH_TOKEN` | (generated) | API auth token |
 | `HOST`       | `0.0.0.0`   | Listen address |
-| `PORT`       | `8000`      | Listen port    |
+| `PORT`       | `9001`      | Listen port    |
 
 ## Agent Preset (Database)
 

@@ -1,7 +1,7 @@
-# Netherbrain Seed Data
+# Netherbrain Presets and Workspaces
 #
 # Declarative configuration for presets and workspaces.
-# Applied on startup (NETHER_SEED_FILE) or manually (netherbrain db seed).
+# Import via CLI: netherbrain db import presets.toml
 #
 # Upsert semantics: creates if missing, updates if existing.
 # Removing an entry does NOT delete it from the database.
@@ -140,7 +140,7 @@ If no major issue is found, state residual risks and missing tests.
 """
 
 [presets.model]
-name = "gateway@anthropic:claude-sonnet-4-6"
+name = "gateway@anthropic:claude-opus-4-6"
 
 [[presets.toolsets]]
 toolset_name = "core"
@@ -161,7 +161,7 @@ Avoid speculative conclusions; show reasoning from observed facts.
 """
 
 [presets.model]
-name = "gateway@anthropic:claude-sonnet-4-6"
+name = "gateway@anthropic:claude-opus-4-6"
 
 [[presets.toolsets]]
 toolset_name = "core"
@@ -181,7 +181,7 @@ Escalate only when blocked by missing context, permissions, or conflicting const
 """
 
 [presets.model]
-name = "gateway@anthropic:claude-sonnet-4-6"
+name = "gateway@anthropic:claude-opus-4-6"
 
 [[presets.toolsets]]
 toolset_name = "core"
@@ -226,9 +226,10 @@ enabled = true
 # -- Workspaces ---------------------------------------------------------------
 
 [[workspaces]]
-workspace_id = "default"
+workspace_id = "webui-default"
 name = "Default"
-projects = ["default"]
+projects = ["webui"]
 
 [workspaces.metadata]
-source = "seed"
+source = "webui"
+default = true

@@ -19,7 +19,7 @@ ______________________________________________________________________
 ### Create a preset
 
 ```bash
-curl -X POST http://localhost:8000/api/presets/create \
+curl -X POST http://localhost:9001/api/presets/create \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -38,7 +38,7 @@ curl -X POST http://localhost:8000/api/presets/create \
 ### List presets
 
 ```bash
-curl http://localhost:8000/api/presets/list \
+curl http://localhost:9001/api/presets/list \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -47,7 +47,7 @@ curl http://localhost:8000/api/presets/list \
 Only the fields you provide are updated (partial update).
 
 ```bash
-curl -X POST http://localhost:8000/api/presets/coding-agent/update \
+curl -X POST http://localhost:9001/api/presets/coding-agent/update \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"system_prompt": "You are an expert Python engineer."}'
@@ -56,7 +56,7 @@ curl -X POST http://localhost:8000/api/presets/coding-agent/update \
 ### Delete a preset
 
 ```bash
-curl -X POST http://localhost:8000/api/presets/coding-agent/delete \
+curl -X POST http://localhost:9001/api/presets/coding-agent/delete \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -258,7 +258,7 @@ A workspace saves a list of project directories under a reusable name.
 ### Create a workspace
 
 ```bash
-curl -X POST http://localhost:8000/api/workspaces/create \
+curl -X POST http://localhost:9001/api/workspaces/create \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -271,7 +271,7 @@ curl -X POST http://localhost:8000/api/workspaces/create \
 ### Use a workspace in a conversation
 
 ```bash
-curl -X POST http://localhost:8000/api/conversations/run \
+curl -X POST http://localhost:9001/api/conversations/run \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -285,13 +285,11 @@ The first project in the list becomes the agent's default working directory. Add
 
 ______________________________________________________________________
 
-## Seed File
+## Import File
 
 Pre-configure presets and workspaces declaratively from a TOML file.
 
-**On startup**: Set `NETHER_SEED_FILE=/path/to/seed.toml` to apply on every boot.
-
-**Manual**: Run `netherbrain db seed [file]` (default: `seed.toml`).
+**CLI**: Run `netherbrain db import <file>` (e.g. `netherbrain db import presets.toml`).
 
 **Semantics**: Creates entries if missing, updates if existing. Removing an entry from the file does **not** delete it from the database.
 
@@ -337,4 +335,4 @@ projects = ["my-project"]
 source = "seed"
 ```
 
-The seed file format mirrors the `PresetCreate` and `WorkspaceCreate` API schemas. All preset and workspace fields are supported.
+The import file format mirrors the `PresetCreate` and `WorkspaceCreate` API schemas. All preset and workspace fields are supported.
