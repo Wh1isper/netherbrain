@@ -1,8 +1,11 @@
 /**
- * Base API client with auth token support.
+ * Base API client with JWT auth support and global 401 handling.
  */
 
 let authToken: string | null = null;
+
+/** Callback invoked on any 401 response (triggers logout). */
+let onUnauthorized: (() => void) | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -10,6 +13,10 @@ export function setAuthToken(token: string | null) {
 
 export function getAuthToken(): string | null {
   return authToken;
+}
+
+export function setOnUnauthorized(cb: (() => void) | null) {
+  onUnauthorized = cb;
 }
 
 export class ApiError extends Error {
@@ -58,6 +65,13 @@ async function request<T>(
     } catch {
       // ignore parse errors
     }
+
+    // Global 401 handler: clear auth and redirect to login.
+    // Skip for /api/auth/login (login errors should be handled locally).
+    if (res.status === 401 && !path.includes("/api/auth/login")) {
+      onUnauthorized?.();
+    }
+
     throw new ApiError(res.status, detail);
   }
 

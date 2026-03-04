@@ -115,7 +115,7 @@ In sandbox mode, the agent sees a virtual path space (e.g., `/workspace/`) for b
 | Event streaming      | Runtime      | -                                      |
 | Interrupt / Steering | Runtime      | -                                      |
 | Preset management    | Runtime      | -                                      |
-| Authentication       | Runtime      | Simple token auth; no user system      |
+| Authentication       | Runtime      | API key auth with user roles (08)      |
 | Container lifecycle  | User         | Runtime only executes commands         |
 | LLM provider routing | LLM Provider | Runtime sends native pydantic-ai calls |
 
@@ -130,3 +130,4 @@ In sandbox mode, the agent sees a virtual path space (e.g., `/workspace/`) for b
 | 05      | [Control](05-control.md)                           | Interrupt and steering                              |
 | 06      | [Async Agents](06-async-agents.md)                 | Agent taxonomy, mailbox, fire logic                 |
 | 07      | [API](07-api.md)                                   | Full API surface                                    |
+| 08      | [Multi-Tenancy](08-multi-tenancy.md)               | Users, API keys, role-based access                  |

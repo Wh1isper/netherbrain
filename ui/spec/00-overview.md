@@ -47,7 +47,10 @@ If no result, the UI auto-creates it. Users can create additional workspaces fre
 
 ```mermaid
 flowchart TB
-    OPEN[Open UI] --> CHECK{"Default workspace<br/>exists?"}
+    OPEN[Open UI] --> AUTH{"Valid JWT?"}
+    AUTH -->|No| LOGIN["Login page"]
+    LOGIN --> AUTH
+    AUTH -->|Yes| CHECK{"Default workspace<br/>exists?"}
     CHECK -->|No| CREATE["Auto-create default<br/>workspace"]
     CREATE --> ENTER
     CHECK -->|Yes| ENTER["Enter last-used<br/>workspace"]
@@ -67,6 +70,8 @@ flowchart TB
     ENTER --> SETTINGS["Settings"]
     SETTINGS --> PRESETS["Manage presets"]
     SETTINGS --> WORKSPACES["Manage workspaces"]
+    SETTINGS --> ACCOUNT["Account (password)"]
+    SETTINGS --> USERS["Users (admin only)"]
 ```
 
 ## Design Principles
@@ -97,4 +102,5 @@ flowchart TB
 | ------- | -------------------------- | -------------------------------------- |
 | 01      | [Layout](01-layout.md)     | Page structure, navigation, responsive |
 | 02      | [Chat](02-chat.md)         | Message rendering, streaming, controls |
-| 03      | [Settings](03-settings.md) | Preset and workspace management        |
+| 03      | [Settings](03-settings.md) | Preset, workspace, account management  |
+| 04      | [Auth](04-auth.md)         | Login, logout, JWT session management  |

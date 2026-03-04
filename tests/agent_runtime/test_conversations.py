@@ -27,6 +27,7 @@ async def test_conversation_list_and_get(client: AsyncClient, db_session: AsyncS
     # Insert test data directly (conversations are created by the session system).
     conv = Conversation(
         conversation_id="conv-1",
+        user_id="admin",
         title="Test Conversation",
         metadata_={"source": "discord", "channel": "general"},
         status="active",
@@ -50,8 +51,8 @@ async def test_conversation_list_and_get(client: AsyncClient, db_session: AsyncS
 
 @pytest.mark.integration
 async def test_conversation_filter_by_status(client: AsyncClient, db_session: AsyncSession) -> None:
-    db_session.add(Conversation(conversation_id="c-active", status="active"))
-    db_session.add(Conversation(conversation_id="c-archived", status="archived"))
+    db_session.add(Conversation(conversation_id="c-active", user_id="admin", status="active"))
+    db_session.add(Conversation(conversation_id="c-archived", user_id="admin", status="archived"))
     await db_session.flush()
 
     resp = await client.get("/api/conversations/list", params={"status": "active"})
@@ -63,8 +64,8 @@ async def test_conversation_filter_by_status(client: AsyncClient, db_session: As
 
 @pytest.mark.integration
 async def test_conversation_filter_by_metadata(client: AsyncClient, db_session: AsyncSession) -> None:
-    db_session.add(Conversation(conversation_id="c-discord", metadata_={"source": "discord"}))
-    db_session.add(Conversation(conversation_id="c-telegram", metadata_={"source": "telegram"}))
+    db_session.add(Conversation(conversation_id="c-discord", user_id="admin", metadata_={"source": "discord"}))
+    db_session.add(Conversation(conversation_id="c-telegram", user_id="admin", metadata_={"source": "telegram"}))
     await db_session.flush()
 
     resp = await client.get(

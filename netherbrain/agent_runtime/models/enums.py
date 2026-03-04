@@ -73,3 +73,11 @@ class InputPartType(StrEnum):
     URL = "url"
     FILE = "file"
     BINARY = "binary"
+
+
+# -- Auth / Multi-tenancy ---------------------------------------------------
+
+
+class UserRole(StrEnum):
+    ADMIN = "admin"
+    USER = "user"

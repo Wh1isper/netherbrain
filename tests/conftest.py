@@ -31,6 +31,17 @@ def _set_env(key: str, value: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Auto-use: ensure NETHER_AUTH_TOKEN is set for all tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _set_auth_token() -> None:
+    """Ensure NETHER_AUTH_TOKEN is set (required by NetherSettings)."""
+    _set_env("NETHER_AUTH_TOKEN", "test-root-token-for-ci")
+
+
+# ---------------------------------------------------------------------------
 # Session-scoped: containers (started once, shared across all tests)
 # ---------------------------------------------------------------------------
 

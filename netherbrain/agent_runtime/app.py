@@ -57,9 +57,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     setup_logging(settings.log_level)
 
-    auth_token = settings.resolve_auth_token()
     if not settings.auth_token:
-        logger.warning("No NETHER_AUTH_TOKEN set -- generated token: {}", auth_token)
+        msg = "NETHER_AUTH_TOKEN is required. Set it as an environment variable to start the agent runtime."
+        raise SystemExit(msg)
+
+    auth_token = settings.auth_token
 
     logger.info("Agent Runtime starting (host={}, port={})", settings.host, settings.port)
     prefix_info = f", prefix={settings.data_prefix}" if settings.data_prefix else ""
@@ -67,6 +69,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     # -- Initialise state fields (always present, possibly None) ----------------
     _app.state.auth_token = auth_token
+    _app.state.jwt_secret = settings.jwt_secret
+    _app.state.jwt_expiry_days = settings.jwt_expiry_days
     _app.state.db_engine = None
     _app.state.db_session_factory = None
     _app.state.redis = None
@@ -122,6 +126,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             recovered = await SessionManager.recover_orphaned_sessions(db)
             if recovered > 0:
                 logger.info("Startup recovery: {} orphaned sessions marked as failed", recovered)
+
+        # Bootstrap admin user if no users exist.
+        from netherbrain.agent_runtime.managers.users import bootstrap_admin
+
+        async with _app.state.db_session_factory() as db:
+            await bootstrap_admin(db)
 
     yield
 
@@ -201,12 +211,18 @@ async def health(request: Request) -> dict[str, str]:
 
 
 # -- CRUD routers ------------------------------------------------------------
+from netherbrain.agent_runtime.routers.auth import router as auth_router  # noqa: E402
 from netherbrain.agent_runtime.routers.conversations import router as conversations_router  # noqa: E402
+from netherbrain.agent_runtime.routers.keys import router as keys_router  # noqa: E402
 from netherbrain.agent_runtime.routers.presets import router as presets_router  # noqa: E402
 from netherbrain.agent_runtime.routers.sessions import router as sessions_router  # noqa: E402
 from netherbrain.agent_runtime.routers.toolsets import router as toolsets_router  # noqa: E402
+from netherbrain.agent_runtime.routers.users import router as users_router  # noqa: E402
 from netherbrain.agent_runtime.routers.workspaces import router as workspaces_router  # noqa: E402
 
+api.include_router(auth_router)
+api.include_router(users_router)
+api.include_router(keys_router)
 api.include_router(presets_router)
 api.include_router(workspaces_router)
 api.include_router(conversations_router)

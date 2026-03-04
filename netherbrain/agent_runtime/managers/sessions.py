@@ -75,6 +75,7 @@ class SessionManager:
         *,
         parent_session_id: str | None = None,
         conversation_id: str | None = None,
+        user_id: str | None = None,
         preset_id: str | None = None,
         project_ids: list[str] | None = None,
         session_type: SessionType = SessionType.AGENT,
@@ -107,8 +108,12 @@ class SessionManager:
         # Ensure conversation index row exists.
         existing_conv = await db.get(ConversationRow, conversation_id)
         if existing_conv is None:
+            if user_id is None:
+                msg = "user_id is required when creating a new conversation"
+                raise ValueError(msg)
             conv = ConversationRow(
                 conversation_id=conversation_id,
+                user_id=user_id,
                 status=ConversationStatus.ACTIVE,
             )
             db.add(conv)

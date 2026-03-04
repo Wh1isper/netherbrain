@@ -40,8 +40,10 @@ async def _seed_preset(db: AsyncSession, preset_id: str = "test-preset") -> Pres
     return preset
 
 
-async def _seed_conversation(db: AsyncSession, conv_id: str = "conv-1", status: str = "active") -> Conversation:
-    conv = Conversation(conversation_id=conv_id, status=status)
+async def _seed_conversation(
+    db: AsyncSession, conv_id: str = "conv-1", status: str = "active", user_id: str = "admin"
+) -> Conversation:
+    conv = Conversation(conversation_id=conv_id, user_id=user_id, status=status)
     db.add(conv)
     await db.flush()
     return conv

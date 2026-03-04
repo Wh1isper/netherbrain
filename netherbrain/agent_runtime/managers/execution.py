@@ -173,6 +173,7 @@ class ExecutionManager:
         config_override: dict | None = None,
         metadata: dict | None = None,
         transport: Transport = Transport.SSE,
+        user_id: str | None = None,
     ) -> LaunchResult:
         """Create a new conversation or continue an existing one.
 
@@ -228,6 +229,7 @@ class ExecutionManager:
             parent_session_id=parent_session_id,
             parent_state=parent_state,
             conversation_id=conversation_id,
+            user_id=user_id,
             user_interactions=user_interactions,
             tool_results=tool_results,
         )
@@ -252,6 +254,7 @@ class ExecutionManager:
         config_override: dict | None = None,
         metadata: dict | None = None,
         transport: Transport = Transport.SSE,
+        user_id: str | None = None,
     ) -> LaunchResult:
         """Fork a new conversation from a session in an existing conversation.
 
@@ -290,6 +293,7 @@ class ExecutionManager:
             parent_session_id=parent_row.session_id,
             parent_state=parent_state,
             conversation_id=uuid.uuid4().hex,
+            user_id=user_id,
         )
 
         if metadata:
@@ -337,6 +341,7 @@ class ExecutionManager:
         project_ids: list[str] | None = None,
         config_override: dict | None = None,
         transport: Transport = Transport.STREAM,
+        user_id: str | None = None,
     ) -> LaunchResult:
         """Drain mailbox and launch a continuation session.
 
@@ -431,6 +436,7 @@ class ExecutionManager:
                 parent_session_id=parent_session_id,
                 parent_state=parent_state,
                 conversation_id=conversation_id,
+                user_id=user_id,
                 user_interactions=user_interactions,
                 tool_results=tool_results,
             )
@@ -488,6 +494,7 @@ class ExecutionManager:
         project_ids: list[str] | None = None,
         config_override: dict | None = None,
         transport: Transport = Transport.SSE,
+        user_id: str | None = None,
     ) -> LaunchResult:
         """Direct session execution with explicit parameters.
 
@@ -536,6 +543,7 @@ class ExecutionManager:
             parent_session_id=parent_session_id,
             parent_state=parent_state,
             conversation_id=conversation_id,
+            user_id=user_id,
             user_interactions=user_interactions,
             tool_results=tool_results,
         )

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from netherbrain.agent_runtime.deps import DbSession
+from netherbrain.agent_runtime.deps import AdminUser, DbSession
 from netherbrain.agent_runtime.managers.workspaces import (
     DuplicateWorkspaceError,
     WorkspaceNotFoundError,
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
 @router.post("/create", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED)
-async def handle_create_workspace(body: WorkspaceCreate, db: DbSession) -> object:
+async def handle_create_workspace(body: WorkspaceCreate, db: DbSession, admin: AdminUser) -> object:
     try:
         return await create_workspace(db, body)
     except DuplicateWorkspaceError as exc:
@@ -55,7 +55,7 @@ async def handle_get_workspace(workspace_id: str, db: DbSession) -> object:
 
 
 @router.post("/{workspace_id}/update", response_model=WorkspaceResponse)
-async def handle_update_workspace(workspace_id: str, body: WorkspaceUpdate, db: DbSession) -> object:
+async def handle_update_workspace(workspace_id: str, body: WorkspaceUpdate, db: DbSession, admin: AdminUser) -> object:
     try:
         return await update_workspace(db, workspace_id, body)
     except WorkspaceNotFoundError:
@@ -63,7 +63,7 @@ async def handle_update_workspace(workspace_id: str, body: WorkspaceUpdate, db: 
 
 
 @router.post("/{workspace_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
-async def handle_delete_workspace(workspace_id: str, db: DbSession) -> None:
+async def handle_delete_workspace(workspace_id: str, db: DbSession, admin: AdminUser) -> None:
     try:
         await delete_workspace(db, workspace_id)
     except WorkspaceNotFoundError:

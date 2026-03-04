@@ -174,16 +174,18 @@ Async subagent orchestration.
 
 ### Chat page
 
-- [ ] Chat: load and display conversation history (`GET /conversations/{id}/turns`)
-- [ ] Chat: message input (auto-resize textarea, Enter to send, Shift+Enter newline)
-- [ ] Chat: send message (`POST /conversations/run`) with SSE stream consumption
-- [ ] Chat: streaming text rendering (incremental, auto-scroll)
-- [ ] Chat: Markdown rendering with Shiki code highlight and copy button
-- [ ] Chat: tool call collapsible cards (collapsed: name + summary; expanded: args + output)
-- [ ] Chat: thinking/reasoning section (collapsed by default)
-- [ ] Chat: streaming state controls (Stop button → interrupt, Send while streaming → steer)
-- [ ] Chat: conversation header (editable title, preset badge)
+- [x] Chat: load and display conversation history (`GET /conversations/{id}/turns`)
+- [x] Chat: message input (auto-resize textarea, Enter to send, Shift+Enter newline)
+- [x] Chat: send message (`POST /conversations/run`) with SSE stream consumption
+- [x] Chat: streaming text rendering (incremental, auto-scroll)
+- [x] Chat: Markdown rendering with Shiki code highlight and copy button
+- [x] Chat: tool call collapsible cards (collapsed: name + summary; expanded: args + output)
+- [x] Chat: thinking/reasoning section (collapsed by default)
+- [x] Chat: streaming state controls (Stop button -> interrupt, Send while streaming -> steer)
+- [x] Chat: conversation header (editable title, preset badge)
 - [ ] Chat: SSE reconnect on drop (check status, reattach or reload turns)
+- [ ] Chat: mobile responsive (full-screen chat view, back button)
+- [ ] Chat: Shiki bundle optimization (dynamic import for languages)
 
 ## Phase 12: IM Gateway
 

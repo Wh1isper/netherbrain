@@ -36,6 +36,39 @@ Base.metadata.naming_convention = {
 }
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    user_id: Mapped[str] = mapped_column(primary_key=True)
+    display_name: Mapped[str]
+    password_hash: Mapped[str | None] = mapped_column(nullable=True)
+    role: Mapped[str] = mapped_column(server_default="user")
+    is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now(), onupdate=func.now())
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    __table_args__ = (
+        Index("ix_api_keys_key_hash", "key_hash", unique=True),
+        Index("ix_api_keys_user_id", "user_id"),
+    )
+
+    key_id: Mapped[str] = mapped_column(primary_key=True)
+    key_hash: Mapped[str] = mapped_column(nullable=False)
+    key_prefix: Mapped[str] = mapped_column(nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.user_id", name="fk_api_keys_user_id_users"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(nullable=False)
+    is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
+    last_used_at: Mapped[datetime | None] = mapped_column(TimestampTZ)
+    expires_at: Mapped[datetime | None] = mapped_column(TimestampTZ)
+    created_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now())
+
+
 class Preset(Base):
     __tablename__ = "presets"
     __table_args__ = (
@@ -75,8 +108,13 @@ class Workspace(Base):
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (Index("ix_conversations_user_id", "user_id"),)
 
     conversation_id: Mapped[str] = mapped_column(primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.user_id", name="fk_conversations_user_id_users"),
+        nullable=False,
+    )
     title: Mapped[str | None]
     default_preset_id: Mapped[str | None]
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)

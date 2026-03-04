@@ -6,11 +6,14 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from netherbrain.agent_runtime.db.tables import User
 from netherbrain.agent_runtime.managers.sessions import SessionManager
 from netherbrain.agent_runtime.models.enums import SessionStatus, SessionType, Transport
 from netherbrain.agent_runtime.models.session import ModelUsageSummary, RunSummary, SessionState, UsageSummary
 from netherbrain.agent_runtime.registry import SessionRegistry
 from netherbrain.agent_runtime.store.local import LocalStateStore
+
+TEST_USER_ID = "admin"
 
 
 @pytest.fixture
@@ -34,9 +37,9 @@ def manager(store: LocalStateStore, registry: SessionRegistry) -> SessionManager
 
 
 @pytest.mark.integration
-async def test_create_root_session(manager: SessionManager, db_session: AsyncSession) -> None:
+async def test_create_root_session(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
     """Root session: conversation_id = session_id, conversation row created."""
-    row = await manager.create_session(db_session, preset_id="preset-1")
+    row = await manager.create_session(db_session, preset_id="preset-1", user_id=TEST_USER_ID)
 
     assert row.session_id
     assert row.conversation_id == row.session_id  # root
@@ -47,21 +50,21 @@ async def test_create_root_session(manager: SessionManager, db_session: AsyncSes
 
 
 @pytest.mark.integration
-async def test_create_session_with_input(manager: SessionManager, db_session: AsyncSession) -> None:
+async def test_create_session_with_input(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
     """Session stores structured input parts in PG."""
     input_parts = [
         {"type": "text", "text": "hello world"},
         {"type": "url", "url": "https://example.com/img.png", "mode": "inline"},
     ]
-    row = await manager.create_session(db_session, input_parts=input_parts)
+    row = await manager.create_session(db_session, input_parts=input_parts, user_id=TEST_USER_ID)
 
     assert row.input == input_parts
 
 
 @pytest.mark.integration
-async def test_create_continuation_session(manager: SessionManager, db_session: AsyncSession) -> None:
+async def test_create_continuation_session(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
     """Continuation: inherits conversation_id from parent."""
-    root = await manager.create_session(db_session)
+    root = await manager.create_session(db_session, user_id=TEST_USER_ID)
     root_id = root.session_id
     root_conv = root.conversation_id
 
@@ -72,9 +75,9 @@ async def test_create_continuation_session(manager: SessionManager, db_session: 
 
 
 @pytest.mark.integration
-async def test_create_fork_session(manager: SessionManager, db_session: AsyncSession) -> None:
+async def test_create_fork_session(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
     """Fork: new conversation_id, new conversation row."""
-    root = await manager.create_session(db_session)
+    root = await manager.create_session(db_session, user_id=TEST_USER_ID)
     root_id = root.session_id
     root_conv = root.conversation_id
 
@@ -82,6 +85,7 @@ async def test_create_fork_session(manager: SessionManager, db_session: AsyncSes
         db_session,
         parent_session_id=root_id,
         conversation_id="fork-conv",
+        user_id=TEST_USER_ID,
     )
 
     assert forked.conversation_id == "fork-conv"
@@ -90,16 +94,20 @@ async def test_create_fork_session(manager: SessionManager, db_session: AsyncSes
 
 
 @pytest.mark.integration
-async def test_create_session_invalid_parent(manager: SessionManager, db_session: AsyncSession) -> None:
+async def test_create_session_invalid_parent(
+    manager: SessionManager, db_session: AsyncSession, test_user: User
+) -> None:
     with pytest.raises(ValueError, match="not found"):
         await manager.create_session(db_session, parent_session_id="nonexistent")
 
 
 @pytest.mark.integration
-async def test_commit_session(manager: SessionManager, store: LocalStateStore, db_session: AsyncSession) -> None:
+async def test_commit_session(
+    manager: SessionManager, store: LocalStateStore, db_session: AsyncSession, test_user: User
+) -> None:
     """Commit writes state to store and updates PG status + final_message."""
     input_parts = [{"type": "text", "text": "hi"}]
-    row = await manager.create_session(db_session, input_parts=input_parts)
+    row = await manager.create_session(db_session, input_parts=input_parts, user_id=TEST_USER_ID)
     session_id = row.session_id
 
     state = SessionState(
@@ -134,8 +142,8 @@ async def test_commit_session(manager: SessionManager, store: LocalStateStore, d
 
 
 @pytest.mark.integration
-async def test_fail_session(manager: SessionManager, db_session: AsyncSession) -> None:
-    row = await manager.create_session(db_session)
+async def test_fail_session(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
+    row = await manager.create_session(db_session, user_id=TEST_USER_ID)
     session_id = row.session_id
 
     await manager.fail_session(db_session, session_id)
@@ -145,8 +153,8 @@ async def test_fail_session(manager: SessionManager, db_session: AsyncSession) -
 
 
 @pytest.mark.integration
-async def test_get_session_with_state(manager: SessionManager, db_session: AsyncSession) -> None:
-    row = await manager.create_session(db_session)
+async def test_get_session_with_state(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
+    row = await manager.create_session(db_session, user_id=TEST_USER_ID)
     session_id = row.session_id
 
     state = SessionState(context_state={"k": "v"})
@@ -163,8 +171,8 @@ async def test_get_session_not_found(manager: SessionManager, db_session: AsyncS
 
 
 @pytest.mark.integration
-async def test_list_sessions(manager: SessionManager, db_session: AsyncSession) -> None:
-    root = await manager.create_session(db_session)
+async def test_list_sessions(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
+    root = await manager.create_session(db_session, user_id=TEST_USER_ID)
     root_id = root.session_id
     root_conv = root.conversation_id
 
@@ -179,10 +187,10 @@ async def test_list_sessions(manager: SessionManager, db_session: AsyncSession) 
 
 
 @pytest.mark.integration
-async def test_conversation_turns(manager: SessionManager, db_session: AsyncSession) -> None:
+async def test_conversation_turns(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
     """Turns returns input/final_message pairs from PG."""
     input1 = [{"type": "text", "text": "question 1"}]
-    root = await manager.create_session(db_session, input_parts=input1)
+    root = await manager.create_session(db_session, input_parts=input1, user_id=TEST_USER_ID)
     root_id = root.session_id
     conv_id = root.conversation_id
 
@@ -213,12 +221,12 @@ async def test_conversation_turns(manager: SessionManager, db_session: AsyncSess
 
 
 @pytest.mark.integration
-async def test_recover_orphaned_sessions(manager: SessionManager, db_session: AsyncSession) -> None:
+async def test_recover_orphaned_sessions(manager: SessionManager, db_session: AsyncSession, test_user: User) -> None:
     """Startup recovery marks status=created sessions as failed."""
-    s1 = await manager.create_session(db_session)
+    s1 = await manager.create_session(db_session, user_id=TEST_USER_ID)
     s1_id = s1.session_id
 
-    s2 = await manager.create_session(db_session)
+    s2 = await manager.create_session(db_session, user_id=TEST_USER_ID)
     s2_id = s2.session_id
 
     # Commit s2 so only s1 remains orphaned.
@@ -241,7 +249,7 @@ async def test_conversation_update(client: AsyncClient, db_session: AsyncSession
     """POST /conversations/{id}/update modifies conversation fields."""
     from netherbrain.agent_runtime.db.tables import Conversation
 
-    conv = Conversation(conversation_id="conv-upd", status="active")
+    conv = Conversation(conversation_id="conv-upd", user_id="admin", status="active")
     db_session.add(conv)
     await db_session.commit()
 
@@ -261,7 +269,7 @@ async def test_conversation_sessions_endpoint(client: AsyncClient, db_session: A
     """GET /conversations/{id}/sessions lists sessions."""
     from netherbrain.agent_runtime.db.tables import Conversation, Session
 
-    conv = Conversation(conversation_id="conv-sess", status="active")
+    conv = Conversation(conversation_id="conv-sess", user_id="admin", status="active")
     db_session.add(conv)
     s1 = Session(session_id="s1", conversation_id="conv-sess", status="committed")
     s2 = Session(session_id="s2", conversation_id="conv-sess", status="created", parent_session_id="s1")
@@ -279,7 +287,7 @@ async def test_session_get_endpoint(client: AsyncClient, db_session: AsyncSessio
     """GET /sessions/{id}/get returns session detail."""
     from netherbrain.agent_runtime.db.tables import Conversation, Session
 
-    conv = Conversation(conversation_id="conv-sg", status="active")
+    conv = Conversation(conversation_id="conv-sg", user_id="admin", status="active")
     db_session.add(conv)
     sess = Session(
         session_id="sg-1",

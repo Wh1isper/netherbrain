@@ -9,6 +9,7 @@ import {
   Moon,
   ChevronDown,
   Circle,
+  LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/stores/app";
+import { useChatStore } from "@/stores/chat";
 import { ensureDefaultWorkspace } from "@/api/workspaces";
 import { listConversations } from "@/api/conversations";
 import type { ConversationResponse } from "@/api/types";
@@ -70,6 +72,8 @@ export default function Sidebar() {
     setCurrentWorkspace,
     conversations,
     setConversations,
+    user,
+    logout,
   } = useAppStore();
 
   const currentWorkspace = workspaces.find((w) => w.workspace_id === currentWorkspaceId);
@@ -114,11 +118,17 @@ export default function Sidebar() {
   }, [loadConversations]);
 
   const handleNewChat = () => {
+    useChatStore.getState().clearChat();
     navigate("/");
   };
 
   const handleSwitchWorkspace = (id: string) => {
     setCurrentWorkspace(id);
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
   };
 
   if (!sidebarOpen) {
@@ -236,7 +246,9 @@ export default function Sidebar() {
         >
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
-        <div className="flex-1" />
+        <span className="flex-1 text-xs text-muted-foreground truncate px-1">
+          {user?.display_name ?? user?.user_id ?? ""}
+        </span>
         <Button
           variant="ghost"
           size="icon"
@@ -245,6 +257,15 @@ export default function Sidebar() {
           title="Settings"
         >
           <Settings className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          onClick={handleLogout}
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
         </Button>
       </div>
     </div>

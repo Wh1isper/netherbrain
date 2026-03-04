@@ -221,6 +221,81 @@ export interface ToolsetInfo {
   is_alias: boolean;
 }
 
+// -- Auth / Users ------------------------------------------------------------
+
+export type UserRole = "admin" | "user";
+
+export interface UserResponse {
+  user_id: string;
+  display_name: string;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LoginRequest {
+  user_id: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  user: UserResponse;
+}
+
+export interface ChangePasswordRequest {
+  old_password: string;
+  new_password: string;
+}
+
+export interface UserCreate {
+  user_id: string;
+  display_name: string;
+  role?: UserRole;
+}
+
+export interface UserCreateResponse {
+  user: UserResponse;
+  password: string;
+  api_key: ApiKeyCreateResponse;
+}
+
+export interface UserUpdate {
+  display_name?: string;
+  role?: UserRole;
+  is_active?: boolean;
+}
+
+export interface ResetPasswordResponse {
+  password: string;
+}
+
+// -- API Keys ----------------------------------------------------------------
+
+export interface ApiKeyResponse {
+  key_id: string;
+  key_prefix: string;
+  user_id: string;
+  name: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface ApiKeyCreate {
+  name: string;
+  user_id?: string;
+  expires_in_days?: number;
+}
+
+export interface ApiKeyCreateResponse {
+  key_id: string;
+  key: string;
+  name: string;
+}
+
 // -- Paginated list ----------------------------------------------------------
 
 export interface ListResponse<T> {

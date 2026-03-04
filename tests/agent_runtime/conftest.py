@@ -10,14 +10,30 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from netherbrain.agent_runtime.app import app
+from netherbrain.agent_runtime.db.tables import User
 from netherbrain.agent_runtime.deps import get_db
 from netherbrain.agent_runtime.managers.execution import ExecutionManager
 from netherbrain.agent_runtime.managers.sessions import SessionManager
+from netherbrain.agent_runtime.middleware import BOOTSTRAP_ADMIN_ID
 from netherbrain.agent_runtime.registry import SessionRegistry
 from netherbrain.agent_runtime.settings import NetherSettings
 from netherbrain.agent_runtime.store.local import LocalStateStore
 
 TEST_AUTH_TOKEN = "test-token-for-integration"  # noqa: S105
+
+
+@pytest.fixture
+async def test_user(db_session: AsyncSession) -> User:
+    """Create the bootstrap admin user required by FK constraints.
+
+    The ``client`` fixture authenticates as this user via root token.
+    Tests that create conversations (directly or via SessionManager)
+    must use this fixture to satisfy the ``conversations.user_id`` FK.
+    """
+    user = User(user_id=BOOTSTRAP_ADMIN_ID, display_name="Admin", role="admin")
+    db_session.add(user)
+    await db_session.flush()
+    return user
 
 
 @pytest.fixture
@@ -28,7 +44,7 @@ def test_registry() -> SessionRegistry:
 
 @pytest.fixture
 async def client(
-    db_session: AsyncSession, tmp_path: object, test_registry: SessionRegistry
+    db_session: AsyncSession, tmp_path: object, test_registry: SessionRegistry, test_user: User
 ) -> AsyncIterator[AsyncClient]:
     """Async HTTP client wired to the app with a test DB session.
 
@@ -52,6 +68,8 @@ async def client(
 
     # Pre-set state fields (lifespan does not run under ASGITransport).
     app.state.auth_token = TEST_AUTH_TOKEN
+    app.state.jwt_secret = "test-jwt-secret-for-integration-32bytes!"  # noqa: S105
+    app.state.jwt_expiry_days = 7
     app.state.db_engine = None
     app.state.db_session_factory = None
     app.state.redis = None

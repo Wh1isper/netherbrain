@@ -23,6 +23,7 @@ class ConversationNotFoundError(LookupError):
 async def list_conversations(
     db: AsyncSession,
     *,
+    user_id: str | None = None,
     status: str | None = None,
     metadata_contains: str | None = None,
     limit: int = 50,
@@ -30,9 +31,15 @@ async def list_conversations(
 ) -> list[Conversation]:
     """List conversations with optional filters, newest first.
 
+    When ``user_id`` is provided, only conversations owned by that user are
+    returned.  Admins pass ``user_id=None`` to see all.
+
     Raises ``ValueError`` if ``metadata_contains`` is not valid JSON.
     """
     stmt = select(Conversation).order_by(Conversation.created_at.desc())
+
+    if user_id is not None:
+        stmt = stmt.where(Conversation.user_id == user_id)
 
     if status is not None:
         stmt = stmt.where(Conversation.status == status)
@@ -51,10 +58,23 @@ async def list_conversations(
     return list(result.scalars().all())
 
 
-async def get_conversation(db: AsyncSession, conversation_id: str) -> Conversation:
-    """Get a conversation by ID.  Raises ``ConversationNotFoundError`` if missing."""
+async def get_conversation(
+    db: AsyncSession,
+    conversation_id: str,
+    *,
+    user_id: str | None = None,
+    is_admin: bool = False,
+) -> Conversation:
+    """Get a conversation by ID.  Raises ``ConversationNotFoundError`` if missing.
+
+    When ``user_id`` is provided and ``is_admin`` is False, raises
+    ``ConversationNotFoundError`` if the conversation belongs to another user
+    (returns 404 to avoid leaking existence).
+    """
     conversation = await db.get(Conversation, conversation_id)
     if conversation is None:
+        raise ConversationNotFoundError(conversation_id)
+    if user_id is not None and not is_admin and conversation.user_id != user_id:
         raise ConversationNotFoundError(conversation_id)
     return conversation
 

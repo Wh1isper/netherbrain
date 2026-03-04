@@ -10,7 +10,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
-from netherbrain.agent_runtime.deps import DbSession, ExecutionMgr, SessionMgr
+from netherbrain.agent_runtime.deps import CurrentUser, DbSession, ExecutionMgr, SessionMgr
 from netherbrain.agent_runtime.execution.resolver import (
     NoPresetError,
     ProjectConflictError,
@@ -82,8 +82,16 @@ def _launch_response(result):
 
 
 @router.post("/run")
-async def handle_run(body: ConversationRunRequest, db: DbSession, execution: ExecutionMgr):
+async def handle_run(body: ConversationRunRequest, db: DbSession, execution: ExecutionMgr, auth: CurrentUser):
     """Main entry point. Create or continue a conversation."""
+    # Ownership check for continue case.
+    if body.conversation_id is not None:
+        try:
+            await get_conversation(db, body.conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
+        except ConversationNotFoundError:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail=f"Conversation '{body.conversation_id}' not found."
+            ) from None
     try:
         result = await execution.run_conversation(
             db,
@@ -97,6 +105,7 @@ async def handle_run(body: ConversationRunRequest, db: DbSession, execution: Exe
             config_override=body.config_override,
             metadata=body.metadata,
             transport=body.transport,
+            user_id=auth.user_id,
         )
     except InputRequiredError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
@@ -127,8 +136,15 @@ async def handle_run(body: ConversationRunRequest, db: DbSession, execution: Exe
 
 
 @router.post("/{conversation_id}/fork")
-async def handle_fork(conversation_id: str, body: ConversationForkRequest, db: DbSession, execution: ExecutionMgr):
+async def handle_fork(
+    conversation_id: str, body: ConversationForkRequest, db: DbSession, execution: ExecutionMgr, auth: CurrentUser
+):
     """Fork a new conversation from a session in this conversation."""
+    # Ownership check on source conversation.
+    try:
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
+    except ConversationNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
     try:
         result = await execution.fork_conversation(
             db,
@@ -141,6 +157,7 @@ async def handle_fork(conversation_id: str, body: ConversationForkRequest, db: D
             config_override=body.config_override,
             metadata=body.metadata,
             transport=body.transport,
+            user_id=auth.user_id,
         )
     except (
         ConversationNotFoundError,
@@ -162,10 +179,10 @@ async def handle_fork(conversation_id: str, body: ConversationForkRequest, db: D
 
 
 @router.post("/{conversation_id}/interrupt")
-async def handle_interrupt(conversation_id: str, db: DbSession, execution: ExecutionMgr) -> dict:
+async def handle_interrupt(conversation_id: str, db: DbSession, execution: ExecutionMgr, auth: CurrentUser) -> dict:
     """Interrupt all active sessions in the conversation."""
     try:
-        await get_conversation(db, conversation_id)
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 
@@ -179,10 +196,12 @@ async def handle_interrupt(conversation_id: str, db: DbSession, execution: Execu
 
 
 @router.post("/{conversation_id}/steer")
-async def handle_steer(conversation_id: str, body: SteerRequest, db: DbSession, execution: ExecutionMgr) -> dict:
+async def handle_steer(
+    conversation_id: str, body: SteerRequest, db: DbSession, execution: ExecutionMgr, auth: CurrentUser
+) -> dict:
     """Steer the active agent session in the conversation."""
     try:
-        await get_conversation(db, conversation_id)
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 
@@ -212,11 +231,12 @@ async def handle_events(
     db: DbSession,
     execution: ExecutionMgr,
     request: Request,
+    auth: CurrentUser,
     last_event_id: str | None = Header(None, alias="Last-Event-ID"),
 ):
     """Stream-to-SSE bridge for the active agent session."""
     try:
-        await get_conversation(db, conversation_id)
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 
@@ -250,6 +270,7 @@ async def handle_events(
 @router.get("/list", response_model=list[ConversationResponse])
 async def handle_list_conversations(
     db: DbSession,
+    auth: CurrentUser,
     conversation_status: str | None = Query(None, alias="status"),
     metadata_contains: str | None = Query(None),
     limit: int = Query(20, ge=1, le=200),
@@ -257,7 +278,12 @@ async def handle_list_conversations(
 ) -> list:
     try:
         return await list_conversations(
-            db, status=conversation_status, metadata_contains=metadata_contains, limit=limit, offset=offset
+            db,
+            user_id=None if auth.is_admin else auth.user_id,
+            status=conversation_status,
+            metadata_contains=metadata_contains,
+            limit=limit,
+            offset=offset,
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
@@ -274,10 +300,11 @@ async def handle_get_conversation(
     db: DbSession,
     execution: ExecutionMgr,
     manager: SessionMgr,
+    auth: CurrentUser,
 ) -> dict:
     """Get conversation with enriched session and mailbox info."""
     try:
-        conv = await get_conversation(db, conversation_id)
+        conv = await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 
@@ -320,8 +347,12 @@ async def handle_get_conversation(
 
 
 @router.post("/{conversation_id}/update", response_model=ConversationResponse)
-async def handle_update_conversation(conversation_id: str, body: ConversationUpdate, db: DbSession) -> object:
+async def handle_update_conversation(
+    conversation_id: str, body: ConversationUpdate, db: DbSession, auth: CurrentUser
+) -> object:
     try:
+        # Verify ownership first.
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
         return await update_conversation(db, conversation_id, body)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
@@ -337,10 +368,11 @@ async def handle_get_conversation_turns(
     conversation_id: str,
     db: DbSession,
     manager: SessionMgr,
+    auth: CurrentUser,
     include_display: bool = Query(False),
 ) -> list[dict]:
     try:
-        await get_conversation(db, conversation_id)
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 
@@ -357,11 +389,12 @@ async def handle_list_conversation_sessions(
     conversation_id: str,
     db: DbSession,
     manager: SessionMgr,
+    auth: CurrentUser,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> list:
     try:
-        await get_conversation(db, conversation_id)
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 
@@ -374,8 +407,15 @@ async def handle_list_conversation_sessions(
 
 
 @router.post("/{conversation_id}/fire")
-async def handle_fire(conversation_id: str, body: ConversationFireRequest, db: DbSession, execution: ExecutionMgr):
+async def handle_fire(
+    conversation_id: str, body: ConversationFireRequest, db: DbSession, execution: ExecutionMgr, auth: CurrentUser
+):
     """Drain mailbox and launch a continuation session."""
+    # Ownership check on source conversation.
+    try:
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
+    except ConversationNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
     try:
         result = await execution.fire_conversation(
             db,
@@ -388,6 +428,7 @@ async def handle_fire(conversation_id: str, body: ConversationFireRequest, db: D
             project_ids=body.project_ids,
             config_override=body.config_override,
             transport=body.transport,
+            user_id=auth.user_id,
         )
     except ConversationNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from None
@@ -421,13 +462,14 @@ async def handle_fire(conversation_id: str, body: ConversationFireRequest, db: D
 async def handle_mailbox(
     conversation_id: str,
     db: DbSession,
+    auth: CurrentUser,
     pending_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> list:
     """Query mailbox messages for a conversation."""
     try:
-        await get_conversation(db, conversation_id)
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 

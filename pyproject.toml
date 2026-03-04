@@ -35,6 +35,8 @@ dependencies = [
     "anyio>=4.0.0",
     "ag-ui-protocol>=0.1.13",
     "starlette>=0.52.1",
+    "bcrypt>=4.0.0",
+    "PyJWT>=2.8.0",
     "langfuse>=3.14.0",
 ]
 

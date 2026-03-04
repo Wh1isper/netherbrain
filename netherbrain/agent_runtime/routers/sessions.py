@@ -10,7 +10,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
-from netherbrain.agent_runtime.deps import DbSession, ExecutionMgr, SessionMgr
+from netherbrain.agent_runtime.deps import CurrentUser, DbSession, ExecutionMgr, SessionMgr
 from netherbrain.agent_runtime.execution.resolver import (
     NoPresetError,
     ProjectConflictError,
@@ -41,7 +41,7 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 @router.post("/execute")
-async def handle_execute(body: SessionExecuteRequest, db: DbSession, execution: ExecutionMgr):
+async def handle_execute(body: SessionExecuteRequest, db: DbSession, execution: ExecutionMgr, auth: CurrentUser):
     """Direct session execution with explicit parameters."""
     try:
         result = await execution.execute_session(
@@ -56,6 +56,7 @@ async def handle_execute(body: SessionExecuteRequest, db: DbSession, execution: 
             project_ids=body.project_ids,
             config_override=body.config_override,
             transport=body.transport,
+            user_id=auth.user_id,
         )
     except InputRequiredError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None

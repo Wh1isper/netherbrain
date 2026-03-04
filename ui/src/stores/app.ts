@@ -1,12 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { WorkspaceResponse, ConversationResponse } from "../api/types";
-import { setAuthToken } from "../api/client";
+import type { WorkspaceResponse, ConversationResponse, UserResponse } from "../api/types";
+import { setAuthToken, setOnUnauthorized } from "../api/client";
 
 interface AppState {
   // Auth
   authToken: string | null;
-  setAuthToken: (token: string | null) => void;
+  user: UserResponse | null;
+  setAuth: (token: string, user: UserResponse) => void;
+  logout: () => void;
 
   // Theme
   theme: "light" | "dark";
@@ -33,9 +35,14 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       // Auth
       authToken: null,
-      setAuthToken: (token) => {
+      user: null,
+      setAuth: (token, user) => {
         setAuthToken(token);
-        set({ authToken: token });
+        set({ authToken: token, user });
+      },
+      logout: () => {
+        setAuthToken(null);
+        set({ authToken: null, user: null });
       },
 
       // Theme
@@ -61,6 +68,7 @@ export const useAppStore = create<AppState>()(
       name: "netherbrain-app",
       partialize: (state) => ({
         authToken: state.authToken,
+        user: state.user,
         theme: state.theme,
         currentWorkspaceId: state.currentWorkspaceId,
         sidebarOpen: state.sidebarOpen,
@@ -74,3 +82,8 @@ export const useAppStore = create<AppState>()(
     },
   ),
 );
+
+// Wire up the global 401 handler to logout.
+setOnUnauthorized(() => {
+  useAppStore.getState().logout();
+});

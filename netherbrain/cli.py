@@ -120,6 +120,48 @@ def history() -> None:
     command.history(_alembic_config(), verbose=True)
 
 
+@db.command(name="create-admin")
+@click.option("--user-id", default="admin", help="Admin user ID (default: admin).")
+@click.option("--display-name", default="Admin", help="Display name (default: Admin).")
+def create_admin(user_id: str, display_name: str) -> None:
+    """Create an admin user and print the initial API key."""
+    import asyncio
+
+    from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
+    from netherbrain.agent_runtime.managers.users import DuplicateUserError, create_user
+    from netherbrain.agent_runtime.models.enums import UserRole
+    from netherbrain.agent_runtime.settings import NetherSettings
+
+    settings = NetherSettings()
+
+    if not settings.database_url:
+        click.echo("Error: NETHER_DATABASE_URL is required.", err=True)
+        raise SystemExit(1)
+
+    async def _run() -> None:
+        engine = create_engine(settings.database_url)  # type: ignore[arg-type]
+        factory = create_session_factory(engine)
+        try:
+            async with factory() as db:
+                try:
+                    _user, _raw_password, raw_key = await create_user(
+                        db,
+                        user_id=user_id,
+                        display_name=display_name,
+                        role=UserRole.ADMIN,
+                    )
+                except DuplicateUserError:
+                    click.echo(f"Error: User '{user_id}' already exists.", err=True)
+                    raise SystemExit(1) from None
+        finally:
+            await engine.dispose()
+
+        click.echo(f"Admin user '{user_id}' created.")
+        click.echo(f"API key: {raw_key}")
+
+    asyncio.run(_run())
+
+
 @db.command(name="import")
 @click.argument("file")
 def import_(file: str) -> None:

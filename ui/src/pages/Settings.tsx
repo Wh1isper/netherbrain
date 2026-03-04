@@ -1,6 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Star, Trash2, Copy, Folder, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Plus,
+  Star,
+  Trash2,
+  Copy,
+  Folder,
+  X,
+  Eye,
+  EyeOff,
+  KeyRound,
+  UserX,
+  RotateCcw,
+  Shield,
+  User,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +40,20 @@ import {
   updateWorkspace,
   deleteWorkspace,
 } from "@/api/workspaces";
-import type { PresetResponse, WorkspaceResponse, ToolsetInfo } from "@/api/types";
+import { changePassword } from "@/api/auth";
+import { listUsers, createUser, deactivateUser, resetPassword } from "@/api/users";
+import { listKeys, createKey, revokeKey } from "@/api/keys";
+import { useAppStore } from "@/stores/app";
+import { ApiError } from "@/api/client";
+import type {
+  PresetResponse,
+  WorkspaceResponse,
+  ToolsetInfo,
+  UserResponse,
+  ApiKeyResponse,
+  ApiKeyCreateResponse,
+  UserCreateResponse,
+} from "@/api/types";
 
 // ============================================================================
 // Shared utilities
@@ -943,11 +971,663 @@ function WorkspacesTab() {
 }
 
 // ============================================================================
+// Account tab
+// ============================================================================
+
+/** Dialog that displays a secret once (password or API key). */
+function SecretRevealDialog({
+  open,
+  title,
+  description,
+  secret,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  secret: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(secret);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2">
+          <code className="flex-1 text-sm font-mono break-all select-all">{secret}</code>
+          <Button variant="ghost" size="sm" onClick={() => void handleCopy()}>
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+        <DialogFooter>
+          <Button onClick={onClose}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ChangePasswordForm() {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const mismatch = confirmPassword !== "" && newPassword !== confirmPassword;
+  const canSubmit =
+    oldPassword.length > 0 && newPassword.length >= 8 && newPassword === confirmPassword && !saving;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(false);
+    try {
+      await changePassword({ old_password: oldPassword, new_password: newPassword });
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setSuccess(true);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.status === 401 ? "Current password is incorrect." : err.detail);
+      } else {
+        setError("Failed to change password.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3 max-w-sm">
+      <div className="space-y-1.5">
+        <Label htmlFor="old-pw">Current password</Label>
+        <div className="relative">
+          <Input
+            id="old-pw"
+            type={showOld ? "text" : "password"}
+            value={oldPassword}
+            onChange={(e) => {
+              setOldPassword(e.target.value);
+              setError(null);
+              setSuccess(false);
+            }}
+            autoComplete="current-password"
+          />
+          <button
+            type="button"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            onClick={() => setShowOld(!showOld)}
+          >
+            {showOld ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="new-pw">New password</Label>
+        <div className="relative">
+          <Input
+            id="new-pw"
+            type={showNew ? "text" : "password"}
+            value={newPassword}
+            onChange={(e) => {
+              setNewPassword(e.target.value);
+              setError(null);
+              setSuccess(false);
+            }}
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+          />
+          <button
+            type="button"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            onClick={() => setShowNew(!showNew)}
+          >
+            {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="confirm-pw">Confirm new password</Label>
+        <Input
+          id="confirm-pw"
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => {
+            setConfirmPassword(e.target.value);
+            setError(null);
+            setSuccess(false);
+          }}
+          autoComplete="new-password"
+        />
+        {mismatch && <p className="text-xs text-destructive">Passwords do not match.</p>}
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {success && (
+        <p className="text-sm text-green-600 dark:text-green-400">Password changed successfully.</p>
+      )}
+      <Button type="submit" size="sm" disabled={!canSubmit}>
+        {saving ? "Saving..." : "Change password"}
+      </Button>
+    </form>
+  );
+}
+
+function ApiKeysSection() {
+  const [keys, setKeys] = useState<ApiKeyResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [revealedKey, setRevealedKey] = useState<ApiKeyCreateResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setKeys(await listKeys());
+    } catch {
+      setError("Failed to load API keys.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleCreate = async () => {
+    if (!newKeyName.trim()) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const created = await createKey({ name: newKeyName.trim() });
+      setRevealedKey(created);
+      setNewKeyName("");
+      void load();
+    } catch {
+      setError("Failed to create API key.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleRevoke = async (keyId: string) => {
+    setError(null);
+    try {
+      await revokeKey(keyId);
+      void load();
+    } catch {
+      setError("Failed to revoke key.");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Create */}
+      <div className="flex gap-2 max-w-sm">
+        <Input
+          value={newKeyName}
+          onChange={(e) => setNewKeyName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void handleCreate();
+            }
+          }}
+          placeholder="Key name (e.g. my-script)"
+          className="flex-1 text-sm"
+        />
+        <Button
+          size="sm"
+          onClick={() => void handleCreate()}
+          disabled={creating || !newKeyName.trim()}
+        >
+          {creating ? "Creating..." : "Create"}
+        </Button>
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {/* List */}
+      {loading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      ) : keys.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No API keys.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {keys.map((k) => (
+            <div
+              key={k.key_id}
+              className="flex items-center gap-3 rounded-md border border-border px-3 py-2 text-sm"
+            >
+              <KeyRound className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{k.name}</span>
+                  {!k.is_active && (
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                      revoked
+                    </Badge>
+                  )}
+                </div>
+                <span className="text-xs text-muted-foreground font-mono">{k.key_prefix}...</span>
+              </div>
+              {k.is_active && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive h-7 text-xs"
+                  onClick={() => void handleRevoke(k.key_id)}
+                >
+                  Revoke
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Reveal new key */}
+      {revealedKey && (
+        <SecretRevealDialog
+          open
+          title="API Key Created"
+          description="Copy this key now. You will not be able to see it again."
+          secret={revealedKey.key}
+          onClose={() => setRevealedKey(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AccountTab() {
+  const user = useAppStore((s) => s.user);
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="px-6 py-5 space-y-8 max-w-2xl">
+        {/* Profile info */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Profile
+          </h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <span className="text-muted-foreground">User ID</span>
+              <p className="font-medium font-mono">{user?.user_id ?? "-"}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Display Name</span>
+              <p className="font-medium">{user?.display_name ?? "-"}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Role</span>
+              <p className="font-medium capitalize">{user?.role ?? "-"}</p>
+            </div>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Change password */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Change Password
+          </h3>
+          <ChangePasswordForm />
+        </section>
+
+        <Separator />
+
+        {/* API Keys */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            API Keys
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            API keys can be used for programmatic access. They do not expire unless revoked.
+          </p>
+          <ApiKeysSection />
+        </section>
+
+        <div className="h-4" />
+      </div>
+    </ScrollArea>
+  );
+}
+
+// ============================================================================
+// Users tab (admin only)
+// ============================================================================
+
+function CreateUserDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: (result: UserCreateResponse) => void;
+}) {
+  const [userId, setUserId] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [role, setRole] = useState<"user" | "admin">("user");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    if (!userId.trim() || !displayName.trim()) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const result = await createUser({
+        user_id: userId.trim(),
+        display_name: displayName.trim(),
+        role,
+      });
+      onCreated(result);
+      setUserId("");
+      setDisplayName("");
+      setRole("user");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError("User ID already exists.");
+      } else {
+        setError("Failed to create user.");
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create User</DialogTitle>
+          <DialogDescription>A random password and API key will be generated.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="new-user-id">User ID</Label>
+            <Input
+              id="new-user-id"
+              value={userId}
+              onChange={(e) => {
+                setUserId(e.target.value);
+                setError(null);
+              }}
+              placeholder="alice"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="new-display-name">Display Name</Label>
+            <Input
+              id="new-display-name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Alice"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Role</Label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="role"
+                  checked={role === "user"}
+                  onChange={() => setRole("user")}
+                  className="accent-primary"
+                />
+                <span className="text-sm">User</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="role"
+                  checked={role === "admin"}
+                  onChange={() => setRole("admin")}
+                  className="accent-primary"
+                />
+                <span className="text-sm">Admin</span>
+              </label>
+            </div>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void handleCreate()}
+            disabled={creating || !userId.trim() || !displayName.trim()}
+          >
+            {creating ? "Creating..." : "Create"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UsersTab() {
+  const currentUser = useAppStore((s) => s.user);
+  const [users, setUsers] = useState<UserResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [revealedSecret, setRevealedSecret] = useState<{
+    title: string;
+    description: string;
+    secret: string;
+  } | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState<UserResponse | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setUsers(await listUsers());
+    } catch {
+      setError("Failed to load users.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleCreated = (result: UserCreateResponse) => {
+    setCreateDialogOpen(false);
+    setRevealedSecret({
+      title: `User "${result.user.display_name}" Created`,
+      description: `Share these credentials with the user. The password cannot be retrieved later.`,
+      secret: `User ID: ${result.user.user_id}\nPassword: ${result.password}\nAPI Key: ${result.api_key.key}`,
+    });
+    void load();
+  };
+
+  const handleResetPassword = async (userId: string) => {
+    setError(null);
+    try {
+      const res = await resetPassword(userId);
+      setRevealedSecret({
+        title: "Password Reset",
+        description: `New password for "${userId}". Share it with the user securely.`,
+        secret: res.password,
+      });
+    } catch {
+      setError("Failed to reset password.");
+    }
+  };
+
+  const handleDeactivate = async (userId: string) => {
+    setConfirmDeactivate(null);
+    setError(null);
+    try {
+      await deactivateUser(userId);
+      void load();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError("Cannot deactivate your own account.");
+      } else {
+        setError("Failed to deactivate user.");
+      }
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-6 py-3 border-b border-border shrink-0">
+        <span className="flex-1 text-sm font-semibold">Users</span>
+        <Button size="sm" onClick={() => setCreateDialogOpen(true)} className="gap-1.5">
+          <Plus className="h-3.5 w-3.5" />
+          Create User
+        </Button>
+      </div>
+
+      {error && <ErrorBanner message={error} />}
+
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="px-6 py-4 space-y-1.5 max-w-3xl">
+          {loading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-14 w-full rounded-md" />
+              ))}
+            </div>
+          ) : users.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">No users found.</p>
+          ) : (
+            users.map((u) => {
+              const isSelf = u.user_id === currentUser?.user_id;
+              return (
+                <div
+                  key={u.user_id}
+                  className="flex items-center gap-4 rounded-md border border-border px-4 py-3"
+                >
+                  <div className="flex items-center justify-center h-8 w-8 rounded-full bg-muted shrink-0">
+                    {u.role === "admin" ? (
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <User className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{u.display_name}</span>
+                      <span className="text-xs text-muted-foreground font-mono">({u.user_id})</span>
+                      {isSelf && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          you
+                        </Badge>
+                      )}
+                      {!u.is_active && (
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                          deactivated
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 capitalize">
+                        {u.role}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {u.is_active && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => void handleResetPassword(u.user_id)}
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Reset pw
+                      </Button>
+                    )}
+                    {u.is_active && !isSelf && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs gap-1 text-destructive hover:text-destructive"
+                        onClick={() => setConfirmDeactivate(u)}
+                      >
+                        <UserX className="h-3 w-3" />
+                        Deactivate
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Dialogs */}
+      <CreateUserDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onCreated={handleCreated}
+      />
+
+      {revealedSecret && (
+        <SecretRevealDialog
+          open
+          title={revealedSecret.title}
+          description={revealedSecret.description}
+          secret={revealedSecret.secret}
+          onClose={() => setRevealedSecret(null)}
+        />
+      )}
+
+      {confirmDeactivate && (
+        <DeleteConfirmDialog
+          open
+          name={confirmDeactivate.display_name}
+          onConfirm={() => void handleDeactivate(confirmDeactivate.user_id)}
+          onCancel={() => setConfirmDeactivate(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // Main Settings page
 // ============================================================================
 
 export default function Settings() {
   const navigate = useNavigate();
+  const user = useAppStore((s) => s.user);
+  const isAdmin = user?.role === "admin";
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -970,6 +1650,8 @@ export default function Settings() {
         <TabsList className="self-start shrink-0">
           <TabsTrigger value="presets">Presets</TabsTrigger>
           <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
+          <TabsTrigger value="account">Account</TabsTrigger>
+          {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
         </TabsList>
         <TabsContent value="presets" className="flex-1 min-h-0 mt-3">
           <PresetsTab />
@@ -977,6 +1659,14 @@ export default function Settings() {
         <TabsContent value="workspaces" className="flex-1 min-h-0 mt-3">
           <WorkspacesTab />
         </TabsContent>
+        <TabsContent value="account" className="flex-1 min-h-0 mt-3">
+          <AccountTab />
+        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="users" className="flex-1 min-h-0 mt-3">
+            <UsersTab />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

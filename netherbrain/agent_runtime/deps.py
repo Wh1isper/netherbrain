@@ -23,6 +23,7 @@ import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from netherbrain.agent_runtime.auth import AuthContext
 from netherbrain.agent_runtime.managers.execution import ExecutionManager
 from netherbrain.agent_runtime.managers.sessions import SessionManager
 from netherbrain.agent_runtime.registry import SessionRegistry
@@ -111,3 +112,39 @@ async def get_registry(request: Request) -> SessionRegistry:
 
 RegistryDep = Annotated[SessionRegistry, Depends(get_registry)]
 """Annotated dependency: SessionRegistry singleton."""
+
+
+# -- Auth dependencies -------------------------------------------------------
+
+
+async def get_auth(request: Request) -> AuthContext:
+    """Extract the AuthContext set by BearerAuthMiddleware.
+
+    Returns 401 if auth context is missing (should not happen if middleware
+    is correctly configured).
+    """
+    auth: AuthContext | None = getattr(request.state, "auth", None)
+    if auth is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+    return auth
+
+
+CurrentUser = Annotated[AuthContext, Depends(get_auth)]
+"""Annotated dependency: authenticated user (any role)."""
+
+
+async def require_admin(auth: CurrentUser) -> AuthContext:
+    """Dependency that requires admin role.  Returns 403 for non-admins."""
+    if not auth.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+    return auth
+
+
+AdminUser = Annotated[AuthContext, Depends(require_admin)]
+"""Annotated dependency: authenticated admin user."""

@@ -74,6 +74,7 @@ async def launch_session(
     parent_session_id: str | None = None,
     parent_state: SessionState | None = None,
     conversation_id: str | None = None,
+    user_id: str | None = None,
     # Feedback (for deferred tools)
     user_interactions: Sequence[UserInteraction] | None = None,
     tool_results: Sequence[ToolResult] | None = None,
@@ -144,6 +145,7 @@ async def launch_session(
         db,
         parent_session_id=parent_session_id,
         conversation_id=conversation_id,
+        user_id=user_id,
         preset_id=config.preset_id,
         project_ids=config.project_ids,
         session_type=session_type,

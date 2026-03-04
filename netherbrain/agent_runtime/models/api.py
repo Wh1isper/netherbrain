@@ -24,6 +24,7 @@ from netherbrain.agent_runtime.models.enums import (
     SessionStatus,
     SessionType,
     Transport,
+    UserRole,
 )
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 from netherbrain.agent_runtime.models.preset import (
@@ -146,6 +147,7 @@ class ConversationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     conversation_id: str
+    user_id: str
     title: str | None = None
     default_preset_id: str | None = None
     metadata: dict | None = Field(default=None, validation_alias="metadata_")
@@ -369,3 +371,119 @@ class ToolsetInfo(BaseModel):
 
     is_alias: bool = False
     """True for 'core', which expands to all built-in toolsets."""
+
+
+# ---------------------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------------------
+
+
+class UserCreate(BaseModel):
+    """Input for creating a new user."""
+
+    user_id: str
+    display_name: str
+    role: UserRole = UserRole.USER
+
+
+class UserUpdate(BaseModel):
+    """Partial user update."""
+
+    display_name: str | None = None
+    role: UserRole | None = None
+    is_active: bool | None = None
+
+
+class UserResponse(BaseModel):
+    """Serialized user returned to clients."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: str
+    display_name: str
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserCreateResponse(BaseModel):
+    """Response for user creation -- includes the initial API key and password."""
+
+    user: UserResponse
+    password: str
+    api_key: ApiKeyCreateResponse
+
+
+# ---------------------------------------------------------------------------
+# API Keys
+# ---------------------------------------------------------------------------
+
+
+class ApiKeyCreate(BaseModel):
+    """Input for creating a new API key."""
+
+    name: str
+    user_id: str | None = Field(
+        default=None,
+        description="Target user (admin only, default: self).",
+    )
+    expires_in_days: int | None = Field(
+        default=None,
+        description="Days until expiration (default: never).",
+    )
+
+
+class ApiKeyCreateResponse(BaseModel):
+    """Response for key creation -- includes the full key (shown once)."""
+
+    key_id: str
+    key: str
+    name: str
+
+
+class ApiKeyResponse(BaseModel):
+    """Serialized API key metadata (never includes the full key)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    key_id: str
+    key_prefix: str
+    user_id: str
+    name: str
+    is_active: bool
+    last_used_at: datetime | None = None
+    expires_at: datetime | None = None
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Auth (login, password management)
+# ---------------------------------------------------------------------------
+
+
+class LoginRequest(BaseModel):
+    """Input for password-based login."""
+
+    user_id: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    """Response for successful login -- includes JWT and user profile."""
+
+    token: str
+    user: UserResponse
+
+
+class ChangePasswordRequest(BaseModel):
+    """Input for self-service password change."""
+
+    old_password: str
+    new_password: str = Field(min_length=8)
+
+
+class ResetPasswordResponse(BaseModel):
+    """Response for admin-initiated password reset."""
+
+    password: str

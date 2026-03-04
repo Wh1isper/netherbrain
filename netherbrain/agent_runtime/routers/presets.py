@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
-from netherbrain.agent_runtime.deps import DbSession
+from netherbrain.agent_runtime.deps import AdminUser, DbSession
 from netherbrain.agent_runtime.managers.presets import (
     DefaultPresetConflictError,
     DuplicatePresetError,
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/presets", tags=["presets"])
 
 
 @router.post("/create", response_model=PresetResponse, status_code=status.HTTP_201_CREATED)
-async def handle_create_preset(body: PresetCreate, db: DbSession) -> object:
+async def handle_create_preset(body: PresetCreate, db: DbSession, admin: AdminUser) -> object:
     try:
         return await create_preset(db, body)
     except DuplicatePresetError as exc:
@@ -47,7 +47,7 @@ async def handle_get_preset(preset_id: str, db: DbSession) -> object:
 
 
 @router.post("/{preset_id}/update", response_model=PresetResponse)
-async def handle_update_preset(preset_id: str, body: PresetUpdate, db: DbSession) -> object:
+async def handle_update_preset(preset_id: str, body: PresetUpdate, db: DbSession, admin: AdminUser) -> object:
     try:
         return await update_preset(db, preset_id, body)
     except PresetNotFoundError:
@@ -57,7 +57,7 @@ async def handle_update_preset(preset_id: str, body: PresetUpdate, db: DbSession
 
 
 @router.post("/{preset_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
-async def handle_delete_preset(preset_id: str, db: DbSession) -> None:
+async def handle_delete_preset(preset_id: str, db: DbSession, admin: AdminUser) -> None:
     try:
         await delete_preset(db, preset_id)
     except PresetNotFoundError:

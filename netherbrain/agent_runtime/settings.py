@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 from typing import Literal
 
 from pydantic import SecretStr
@@ -61,8 +60,15 @@ class NetherSettings(BaseSettings):
     """Use path-style addressing (required by MinIO and some S3-compatible services)."""
 
     # -- Auth ------------------------------------------------------------------
-    auth_token: str | None = None
-    """Bearer token for API access.  Auto-generated at startup if empty."""
+    auth_token: str = ""
+    """Bearer token for API access.  Required for agent startup.
+
+    Also used to derive the JWT signing secret (HMAC-SHA256) so no
+    separate secret management is needed.
+    """
+
+    jwt_expiry_days: int = 7
+    """JWT token expiry in days.  Default: 7 (homelab-friendly)."""
 
     # -- Server ----------------------------------------------------------------
     host: str = "0.0.0.0"  # noqa: S104
@@ -78,11 +84,21 @@ class NetherSettings(BaseSettings):
 
     # -- Helpers ---------------------------------------------------------------
 
-    def resolve_auth_token(self) -> str:
-        """Return the configured token or generate a random one."""
-        if self.auth_token:
-            return self.auth_token
-        return secrets.token_urlsafe(32)
+    @property
+    def jwt_secret(self) -> str:
+        """Derive JWT signing secret from auth_token via HMAC-SHA256.
+
+        Using a derived key ensures the raw auth_token cannot be recovered
+        from a JWT, while keeping configuration to a single secret.
+        """
+        import hashlib
+        import hmac
+
+        return hmac.new(
+            self.auth_token.encode(),
+            b"netherbrain-jwt-signing-key",
+            hashlib.sha256,
+        ).hexdigest()
 
 
 def get_settings() -> NetherSettings:

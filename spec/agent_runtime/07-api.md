@@ -6,9 +6,9 @@ The root path (`/`) serves the built-in web UI (static SPA). API and UI share th
 
 ## Authentication
 
-All endpoints require `Authorization: Bearer {token}` header. The token is configured via `AUTH_TOKEN` environment variable. If unset, a random token is generated at startup and logged.
+All endpoints require `Authorization: Bearer {token}` header. See [08-multi-tenancy.md](08-multi-tenancy.md) for the full authentication and authorization model (users, API keys, roles).
 
-No user system. A single shared token protects the entire API.
+Summary: API keys resolve to users with `admin` or `user` roles. The `NETHER_AUTH_TOKEN` env var serves as a root admin recovery token. Resource access is scoped by role and ownership.
 
 ## API Tiers
 
@@ -390,6 +390,21 @@ Service health check (no auth required).
 
 ```mermaid
 flowchart LR
+    subgraph Identity["Identity"]
+        I1["GET /api/auth/me"]
+    end
+
+    subgraph UserMgmt["Users + Keys (admin)"]
+        U1["POST /api/users/create"]
+        U2["GET /api/users/list"]
+        U3["GET /api/users/{id}/get"]
+        U4["POST /api/users/{id}/update"]
+        U5["POST /api/users/{id}/delete"]
+        K1["POST /api/keys/create"]
+        K2["GET /api/keys/list"]
+        K3["POST /api/keys/{id}/revoke"]
+    end
+
     subgraph Admin["Admin (presets + workspaces)"]
         A1["POST /api/presets/create"]
         A2["GET /api/presets/list"]
@@ -432,11 +447,14 @@ flowchart LR
     end
 ```
 
-| Tier               | Scope                  | Primary Consumer    | Description                                     |
-| ------------------ | ---------------------- | ------------------- | ----------------------------------------------- |
-| **Admin**          | `/api/presets/*`       | Admin UI            | Preset CRUD, configuration management           |
-| **Admin**          | `/api/workspaces/*`    | Admin UI            | Workspace CRUD, project grouping                |
-| **Chat**           | `/api/conversations/*` | IM gateway, Chat UI | Conversation lifecycle, streaming, control      |
-| **Sessions**       | `/api/sessions/*`      | Internal, advanced  | Explicit session DAG control, in-flight control |
-| **Infrastructure** | `/api/health`          | Monitoring          | Health check (no auth)                          |
-| **UI**             | `/` (root)             | Browser             | Built-in web UI (static SPA)                    |
+| Tier               | Scope                  | Access                    | Description                                     |
+| ------------------ | ---------------------- | ------------------------- | ----------------------------------------------- |
+| **Identity**       | `/api/auth/*`          | Any authenticated         | Current user info                               |
+| **Users**          | `/api/users/*`         | Admin only                | User CRUD                                       |
+| **Keys**           | `/api/keys/*`          | Self + Admin              | API key lifecycle                               |
+| **Admin**          | `/api/presets/*`       | Admin (write), All (read) | Preset CRUD, configuration management           |
+| **Admin**          | `/api/workspaces/*`    | Admin (write), All (read) | Workspace CRUD, project grouping                |
+| **Chat**           | `/api/conversations/*` | User-scoped               | Conversation lifecycle, streaming, control      |
+| **Sessions**       | `/api/sessions/*`      | User-scoped               | Explicit session DAG control, in-flight control |
+| **Infrastructure** | `/api/health`          | No auth                   | Health check                                    |
+| **UI**             | `/` (root)             | Browser                   | Built-in web UI (static SPA)                    |
