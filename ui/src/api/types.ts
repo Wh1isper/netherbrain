@@ -279,7 +279,6 @@ export interface ApiKeyResponse {
   user_id: string;
   name: string;
   is_active: boolean;
-  last_used_at: string | null;
   expires_at: string | null;
   created_at: string;
 }

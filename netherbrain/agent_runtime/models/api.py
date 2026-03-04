@@ -452,7 +452,6 @@ class ApiKeyResponse(BaseModel):
     user_id: str
     name: str
     is_active: bool
-    last_used_at: datetime | None = None
     expires_at: datetime | None = None
     created_at: datetime
 

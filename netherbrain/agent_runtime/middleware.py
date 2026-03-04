@@ -6,7 +6,6 @@ import hashlib
 import hmac
 from datetime import UTC, datetime
 
-from loguru import logger
 from sqlalchemy import select
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -259,13 +258,6 @@ async def _resolve_api_key(session_factory: object, raw_key: str) -> AuthContext
         # Check user is active.
         if not user.is_active:
             return None
-
-        # Update last_used_at (best-effort, don't fail auth on update errors).
-        try:
-            api_key.last_used_at = datetime.now(UTC)
-            await db.commit()
-        except Exception:
-            logger.debug("Failed to update last_used_at for key {}", api_key.key_id)
 
         return AuthContext(
             user_id=user.user_id,

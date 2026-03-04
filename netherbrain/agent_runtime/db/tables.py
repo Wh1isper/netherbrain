@@ -64,7 +64,6 @@ class ApiKey(Base):
     )
     name: Mapped[str] = mapped_column(nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
-    last_used_at: Mapped[datetime | None] = mapped_column(TimestampTZ)
     expires_at: Mapped[datetime | None] = mapped_column(TimestampTZ)
     created_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now())
 
