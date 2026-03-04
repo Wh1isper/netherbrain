@@ -14,10 +14,18 @@ import uuid
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from loguru import logger
+from sqlalchemy import update
 from ya_agent_sdk.context import BusMessage
 
 from netherbrain.agent_runtime.context import RuntimeSession
+from netherbrain.agent_runtime.db.tables import MailboxMessage
+from netherbrain.agent_runtime.db.tables import Session as SessionRow
 from netherbrain.agent_runtime.execution.launch import LaunchResult, launch_session
+from netherbrain.agent_runtime.execution.mailbox_prompt import (
+    MailboxMessageWithContent,
+    render_mailbox_prompt,
+)
 from netherbrain.agent_runtime.execution.resolver import (
     ConfigOverride,
     resolve_config,
@@ -27,15 +35,18 @@ from netherbrain.agent_runtime.managers.conversations import (
     get_conversation,
     update_conversation,
 )
+from netherbrain.agent_runtime.managers.mailbox import (
+    count_pending,
+    drain_undelivered,
+)
 from netherbrain.agent_runtime.models.api import ConversationUpdate
-from netherbrain.agent_runtime.models.enums import MailboxSourceType, SessionStatus, Transport
+from netherbrain.agent_runtime.models.enums import InputPartType, MailboxSourceType, SessionStatus, Transport
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 
 if TYPE_CHECKING:
     import redis.asyncio as aioredis
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from netherbrain.agent_runtime.db.tables import Session as SessionRow
     from netherbrain.agent_runtime.managers.sessions import SessionManager
     from netherbrain.agent_runtime.models.session import SessionState
     from netherbrain.agent_runtime.registry import SessionRegistry
@@ -338,16 +349,6 @@ class ExecutionManager:
         NoPresetError / WorkspaceNotFoundError / ProjectConflictError: Config errors.
         ValueError: Stream transport requested without Redis.
         """
-        from netherbrain.agent_runtime.db.tables import Session as SessionRow
-        from netherbrain.agent_runtime.execution.mailbox_prompt import (
-            MailboxMessageWithContent,
-            render_mailbox_prompt,
-        )
-        from netherbrain.agent_runtime.managers.mailbox import (
-            count_pending,
-            drain_undelivered,
-        )
-
         # Validate conversation exists.
         conv = await get_conversation(db, conversation_id)
 
@@ -411,18 +412,11 @@ class ExecutionManager:
         mailbox_prompt = render_mailbox_prompt(enriched, user_input=user_text)
 
         # Build input for continuation (mailbox prompt as text).
-        from netherbrain.agent_runtime.models.enums import InputPartType
-        from netherbrain.agent_runtime.models.input import InputPart as _InputPart
-
-        continuation_input = [_InputPart(type=InputPartType.TEXT, text=mailbox_prompt)]
+        continuation_input = [InputPart(type=InputPartType.TEXT, text=mailbox_prompt)]
 
         # Launch continuation session.
         # If launch fails, revert the mailbox claim so messages can be
         # re-delivered on the next fire attempt.
-        from sqlalchemy import update
-
-        from netherbrain.agent_runtime.db.tables import MailboxMessage
-
         try:
             result = await launch_session(
                 db=db,
@@ -449,12 +443,20 @@ class ExecutionManager:
             raise
 
         # Update drained messages: delivered_to = real session ID.
-        await db.execute(
-            update(MailboxMessage)
-            .where(MailboxMessage.delivered_to == temp_claim)
-            .values(delivered_to=result.session_id)
-        )
-        await db.commit()
+        try:
+            await db.execute(
+                update(MailboxMessage)
+                .where(MailboxMessage.delivered_to == temp_claim)
+                .values(delivered_to=result.session_id)
+            )
+            await db.commit()
+        except Exception:
+            logger.exception(
+                "Failed to update mailbox delivered_to for conversation %s (temp_claim=%s, session=%s)",
+                conversation_id,
+                temp_claim,
+                result.session_id,
+            )
 
         return result
 
@@ -504,8 +506,8 @@ class ExecutionManager:
 
         if parent_session_id:
             parent_data = await self._session_manager.get_session(db, parent_session_id, include_state=True)
-            parent_state = parent_data.get("state")
-            parent_row = parent_data["index"]
+            parent_state = parent_data.state
+            parent_row = parent_data.index
             parent_project_ids = parent_row.project_ids
 
         config = await self._resolve_config(
@@ -591,8 +593,6 @@ class ExecutionManager:
         if live is not None:
             return live
 
-        from netherbrain.agent_runtime.db.tables import Session as SessionRow
-
         row = await db.get(SessionRow, session_id)
         if row is None:
             raise LookupError(session_id)
@@ -611,7 +611,7 @@ class ExecutionManager:
         parent_data = await self._session_manager.get_session(db, parent_row.session_id, include_state=True)
         return (
             parent_row.session_id,
-            parent_data.get("state"),
+            parent_data.state,
             parent_row.project_ids,
         )
 
@@ -624,17 +624,17 @@ class ExecutionManager:
         """Find the session to fork from."""
         if from_session_id:
             parent_data = await self._session_manager.get_session(db, from_session_id, include_state=True)
-            parent_row = parent_data["index"]
+            parent_row = parent_data.index
             if parent_row.conversation_id != conversation_id:
                 raise SessionNotInConversationError(from_session_id, conversation_id)
-            return parent_row, parent_data.get("state")
+            return parent_row, parent_data.state
 
         latest = await self._session_manager.find_latest_committed_session(db, conversation_id)
         if latest is None:
             raise NoCommittedSessionError(conversation_id)
 
         parent_data = await self._session_manager.get_session(db, latest.session_id, include_state=True)
-        return parent_data["index"], parent_data.get("state")
+        return parent_data.index, parent_data.state
 
     async def _resolve_config(
         self,

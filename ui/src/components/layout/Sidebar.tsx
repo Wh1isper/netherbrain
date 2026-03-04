@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams, NavLink } from "react-router-dom";
 import {
   SquarePen,
@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/stores/app";
-import { listWorkspaces, ensureDefaultWorkspace } from "@/api/workspaces";
+import { ensureDefaultWorkspace } from "@/api/workspaces";
 import { listConversations } from "@/api/conversations";
 import type { ConversationResponse } from "@/api/types";
 
@@ -74,18 +74,21 @@ export default function Sidebar() {
 
   const currentWorkspace = workspaces.find((w) => w.workspace_id === currentWorkspaceId);
 
+  // Use ref for currentWorkspaceId to avoid re-triggering the load callback
+  const currentWorkspaceIdRef = useRef(currentWorkspaceId);
+  currentWorkspaceIdRef.current = currentWorkspaceId;
+
   const loadWorkspaces = useCallback(async () => {
     try {
-      const defaultWs = await ensureDefaultWorkspace();
-      const all = await listWorkspaces();
+      const { defaultWs, all } = await ensureDefaultWorkspace();
       setWorkspaces(all);
-      if (!currentWorkspaceId) {
+      if (!currentWorkspaceIdRef.current) {
         setCurrentWorkspace(defaultWs.workspace_id);
       }
     } catch (err) {
       console.error("Failed to load workspaces:", err);
     }
-  }, [currentWorkspaceId, setWorkspaces, setCurrentWorkspace]);
+  }, [setWorkspaces, setCurrentWorkspace]);
 
   const loadConversations = useCallback(async () => {
     if (!currentWorkspaceId) return;

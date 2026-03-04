@@ -33,6 +33,7 @@ from netherbrain.agent_runtime.managers.execution import (
     SessionNotInConversationError,
     SteeringTextRequiredError,
 )
+from netherbrain.agent_runtime.managers.mailbox import count_pending, query_mailbox
 from netherbrain.agent_runtime.models.api import (
     ActiveSessionInfo,
     ConversationBusyResponse,
@@ -307,8 +308,6 @@ async def handle_get_conversation(
         pass
 
     # Mailbox summary.
-    from netherbrain.agent_runtime.managers.mailbox import count_pending
-
     pending = await count_pending(db, conversation_id=conversation_id)
     result["mailbox"] = MailboxSummary(pending_count=pending)
 
@@ -427,8 +426,6 @@ async def handle_mailbox(
     offset: int = Query(0, ge=0),
 ) -> list:
     """Query mailbox messages for a conversation."""
-    from netherbrain.agent_runtime.managers.mailbox import query_mailbox
-
     try:
         await get_conversation(db, conversation_id)
     except ConversationNotFoundError:

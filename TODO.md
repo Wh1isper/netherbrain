@@ -195,10 +195,6 @@ Async subagent orchestration.
 - [ ] Discord adapter: bot lifecycle, message handling, thread management
 - [ ] Message rendering: protocol events -> Discord messages (chunking, formatting)
 
-## In-Code TODOs
-
-- `app.py` -- Flush pending mailbox messages during shutdown
-
 ## Completed Fixes (from code review)
 
 - Auth middleware fail-closed, constant-time compare

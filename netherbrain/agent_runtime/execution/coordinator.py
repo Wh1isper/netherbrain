@@ -22,13 +22,15 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
 from ag_ui.core import BaseEvent
 from pydantic_ai import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.messages import ModelMessagesTypeAdapter, ToolReturn
 from pydantic_ai.tools import ToolApproved, ToolDenied
+from ya_agent_sdk.agents.main import AgentInterrupted, stream_agent
+from ya_agent_sdk.context import ResumableState, StreamEvent
 
 from netherbrain.agent_runtime.context import RuntimeSession
 from netherbrain.agent_runtime.execution.events import (
@@ -42,7 +44,8 @@ from netherbrain.agent_runtime.execution.hooks import UsageSnapshotEmitter
 from netherbrain.agent_runtime.execution.input import map_input_to_prompt
 from netherbrain.agent_runtime.execution.runtime import create_service_runtime
 from netherbrain.agent_runtime.instrument import agent_trace, pipeline_trace
-from netherbrain.agent_runtime.models.enums import SessionStatus, SessionType, Transport
+from netherbrain.agent_runtime.managers.mailbox import post_message
+from netherbrain.agent_runtime.models.enums import MailboxSourceType, SessionStatus, SessionType, Transport
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 from netherbrain.agent_runtime.models.session import ModelUsageSummary, RunSummary, SessionState, UsageSummary
 from netherbrain.agent_runtime.streaming.compress import compress_display_messages
@@ -56,7 +59,6 @@ if TYPE_CHECKING:
     import redis.asyncio as aioredis
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
     from ya_agent_sdk.agents.main import AgentRuntime, AgentStreamer
-    from ya_agent_sdk.context import ResumableState, StreamEvent
 
     from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
     from netherbrain.agent_runtime.managers.sessions import SessionManager
@@ -170,13 +172,11 @@ def _restore_parent_state(
     if parent_state is None:
         return None, None
 
-    from ya_agent_sdk.context import ResumableState as _RS
-
     resumable_state: ResumableState | None = None
     resource_state = None
 
     if parent_state.context_state:
-        resumable_state = _RS.model_validate(parent_state.context_state)
+        resumable_state = ResumableState.model_validate(parent_state.context_state)
 
     if parent_state.environment_state:
         from y_agent_environment.resources import ResourceRegistryState
@@ -296,8 +296,6 @@ def _build_pipeline_usage(
 
 def _pipeline_usage_to_summary(usage: PipelineUsage) -> UsageSummary:
     """Convert dataclass ``PipelineUsage`` to Pydantic ``UsageSummary`` for PG storage."""
-    from dataclasses import asdict
-
     return UsageSummary(
         model_usages={
             model_id: ModelUsageSummary(**asdict(model_usage)) for model_id, model_usage in usage.model_usages.items()
@@ -402,9 +400,7 @@ def _compress_adapter_buffer(adapter: ProtocolAdapter | None) -> list[dict] | No
 
 def _wrap_pipeline_event(event: Any) -> StreamEvent:
     """Wrap a pipeline event (AgentEvent subclass) in a StreamEvent."""
-    from ya_agent_sdk.context import StreamEvent as _SE
-
-    return _SE(
+    return StreamEvent(
         agent_id=MAIN_AGENT_ID,
         agent_name=MAIN_AGENT_ID,
         event=event,
@@ -450,9 +446,6 @@ async def _post_mailbox_if_subagent(
     """
     if subagent_name is None:
         return
-
-    from netherbrain.agent_runtime.managers.mailbox import post_message
-    from netherbrain.agent_runtime.models.enums import MailboxSourceType
 
     source_type = (
         MailboxSourceType.SUBAGENT_RESULT
@@ -560,8 +553,6 @@ async def execute_session(  # noqa: C901
     ExecutionResult
         Outcome of the execution (status, final_message, summary).
     """
-    from ya_agent_sdk.agents.main import AgentInterrupted, stream_agent
-
     start_time = time.monotonic()
 
     # -- Protocol adapter (default: AG-UI) -------------------------------------

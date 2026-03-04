@@ -24,6 +24,13 @@ class PresetNotFoundError(LookupError):
     """Raised when a preset is not found."""
 
 
+class DefaultPresetConflictError(ValueError):
+    """Raised when concurrent requests create conflicting default presets."""
+
+    def __init__(self) -> None:
+        super().__init__("Another preset was concurrently set as default; please retry")
+
+
 def _to_row_kwargs(data: dict) -> dict:
     """Convert Pydantic-dumped dict to ORM column values.
 
@@ -53,8 +60,10 @@ async def create_preset(db: AsyncSession, body: PresetCreate) -> Preset:
     db.add(preset)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
+        if "ix_presets_is_default" in str(exc):
+            raise DefaultPresetConflictError from None
         raise DuplicatePresetError(preset_id) from None
     await db.refresh(preset)
     return preset
@@ -90,7 +99,13 @@ async def update_preset(db: AsyncSession, preset_id: str, body: PresetUpdate) ->
     for key, value in changes.items():
         setattr(preset, key, value)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if "ix_presets_is_default" in str(exc):
+            raise DefaultPresetConflictError from None
+        raise  # Re-raise unexpected integrity errors.
     await db.refresh(preset)
     return preset
 

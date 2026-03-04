@@ -14,6 +14,7 @@ access follows FastAPI's per-request dependency injection pattern.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -33,8 +34,26 @@ from netherbrain.agent_runtime.store.base import DisplayMessages
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from netherbrain.agent_runtime.db.tables import Session as SessionRow
     from netherbrain.agent_runtime.registry import SessionRegistry
     from netherbrain.agent_runtime.store.base import StateStore
+
+
+@dataclass
+class SessionData:
+    """Hydrated session data returned by ``SessionManager.get_session``.
+
+    Replaces a loose dict to provide clear typing for callers.
+    """
+
+    index: SessionRow
+    """The PG session row (always present)."""
+
+    display_messages: DisplayMessages | None = None
+    """Compressed display message chunks (always loaded, may be None)."""
+
+    state: SessionState | None = None
+    """Full SDK state (only loaded when ``include_state=True``)."""
 
 
 class SessionManager:
@@ -192,29 +211,27 @@ class SessionManager:
         session_id: str,
         *,
         include_state: bool = False,
-    ) -> dict:
+    ) -> SessionData:
         """Get session index from PG, hydrated with display messages.
 
-        Returns a dict with ``index`` (always), ``display_messages`` (always,
-        may be None), and ``state`` (optional).
+        Returns a ``SessionData`` with ``index`` (always), ``display_messages``
+        (always, may be None), and ``state`` (optional).
         """
         row = await db.get(SessionRow, session_id)
         if row is None:
             msg = f"Session '{session_id}' not found"
             raise LookupError(msg)
 
-        result: dict = {"index": row}
+        display = await self._store.read_display_messages(session_id)
 
-        # Always load display messages (lightweight relative to full state).
-        result["display_messages"] = await self._store.read_display_messages(session_id)
-
+        state: SessionState | None = None
         if include_state:
             try:
-                result["state"] = await self._store.read_state(session_id)
+                state = await self._store.read_state(session_id)
             except FileNotFoundError:
-                result["state"] = None
+                state = None
 
-        return result
+        return SessionData(index=row, display_messages=display, state=state)
 
     async def list_sessions(
         self,

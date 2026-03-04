@@ -7,7 +7,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import Chat from "@/pages/Chat";
 import Settings from "@/pages/Settings";
 import { useAppStore } from "@/stores/app";
-import { setAuthToken } from "@/api/client";
+import { setAuthToken, api, ApiError } from "@/api/client";
 
 // -- Auth gate ---------------------------------------------------------------
 
@@ -20,15 +20,16 @@ function AuthGate({ onAuth }: { onAuth: (token: string) => void }) {
     if (!value.trim()) return;
     try {
       setAuthToken(value.trim());
-      const res = await fetch("/api/health");
-      if (res.status === 401 || res.status === 403) {
-        setError("Invalid token. Please try again.");
-        setAuthToken(null);
-        return;
-      }
+      // Validate token against a protected endpoint (health is auth-exempt)
+      await api.get("/api/presets/list");
       onAuth(value.trim());
-    } catch {
-      setError("Could not reach the server.");
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        setError("Invalid token. Please try again.");
+      } else {
+        setError("Could not reach the server.");
+      }
+      setAuthToken(null);
     }
   };
 
@@ -91,13 +92,6 @@ export default function App() {
       root.classList.remove("dark");
     }
   }, [theme]);
-
-  // Sync persisted token into API client on mount
-  useEffect(() => {
-    if (authToken) {
-      setAuthToken(authToken);
-    }
-  }, [authToken]);
 
   const handleAuth = (token: string) => {
     storeSetAuthToken(token);

@@ -90,7 +90,7 @@ ui/                    # Frontend (Vite + React + TypeScript)
   src/
     pages/
       Chat.tsx         # Conversation interface
-      Config.tsx       # Agent preset management
+      Settings.tsx     # Preset and workspace management
     App.tsx            # Root component with routing
     main.tsx           # Entry point
 dev/

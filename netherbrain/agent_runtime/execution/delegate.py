@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai import RunContext, Tool
 
 from netherbrain.agent_runtime.execution.launch import launch_session
+from netherbrain.agent_runtime.execution.resolver import resolve_config
 from netherbrain.agent_runtime.models.enums import InputPartType, SessionType, Transport
 from netherbrain.agent_runtime.models.input import InputPart
 from netherbrain.agent_runtime.models.preset import SubagentRef
@@ -68,6 +69,29 @@ def _find_ref(refs: list[SubagentRef], name: str) -> SubagentRef | None:
     return None
 
 
+async def _load_parent_state(dc: DelegateContext, name: str) -> tuple[str | None, Any]:
+    """Load parent state for a subagent from its previous session.
+
+    Returns (parent_session_id, parent_state).  Falls back to (None, None)
+    if the parent session cannot be loaded.
+    """
+    parent_session_id = dc.async_subagent_registry.get(name)
+    if not parent_session_id:
+        return None, None
+
+    try:
+        async with dc.session_factory() as db:
+            parent_data = await dc.session_manager.get_session(db, parent_session_id, include_state=True)
+            return parent_session_id, parent_data.state
+    except Exception:
+        logger.warning(
+            "Could not load parent state for subagent '%s' (session %s), starting fresh",
+            name,
+            parent_session_id,
+        )
+        return None, None
+
+
 def create_async_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
     """Create the ``async_delegate`` pydantic-ai Tool.
 
@@ -107,8 +131,6 @@ def create_async_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
             return f"Error: unknown subagent '{name}'. Available: {names_doc}"
 
         # Resolve config for the subagent's preset.
-        from netherbrain.agent_runtime.execution.resolver import resolve_config
-
         try:
             if ref.preset_id in dc._config_cache:
                 config = dc._config_cache[ref.preset_id]
@@ -121,21 +143,7 @@ def create_async_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
             return f"Error: failed to resolve subagent config: {exc}"
 
         # Determine parent session for resume (if subagent was previously dispatched).
-        parent_session_id = dc.async_subagent_registry.get(name)
-        parent_state = None
-        if parent_session_id:
-            try:
-                async with dc.session_factory() as db:
-                    parent_data = await dc.session_manager.get_session(db, parent_session_id, include_state=True)
-                    parent_state = parent_data.get("state")
-            except Exception:
-                logger.warning(
-                    "Could not load parent state for subagent '%s' (session %s), starting fresh",
-                    name,
-                    parent_session_id,
-                )
-                parent_session_id = None
-                parent_state = None
+        parent_session_id, parent_state = await _load_parent_state(dc, name)
 
         # Build input from instruction (+ optional subagent-ref instruction prefix).
         text = instruction

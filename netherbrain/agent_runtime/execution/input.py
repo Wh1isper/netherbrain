@@ -21,6 +21,7 @@ import mimetypes
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from pydantic_ai.messages import (
     AudioUrl,
@@ -146,8 +147,6 @@ async def _download_url_to_project(
         raise ValueError(msg)
 
     # Determine filename from URL
-    from urllib.parse import urlparse
-
     parsed = urlparse(url)
     filename = Path(parsed.path).name or f"download-{uuid.uuid4().hex[:8]}"
 

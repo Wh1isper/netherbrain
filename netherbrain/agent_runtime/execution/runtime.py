@@ -32,6 +32,7 @@ from ya_agent_sdk.toolsets.core.web import tools as web_tools
 
 from netherbrain.agent_runtime.execution.environment import (
     ProjectPaths,
+    create_environment,
 )
 from netherbrain.agent_runtime.execution.prompt import render_system_prompt
 from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
@@ -291,8 +292,6 @@ def create_service_runtime(
         The runtime for ``stream_agent()`` and paths for session commit.
     """
     # -- Environment -----------------------------------------------------------
-    from netherbrain.agent_runtime.execution.environment import create_environment
-
     env, paths = create_environment(config, settings, resource_state=resource_state)
 
     # -- Tools -----------------------------------------------------------------

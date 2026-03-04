@@ -141,7 +141,7 @@ async def test_fail_session(manager: SessionManager, db_session: AsyncSession) -
     await manager.fail_session(db_session, session_id)
 
     result = await manager.get_session(db_session, session_id)
-    assert result["index"].status == SessionStatus.FAILED
+    assert result.index.status == SessionStatus.FAILED
 
 
 @pytest.mark.integration
@@ -153,7 +153,7 @@ async def test_get_session_with_state(manager: SessionManager, db_session: Async
     await manager.commit_session(db_session, session_id, state=state)
 
     result = await manager.get_session(db_session, session_id, include_state=True)
-    assert result["state"].context_state == {"k": "v"}
+    assert result.state.context_state == {"k": "v"}
 
 
 @pytest.mark.integration
@@ -228,7 +228,7 @@ async def test_recover_orphaned_sessions(manager: SessionManager, db_session: As
     assert recovered == 1
 
     result = await manager.get_session(db_session, s1_id)
-    assert result["index"].status == SessionStatus.FAILED
+    assert result.index.status == SessionStatus.FAILED
 
 
 # ---------------------------------------------------------------------------

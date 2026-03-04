@@ -97,9 +97,11 @@ async def handle_get_session(
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.") from None
 
-    if result.get("state") is not None:
-        result["state"] = result["state"].model_dump()
-    return result
+    return {
+        "index": result.index,
+        "display_messages": result.display_messages,
+        "state": result.state.model_dump() if result.state is not None else None,
+    }
 
 
 # ---------------------------------------------------------------------------

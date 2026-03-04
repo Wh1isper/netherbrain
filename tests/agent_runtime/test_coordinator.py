@@ -539,7 +539,7 @@ async def test_execute_session_success(
     mock_db = AsyncMock()
 
     with patch(
-        "ya_agent_sdk.agents.main.stream_agent",
+        "netherbrain.agent_runtime.execution.coordinator.stream_agent",
     ) as mock_stream:
         # Create a proper async context manager
         cm = AsyncMock()
@@ -592,7 +592,7 @@ async def test_execute_session_failure(
     mock_db = AsyncMock()
 
     with patch(
-        "ya_agent_sdk.agents.main.stream_agent",
+        "netherbrain.agent_runtime.execution.coordinator.stream_agent",
     ) as mock_stream:
         mock_stream.side_effect = RuntimeError("LLM unavailable")
 

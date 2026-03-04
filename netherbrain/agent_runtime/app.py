@@ -9,10 +9,13 @@ from fastapi.responses import FileResponse
 from fastapi.routing import APIRouter
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
+from sqlalchemy import text
 from sse_starlette.sse import AppStatus
 
 from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
 from netherbrain.agent_runtime.log import setup_logging
+from netherbrain.agent_runtime.managers.execution import ExecutionManager
+from netherbrain.agent_runtime.managers.seed import apply_seed, load_seed_file
 from netherbrain.agent_runtime.managers.sessions import SessionManager
 from netherbrain.agent_runtime.middleware import BearerAuthMiddleware
 from netherbrain.agent_runtime.registry import SessionRegistry
@@ -30,8 +33,6 @@ async def _apply_seed_file(seed_file: str | None, session_factory) -> None:
     """Load and apply a seed TOML file.  Logs results; never raises."""
     if not seed_file:
         return
-    from netherbrain.agent_runtime.managers.seed import apply_seed, load_seed_file
-
     try:
         seed_data = load_seed_file(seed_file)
         async with session_factory() as db:
@@ -134,8 +135,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         logger.info("SessionManager: initialised")
 
         # ExecutionManager: orchestrates config resolution and launch.
-        from netherbrain.agent_runtime.managers.execution import ExecutionManager
-
         _app.state.execution_manager = ExecutionManager(
             session_manager=_app.state.session_manager,
             registry=registry,
@@ -201,8 +200,6 @@ api = APIRouter(prefix="/api")
 @api.get("/health")
 async def health(request: Request) -> dict[str, str]:
     """Service health check with infrastructure connectivity status."""
-    from sqlalchemy import text
-
     result: dict[str, str] = {"status": "ok"}
 
     # -- PostgreSQL ------------------------------------------------------------

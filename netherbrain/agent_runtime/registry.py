@@ -21,6 +21,21 @@ class ShuttingDownError(RuntimeError):
     """Raised when attempting to register a session during shutdown."""
 
 
+class ConversationOccupiedError(RuntimeError):
+    """Raised when an agent session is already active for a conversation.
+
+    Defined here (not in managers/) so the registry has no upward dependency
+    on the execution layer.
+    """
+
+    def __init__(self, existing_session_id: str, conversation_id: str) -> None:
+        self.existing_session_id = existing_session_id
+        self.conversation_id = conversation_id
+        super().__init__(
+            f"Conversation '{conversation_id}' already has an active agent session '{existing_session_id}'"
+        )
+
+
 class SessionRegistry:
     """Thread-safe registry of currently executing sessions.
 
@@ -40,9 +55,28 @@ class SessionRegistry:
     # -- Mutation --------------------------------------------------------------
 
     def register(self, session: RuntimeSession) -> None:
-        """Register a session.  Raises ``RuntimeError`` if shutting down."""
+        """Register a session.
+
+        Raises
+        ------
+        ShuttingDownError
+            If the registry is in shutdown mode.
+        ConversationOccupiedError
+            If an agent-type session is already active for the same
+            conversation.  The check-and-insert is synchronous (no await),
+            so it is atomic in asyncio's cooperative scheduling model.
+        """
         if self._shutting_down:
             raise ShuttingDownError
+
+        # Enforce single-agent-per-conversation invariant.
+        from netherbrain.agent_runtime.models.enums import SessionType
+
+        if session.session_type == SessionType.AGENT:
+            existing = self.active_agent_session(session.conversation_id)
+            if existing is not None:
+                raise ConversationOccupiedError(existing.session_id, session.conversation_id)
+
         logger.debug("Registry: register session {} (transport={})", session.session_id, session.transport)
         self._sessions[session.session_id] = session
         self._drain_event.clear()

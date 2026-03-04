@@ -26,17 +26,23 @@ export async function deleteWorkspace(id: string): Promise<void> {
 
 /**
  * Find or auto-create the default webui workspace.
- * Identifies it by metadata: { source: "webui", default: true }
+ * Returns both the default workspace and the full workspace list,
+ * avoiding a redundant second listWorkspaces call.
  */
-export async function ensureDefaultWorkspace(): Promise<WorkspaceResponse> {
-  const all = await listWorkspaces();
+export async function ensureDefaultWorkspace(): Promise<{
+  defaultWs: WorkspaceResponse;
+  all: WorkspaceResponse[];
+}> {
+  let all = await listWorkspaces();
   const existing = all.find((w) => w.metadata?.source === "webui" && w.metadata?.default === true);
-  if (existing) return existing;
+  if (existing) return { defaultWs: existing, all };
 
-  return createWorkspace({
+  const created = await createWorkspace({
     workspace_id: "webui-default",
     name: "Default",
     projects: ["webui"],
     metadata: { source: "webui", default: true },
   });
+  all = [...all, created];
+  return { defaultWs: created, all };
 }

@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from netherbrain.agent_runtime.deps import DbSession
 from netherbrain.agent_runtime.managers.presets import (
+    DefaultPresetConflictError,
     DuplicatePresetError,
     PresetNotFoundError,
     create_preset,
@@ -28,6 +29,8 @@ async def handle_create_preset(body: PresetCreate, db: DbSession) -> object:
         return await create_preset(db, body)
     except DuplicatePresetError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Preset '{exc}' already exists.") from None
+    except DefaultPresetConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
 
 
 @router.get("/list", response_model=list[PresetResponse])
@@ -49,6 +52,8 @@ async def handle_update_preset(preset_id: str, body: PresetUpdate, db: DbSession
         return await update_preset(db, preset_id, body)
     except PresetNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Preset '{preset_id}' not found.") from None
+    except DefaultPresetConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
 
 
 @router.post("/{preset_id}/delete", status_code=status.HTTP_204_NO_CONTENT)

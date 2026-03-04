@@ -77,6 +77,10 @@ async def apply_seed(db: AsyncSession, data: dict) -> SeedResult:
             result.errors.append(f"workspace '{wid}': {exc}")
             logger.warning("Seed: failed to upsert workspace '%s': %s", wid, exc)
 
+    # -- Single commit for all changes -----------------------------------------
+    if result.total > 0:
+        await db.commit()
+
     return result
 
 
@@ -100,14 +104,12 @@ async def _upsert_preset(db: AsyncSession, raw: dict, result: SeedResult) -> Non
         # Create.
         preset = Preset(preset_id=preset_id, **row_data)
         db.add(preset)
-        await db.commit()
         result.presets_created += 1
         logger.info("Seed: created preset '%s'", preset_id)
     else:
         # Update.
         for key, value in row_data.items():
             setattr(existing, key, value)
-        await db.commit()
         result.presets_updated += 1
         logger.info("Seed: updated preset '%s'", preset_id)
 
@@ -131,7 +133,6 @@ async def _upsert_workspace(db: AsyncSession, raw: dict, result: SeedResult) -> 
             metadata_=body.metadata,
         )
         db.add(workspace)
-        await db.commit()
         result.workspaces_created += 1
         logger.info("Seed: created workspace '%s'", workspace_id)
     else:
@@ -141,6 +142,5 @@ async def _upsert_workspace(db: AsyncSession, raw: dict, result: SeedResult) -> 
         existing.projects = body.projects
         if body.metadata is not None:
             existing.metadata_ = body.metadata
-        await db.commit()
         result.workspaces_updated += 1
         logger.info("Seed: updated workspace '%s'", workspace_id)
