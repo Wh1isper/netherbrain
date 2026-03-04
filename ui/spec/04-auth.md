@@ -43,12 +43,36 @@ flowchart TD
 
 ## First Login
 
-When admin creates a user, they receive a generated password. The user's first experience:
+When a user logs in with `must_change_password: true` (set for all new accounts and password resets), they are forced to change their password before accessing the app.
 
-1. Open web UI -> login page
-2. Enter user_id + generated password
-3. Redirected to chat (app does not force password change, but user should)
-4. Go to Settings -> Account -> change password
+```mermaid
+flowchart TD
+    LOGIN["Login page"] -->|Success| CHECK{"must_change_password?"}
+    CHECK -->|Yes| FORCE["Force Change Password page"]
+    CHECK -->|No| CHAT["Enter app"]
+    FORCE -->|Submit old + new password| API["POST /api/auth/change-password"]
+    API -->|204| UPDATE["Clear flag in store"]
+    UPDATE --> CHAT
+```
+
+### Force Change Password Page
+
+- Full-screen centered form (same layout as login page)
+- Three fields: current password, new password, confirm new password
+- Validates: new password >= 8 chars, confirmation matches
+- On success: updates user in Zustand store (`must_change_password: false`), enters the app
+- On error: shows inline error ("Current password is incorrect")
+
+### Bootstrap Flow
+
+For the initial admin user, the flow is:
+
+1. Deploy with `NETHER_AUTH_TOKEN=mysecret`
+2. First startup auto-creates `admin` user with password `mysecret`
+3. Open web UI -> login as `admin / mysecret`
+4. Immediately shown the "Change Password" page
+5. Enter `mysecret` as current password, set a new one
+6. Enter the app
 
 ## Logout
 

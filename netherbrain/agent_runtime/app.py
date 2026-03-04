@@ -131,7 +131,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         from netherbrain.agent_runtime.managers.users import bootstrap_admin
 
         async with _app.state.db_session_factory() as db:
-            await bootstrap_admin(db)
+            await bootstrap_admin(db, password=settings.auth_token)
 
     yield
 

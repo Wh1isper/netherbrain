@@ -44,6 +44,7 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(nullable=True)
     role: Mapped[str] = mapped_column(server_default="user")
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
+    must_change_password: Mapped[bool] = mapped_column(default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now(), onupdate=func.now())
 

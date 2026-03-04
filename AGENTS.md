@@ -143,6 +143,7 @@ Key rules:
 - `netherbrain db current` - Show current database revision
 - `netherbrain db history` - Show migration history
 - `netherbrain db import` - Import presets and workspaces from a TOML file
+- `netherbrain db create-admin` - Manually create an admin user (rarely needed; auto-bootstrap handles this)
 
 ## Dev Commands (Makefile)
 
@@ -174,6 +175,17 @@ Key rules:
 - Do NOT create `NetherSettings()` at module level in app code -- it prevents test env var overrides.
 - CLI commands (`cli.py`) and Alembic `env.py` may create `NetherSettings()` directly since they run in isolated contexts.
 - `extra="ignore"` is set on `NetherSettings` so non-`NETHER_*` env vars (e.g. `HOMELAB_*`, `ANTHROPIC_API_KEY`) in `.env` are silently ignored.
+
+## Authentication
+
+- **`NETHER_AUTH_TOKEN`** is required. The agent-runtime refuses to start without it.
+- Three auth methods (tried in order by middleware): root token -> JWT -> API key.
+- **Root token**: constant-time comparison against `NETHER_AUTH_TOKEN`. No DB access. Always maps to admin role.
+- **JWT**: signed tokens issued by `POST /api/auth/login`. Derived from `NETHER_AUTH_TOKEN` via HMAC-SHA256 (no separate secret). Each request checks `user.is_active` in DB.
+- **API keys**: `nb_` prefixed, SHA-256 hashed in DB. Read-only DB lookup per request.
+- **Bootstrap**: On first startup (no users in DB), an `admin` user is auto-created with password = `NETHER_AUTH_TOKEN`. Users must change password on first login (`must_change_password` flag).
+- **Password management**: Passwords are server-generated for new users and admin-initiated resets. `change_password` clears the `must_change_password` flag.
+- CLI commands (`db upgrade`, `db import`, etc.) do NOT require `NETHER_AUTH_TOKEN`.
 
 ## Database
 

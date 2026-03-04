@@ -78,6 +78,7 @@ async def handle_me(auth: CurrentUser, db: DbSession) -> object:
             display_name=auth.user_id,
             role=auth.role,
             is_active=True,
+            must_change_password=False,
             created_at=None,  # type: ignore[arg-type]
             updated_at=None,  # type: ignore[arg-type]
         )

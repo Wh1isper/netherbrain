@@ -59,19 +59,15 @@ docker run -d \
   --network host \
   -e NETHER_DATABASE_URL="postgresql+psycopg://netherbrain:netherbrain@localhost:5432/netherbrain" \
   -e NETHER_REDIS_URL="redis://localhost:6379/0" \
+  -e NETHER_AUTH_TOKEN="my-secret-token" \
   -e ANTHROPIC_API_KEY="sk-ant-..." \
   -v /path/to/data:/app/data \
   ghcr.io/wh1isper/netherbrain
 ```
 
-If `NETHER_AUTH_TOKEN` is not set, a token is generated and logged at startup.
+`NETHER_AUTH_TOKEN` is **required**. On first startup, the service automatically creates an `admin` user whose password is the value of `NETHER_AUTH_TOKEN`.
 
-```bash
-# Retrieve the generated auth token
-docker logs netherbrain | grep "generated token"
-```
-
-The web UI is available at `http://localhost:9001`.
+The web UI is available at `http://localhost:9001`. Log in as `admin` with your `NETHER_AUTH_TOKEN` value, then set a new password when prompted.
 
 ### 3. Run the gateway (optional)
 
@@ -119,6 +115,7 @@ A minimal `.env`:
 ```env
 NETHER_DATABASE_URL=postgresql+psycopg://netherbrain:netherbrain@localhost:15432/netherbrain
 NETHER_REDIS_URL=redis://localhost:16379/0
+NETHER_AUTH_TOKEN=my-dev-token
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
@@ -136,7 +133,7 @@ make run-agent
 make dev
 ```
 
-The service starts on `http://localhost:9001`. The auth token is logged at startup if not configured.
+The service starts on `http://localhost:9001`. On first startup, an `admin` user is auto-created with password = your `NETHER_AUTH_TOKEN` value.
 
 ______________________________________________________________________
 
@@ -144,12 +141,16 @@ ______________________________________________________________________
 
 ### Access the web UI
 
-Open `http://localhost:9001` in your browser. The web UI is currently a placeholder; full chat and configuration interfaces are under development. Use the API directly in the meantime.
+Open `http://localhost:9001` in your browser.
+
+1. Log in as `admin` with your `NETHER_AUTH_TOKEN` value as the password.
+2. On first login, you will be prompted to set a new password.
+3. After changing your password, you have full access to the chat and settings pages.
 
 ### Make your first API call
 
 ```bash
-TOKEN="<your-auth-token>"
+TOKEN="<your-auth-token>"  # NETHER_AUTH_TOKEN value or a user's API key
 
 # Start a new conversation
 curl -X POST http://localhost:9001/api/conversations/run \

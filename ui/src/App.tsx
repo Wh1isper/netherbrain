@@ -1,11 +1,115 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import Sidebar from "@/components/layout/Sidebar";
 import Chat from "@/pages/Chat";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import { useAppStore } from "@/stores/app";
+import { changePassword } from "@/api/auth";
+import { ApiError } from "@/api/client";
+
+// -- Force change password (first login) ------------------------------------
+
+function ForceChangePassword() {
+  const { user, setAuth, authToken } = useAppStore();
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const mismatch = confirmPassword !== "" && newPassword !== confirmPassword;
+  const canSubmit =
+    oldPassword.length > 0 &&
+    newPassword.length >= 8 &&
+    newPassword === confirmPassword &&
+    !loading;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit || !authToken || !user) return;
+    setLoading(true);
+    setError("");
+
+    try {
+      await changePassword({ old_password: oldPassword, new_password: newPassword });
+      setAuth(authToken, { ...user, must_change_password: false });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setError("Current password is incorrect.");
+      } else {
+        setError("Failed to change password.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full items-center justify-center bg-background">
+      <div className="w-full max-w-sm space-y-6 p-8 rounded-lg border border-border bg-card shadow-sm">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-foreground">Change Password</h1>
+          <p className="text-sm text-muted-foreground">
+            Welcome, {user?.display_name}. Please set a new password to continue.
+          </p>
+        </div>
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="current-pw">Current password</Label>
+            <Input
+              id="current-pw"
+              type="password"
+              value={oldPassword}
+              onChange={(e) => {
+                setOldPassword(e.target.value);
+                setError("");
+              }}
+              autoFocus
+              autoComplete="current-password"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="new-pw">New password</Label>
+            <Input
+              id="new-pw"
+              type="password"
+              value={newPassword}
+              onChange={(e) => {
+                setNewPassword(e.target.value);
+                setError("");
+              }}
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-pw">Confirm new password</Label>
+            <Input
+              id="confirm-pw"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                setError("");
+              }}
+              autoComplete="new-password"
+            />
+            {mismatch && <p className="text-xs text-destructive">Passwords do not match.</p>}
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <Button type="submit" className="w-full" disabled={!canSubmit}>
+            {loading ? "Saving..." : "Set new password"}
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 // -- App shell (authenticated) -----------------------------------------------
 
@@ -28,7 +132,7 @@ function AppShell() {
 // -- Root --------------------------------------------------------------------
 
 export default function App() {
-  const { theme, authToken } = useAppStore();
+  const { theme, authToken, user } = useAppStore();
 
   // Sync theme to <html> class
   useEffect(() => {
@@ -40,10 +144,16 @@ export default function App() {
     }
   }, [theme]);
 
+  const needsPasswordChange = authToken && user?.must_change_password;
+
   return (
     <TooltipProvider>
       {authToken ? (
-        <AppShell />
+        needsPasswordChange ? (
+          <ForceChangePassword />
+        ) : (
+          <AppShell />
+        )
       ) : (
         <Routes>
           <Route path="/login" element={<Login />} />

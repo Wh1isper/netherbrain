@@ -55,17 +55,46 @@ ______________________________________________________________________
 
 ## Authentication
 
-| Variable            | Required | Default     | Description                 |
-| ------------------- | -------- | ----------- | --------------------------- |
-| `NETHER_AUTH_TOKEN` | No       | (generated) | Bearer token for API access |
+| Variable                 | Required | Default | Description                                         |
+| ------------------------ | -------- | ------- | --------------------------------------------------- |
+| `NETHER_AUTH_TOKEN`      | Yes      | -       | Root token for API access and JWT secret derivation |
+| `NETHER_JWT_EXPIRY_DAYS` | No       | `7`     | JWT token expiry in days                            |
 
-All API endpoints require `Authorization: Bearer {token}`. If `NETHER_AUTH_TOKEN` is not set, a random token is generated at startup and logged at `WARNING` level:
+`NETHER_AUTH_TOKEN` is **required** -- the agent-runtime refuses to start without it. It serves two purposes:
 
-```
-WARNING  | netherbrain.agent_runtime.app:lifespan - No NETHER_AUTH_TOKEN set -- generated token: <token>
-```
+1. **Root API access**: authenticate directly with `Authorization: Bearer {token}` for full admin access (no DB lookup, constant-time comparison).
+2. **JWT secret derivation**: the JWT signing key is derived from this token via HMAC-SHA256, so no separate secret management is needed.
 
-There is no user system. A single shared token protects the entire API.
+### Bootstrap
+
+On first startup, if no users exist in the database, the runtime automatically creates an `admin` user:
+
+- **User ID**: `admin`
+- **Password**: the value of `NETHER_AUTH_TOKEN`
+- **Role**: admin
+- **Must change password**: yes (forced on first web UI login)
+
+This means the deployment flow is simply:
+
+1. Set `NETHER_AUTH_TOKEN=<your-secret>` in your environment
+2. Run `netherbrain db upgrade`
+3. Run `netherbrain agent`
+4. Open the web UI, log in as `admin` with your `NETHER_AUTH_TOKEN` value
+5. You will be prompted to set a new password
+
+### Auth Methods
+
+The middleware tries three authentication methods in order:
+
+1. **Root token** -- matches `NETHER_AUTH_TOKEN` exactly. No database access. Always admin role.
+2. **JWT** -- tokens issued by `POST /api/auth/login`. Signature verified in-memory, then a DB check confirms the user is still active.
+3. **API key** -- keys prefixed with `nb_`, resolved via SHA-256 hash lookup in the database.
+
+### User Management
+
+- Admins create users via the web UI (Settings > Users) or the API (`POST /api/users/create`).
+- New users receive a server-generated password (displayed once) and must change it on first login.
+- Admins can reset passwords and deactivate users. Deactivated users are immediately locked out (JWT and API keys checked against `is_active` on every request).
 
 ______________________________________________________________________
 

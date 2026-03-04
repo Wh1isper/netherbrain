@@ -136,9 +136,11 @@ async def create_user(
     user_id: str,
     display_name: str,
     role: UserRole = UserRole.USER,
+    password: str | None = None,
 ) -> tuple[User, str, str]:
-    """Create a user with a server-generated password and an initial API key.
+    """Create a user with a password and an initial API key.
 
+    If ``password`` is not provided, a random one is generated.
     Returns (user_row, raw_password, raw_api_key).  Both secrets are only
     available here -- they are never stored in plaintext.
     Raises ``DuplicateUserError`` if user_id already exists.
@@ -147,12 +149,13 @@ async def create_user(
     if existing is not None:
         raise DuplicateUserError(user_id)
 
-    raw_password = _generate_password()
+    raw_password = password or _generate_password()
     user = User(
         user_id=user_id,
         display_name=display_name,
         password_hash=_hash_password(raw_password),
         role=role,
+        must_change_password=True,
     )
     db.add(user)
     await db.flush()  # Ensure user row exists before FK reference.
@@ -257,6 +260,7 @@ async def change_password(
         raise InvalidPasswordError(user_id)
 
     user.password_hash = _hash_password(new_password)
+    user.must_change_password = False
     await db.commit()
 
 
@@ -276,6 +280,7 @@ async def reset_password(
 
     raw_password = _generate_password()
     user.password_hash = _hash_password(raw_password)
+    user.must_change_password = True
     await db.commit()
     return raw_password
 
@@ -310,9 +315,11 @@ async def deactivate_user(
 # -- Bootstrap ---------------------------------------------------------------
 
 
-async def bootstrap_admin(db: AsyncSession) -> str | None:
+async def bootstrap_admin(db: AsyncSession, *, password: str) -> str | None:
     """Create bootstrap admin user if no users exist.
 
+    Uses the provided password (typically ``NETHER_AUTH_TOKEN``) so the
+    operator does not need to dig through logs.
     Returns the raw API key if admin was created, None otherwise.
     """
     stmt = select(User).limit(1)
@@ -324,15 +331,16 @@ async def bootstrap_admin(db: AsyncSession) -> str | None:
 
     logger.info("No users found -- creating bootstrap admin user '{}'", BOOTSTRAP_ADMIN_ID)
 
-    _, raw_password, raw_key = await create_user(
+    _, _raw_password, raw_key = await create_user(
         db,
         user_id=BOOTSTRAP_ADMIN_ID,
         display_name="Admin",
         role=UserRole.ADMIN,
+        password=password,
     )
 
-    logger.warning("Bootstrap admin password (save this, shown once): {}", raw_password)
-    logger.warning("Bootstrap admin API key (save this, shown once): {}", raw_key)
+    logger.info("Bootstrap admin created. Login with user='{}', password=NETHER_AUTH_TOKEN", BOOTSTRAP_ADMIN_ID)
+    logger.info("Bootstrap admin API key: {}", raw_key)
     return raw_key
 
 

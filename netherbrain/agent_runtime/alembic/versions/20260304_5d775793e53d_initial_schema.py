@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: a0b775903c0a
+Revision ID: 5d775793e53d
 Revises:
-Create Date: 2026-03-04 20:07:10.829680
+Create Date: 2026-03-04 20:16:28.685871
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "a0b775903c0a"
+revision: str = "5d775793e53d"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -49,6 +49,7 @@ def upgrade() -> None:
         sa.Column("password_hash", sa.String(), nullable=True),
         sa.Column("role", sa.String(), server_default="user", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
+        sa.Column("must_change_password", sa.Boolean(), server_default="true", nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("user_id", name=op.f("pk_users")),

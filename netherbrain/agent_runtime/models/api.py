@@ -403,6 +403,7 @@ class UserResponse(BaseModel):
     display_name: str
     role: UserRole
     is_active: bool
+    must_change_password: bool = False
     created_at: datetime
     updated_at: datetime
 
