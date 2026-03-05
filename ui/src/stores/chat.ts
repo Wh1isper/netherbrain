@@ -503,7 +503,7 @@ async function consumeDirectSSE(
  */
 async function recoverFromTurns(
   conversationId: string,
-  get: StoreGet,
+  _get: StoreGet,
   set: StoreSet,
 ): Promise<void> {
   try {
