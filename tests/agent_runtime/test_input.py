@@ -19,7 +19,7 @@ from netherbrain.agent_runtime.execution.input import (
     _write_binary,
     map_input_to_prompt,
 )
-from netherbrain.agent_runtime.models.enums import ContentMode, InputPartType
+from netherbrain.agent_runtime.models.enums import InputPartType, StorageMode
 from netherbrain.agent_runtime.models.input import (
     InputPart,
     ToolResult,
@@ -38,7 +38,7 @@ from netherbrain.agent_runtime.models.input import (
 def test_input_part_text_valid() -> None:
     p = InputPart(type=InputPartType.TEXT, text="hello")
     assert p.text == "hello"
-    assert p.mode == ContentMode.FILE  # default
+    assert p.storage == StorageMode.EPHEMERAL  # default
 
 
 def test_input_part_text_missing_payload() -> None:
@@ -78,8 +78,8 @@ def test_input_part_binary_missing_payload() -> None:
 
 
 def test_input_part_inline_mode() -> None:
-    p = InputPart(type=InputPartType.URL, url="https://x.com/img.jpg", mode=ContentMode.INLINE)
-    assert p.mode == ContentMode.INLINE
+    p = InputPart(type=InputPartType.URL, url="https://x.com/img.jpg", storage=StorageMode.INLINE)
+    assert p.storage == StorageMode.INLINE
 
 
 # ---------------------------------------------------------------------------
@@ -94,11 +94,11 @@ def test_text_part() -> None:
 
 
 def test_url_part() -> None:
-    p = url_part("https://example.com/photo.jpg", mime="image/jpeg", mode=ContentMode.INLINE)
+    p = url_part("https://example.com/photo.jpg", mime="image/jpeg", storage=StorageMode.INLINE)
     assert p.type == InputPartType.URL
     assert p.url == "https://example.com/photo.jpg"
     assert p.mime == "image/jpeg"
-    assert p.mode == ContentMode.INLINE
+    assert p.storage == StorageMode.INLINE
 
 
 def test_file_part() -> None:
@@ -312,7 +312,7 @@ async def test_map_multiple_text() -> None:
 async def test_map_inline_url() -> None:
     parts = [
         text_part("Look at this image:"),
-        url_part("https://x.com/photo.jpg", mime="image/jpeg", mode=ContentMode.INLINE),
+        url_part("https://x.com/photo.jpg", mime="image/jpeg", storage=StorageMode.INLINE),
     ]
     result = await map_input_to_prompt(parts)
     assert isinstance(result, list)
@@ -325,7 +325,7 @@ async def test_map_inline_url() -> None:
 async def test_map_inline_binary() -> None:
     raw = b"PNG data here"
     data_b64 = base64.b64encode(raw).decode()
-    parts = [binary_part(data_b64, mime="image/png", mode=ContentMode.INLINE)]
+    parts = [binary_part(data_b64, mime="image/png", storage=StorageMode.INLINE)]
     result = await map_input_to_prompt(parts)
     assert isinstance(result, list)
     assert len(result) == 1
@@ -365,7 +365,7 @@ async def test_map_inline_file_part(tmp_path: Path) -> None:
     src_dir.mkdir()
     (src_dir / "main.py").write_bytes(b"print('hello')")
 
-    parts = [file_part("src/main.py", mode=ContentMode.INLINE)]
+    parts = [file_part("src/main.py", storage=StorageMode.INLINE)]
     result = await map_input_to_prompt(parts, file_op)
     assert isinstance(result, list)
     assert isinstance(result[0], BinaryContent)
@@ -376,7 +376,7 @@ async def test_map_inline_file_part(tmp_path: Path) -> None:
 async def test_map_inline_file_not_found(tmp_path: Path) -> None:
     file_op = _make_file_operator(tmp_path)
 
-    parts = [file_part("nonexistent.py", mode=ContentMode.INLINE)]
+    parts = [file_part("nonexistent.py", storage=StorageMode.INLINE)]
     with pytest.raises(FileNotFoundError, match=r"nonexistent\.py"):
         await map_input_to_prompt(parts, file_op)
 
@@ -393,6 +393,7 @@ async def test_map_file_mode_url_downloads(tmp_path: Path) -> None:
     assert isinstance(result, list)
     assert "[File downloaded from URL]" in result[0]
     assert "Source: https://example.com/file.txt" in result[0]
+    assert "temporary file" in result[0]  # ephemeral hint
 
     # Verify file was actually written to tmp dir
     tmp_dir = tmp_path / ".agent_tmp"
@@ -402,12 +403,50 @@ async def test_map_file_mode_url_downloads(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_map_persistent_url_downloads_to_project_dir(tmp_path: Path) -> None:
+    file_op = _make_file_operator(tmp_path)
+
+    mock_client = _mock_stream_client(b"persistent data", headers={"content-type": "text/plain"})
+
+    parts = [url_part("https://example.com/keep.txt", storage=StorageMode.PERSISTENT)]
+    result = await map_input_to_prompt(parts, file_op, http_client=mock_client)
+
+    assert isinstance(result, list)
+    assert "[File downloaded from URL]" in result[0]
+    assert "temporary file" not in result[0]  # no ephemeral hint
+    tmp_dir = tmp_path / ".agent_tmp"
+    assert list(tmp_dir.iterdir()) == []  # tmp dir is empty
+    project_files = [f for f in tmp_path.iterdir() if f.name != ".agent_tmp"]
+    assert len(project_files) == 1
+    assert project_files[0].read_bytes() == b"persistent data"
+
+
+@pytest.mark.anyio
+async def test_map_persistent_binary_writes_to_project_dir(tmp_path: Path) -> None:
+    file_op = _make_file_operator(tmp_path)
+
+    raw = b"persist this"
+    data_b64 = base64.b64encode(raw).decode()
+    parts = [binary_part(data_b64, mime="application/pdf", storage=StorageMode.PERSISTENT)]
+    result = await map_input_to_prompt(parts, file_op)
+
+    assert isinstance(result, list)
+    assert "[Binary data saved]" in result[0]
+    assert "temporary file" not in result[0]  # no ephemeral hint
+    tmp_dir = tmp_path / ".agent_tmp"
+    assert list(tmp_dir.iterdir()) == []
+    project_files = [f for f in tmp_path.iterdir() if f.name != ".agent_tmp"]
+    assert len(project_files) == 1
+    assert project_files[0].read_bytes() == b"persist this"
+
+
+@pytest.mark.anyio
 async def test_map_mixed_text_and_inline() -> None:
     parts = [
         text_part("Analyze this image:"),
-        url_part("https://x.com/img.png", mime="image/png", mode=ContentMode.INLINE),
+        url_part("https://x.com/img.png", mime="image/png", storage=StorageMode.INLINE),
         text_part("And this document:"),
-        url_part("https://x.com/doc.pdf", mime="application/pdf", mode=ContentMode.INLINE),
+        url_part("https://x.com/doc.pdf", mime="application/pdf", storage=StorageMode.INLINE),
     ]
     result = await map_input_to_prompt(parts)
     assert isinstance(result, list)
@@ -420,7 +459,7 @@ async def test_map_mixed_text_and_inline() -> None:
 
 @pytest.mark.anyio
 async def test_map_no_file_operator_for_file_mode_raises() -> None:
-    parts = [file_part("some/file.txt", mode=ContentMode.INLINE)]
+    parts = [file_part("some/file.txt", storage=StorageMode.INLINE)]
     with pytest.raises(ValueError, match="File operator required"):
         await map_input_to_prompt(parts, None)
 
@@ -499,7 +538,7 @@ async def test_binary_inline_rejects_oversized(tmp_path: Path) -> None:
     oversized = b"x" * (_MAX_INLINE_BYTES + 1)
     data_b64 = base64.b64encode(oversized).decode()
 
-    parts = [binary_part(data_b64, mime="application/octet-stream", mode=ContentMode.INLINE)]
+    parts = [binary_part(data_b64, mime="application/octet-stream", storage=StorageMode.INLINE)]
     with pytest.raises(ValueError, match="too large for inline"):
         await map_input_to_prompt(parts, file_op)
 
@@ -513,6 +552,6 @@ async def test_inline_file_rejects_oversized(tmp_path: Path) -> None:
     big_file = tmp_path / "big.bin"
     big_file.write_bytes(b"x" * (_MAX_INLINE_BYTES + 1))
 
-    parts = [file_part("big.bin", mode=ContentMode.INLINE)]
+    parts = [file_part("big.bin", storage=StorageMode.INLINE)]
     with pytest.raises(ValueError, match="too large for inline"):
         await map_input_to_prompt(parts, file_op)

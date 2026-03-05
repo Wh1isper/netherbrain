@@ -59,10 +59,16 @@ class MailboxSourceType(StrEnum):
 # -- Input -------------------------------------------------------------------
 
 
-class ContentMode(StrEnum):
-    """Delivery mode for non-text input parts."""
+class StorageMode(StrEnum):
+    """Storage mode for non-text input parts.
 
-    FILE = "file"
+    - ``ephemeral``: Write to tmp dir (cleaned after session).  Default.
+    - ``persistent``: Write to project dir (survives sessions).
+    - ``inline``: Pass directly into model context, no disk write.
+    """
+
+    EPHEMERAL = "ephemeral"
+    PERSISTENT = "persistent"
     INLINE = "inline"
 
 

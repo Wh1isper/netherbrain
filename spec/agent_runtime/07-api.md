@@ -139,17 +139,17 @@ Input is a list of content parts (`list[Part]`). Each part has a `type` and opti
 
 ### Part
 
-| Field | Type    | Required | Description                                |
-| ----- | ------- | -------- | ------------------------------------------ |
-| type  | enum    | Yes      | `text` / `url` / `file` / `binary`         |
-| text  | string  | Cond.    | Text content (type=text)                   |
-| url   | string  | Cond.    | Resource URL (type=url)                    |
-| path  | string  | Cond.    | Project-relative file path (type=file)     |
-| data  | string  | Cond.    | Base64-encoded content (type=binary)       |
-| mime  | string? | No       | MIME type hint (for url/binary)            |
-| mode  | enum?   | No       | Delivery mode: `file` (default) / `inline` |
+| Field   | Type    | Required | Description                                                   |
+| ------- | ------- | -------- | ------------------------------------------------------------- |
+| type    | enum    | Yes      | `text` / `url` / `file` / `binary`                            |
+| text    | string  | Cond.    | Text content (type=text)                                      |
+| url     | string  | Cond.    | Resource URL (type=url)                                       |
+| path    | string  | Cond.    | Project-relative file path (type=file)                        |
+| data    | string  | Cond.    | Base64-encoded content (type=binary)                          |
+| mime    | string? | No       | MIME type hint (for url/binary)                               |
+| storage | enum?   | No       | Storage mode: `ephemeral` (default) / `persistent` / `inline` |
 
-Default mode is `file` (always safe). Callers opt into `inline` per-part when they know the model supports it. See [03-execution.md](03-execution.md) for mapping behavior.
+Default storage is `ephemeral` (always safe). Callers opt into `persistent` for files that should survive sessions, or `inline` per-part when they know the model supports it. See [03-execution.md](03-execution.md) for mapping behavior.
 
 ## Conversations (Chat)
 

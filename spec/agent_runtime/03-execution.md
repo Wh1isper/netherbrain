@@ -138,25 +138,26 @@ flowchart TB
 
 Input is a list of content parts, mapped to SDK UserPrompt. Each non-text part has a `mode` that controls how it is delivered to the model.
 
-### Content Mode
+### Storage Mode
 
-| Mode     | Behavior                                                        | Risk            |
-| -------- | --------------------------------------------------------------- | --------------- |
-| `file`   | Download/write to environment, reference as file path (default) | None            |
-| `inline` | Pass directly into model context (image URL, base64, etc.)      | Model-dependent |
+| Mode         | Behavior                                                         | Risk            |
+| ------------ | ---------------------------------------------------------------- | --------------- |
+| `ephemeral`  | Download/write to tmp directory, cleaned after session (default) | None            |
+| `persistent` | Download/write to project directory, survives sessions           | Disk usage      |
+| `inline`     | Pass directly into model context (image URL, base64, etc.)       | Model-dependent |
 
-Default is `file` (always safe). Callers opt into `inline` per-part when they know the model supports it. If `inline` is requested but the model does not support the content type, execution fails with an error (no silent fallback).
+Default is `ephemeral` (always safe). Callers opt into `persistent` for files that should survive sessions, or `inline` per-part when they know the model supports it. If `inline` is requested but the model does not support the content type, execution fails with an error (no silent fallback).
 
 ### Part Type Mapping
 
-| Part Type | mode=file (default)           | mode=inline                                 |
-| --------- | ----------------------------- | ------------------------------------------- |
-| text      | Pass through as string        | Pass through as string                      |
-| url       | Download to environment       | Pass URL directly into model context        |
-| file      | Resolve project path          | Read file into model context                |
-| binary    | Write to environment temp dir | Decode and pass directly into model context |
+| Part Type | storage=ephemeral (default) | storage=persistent            | storage=inline                              |
+| --------- | --------------------------- | ----------------------------- | ------------------------------------------- |
+| text      | Pass through as string      | Pass through as string        | Pass through as string                      |
+| url       | Download to tmp directory   | Download to project directory | Pass URL directly into model context        |
+| file      | Resolve project path        | Resolve project path          | Read file into model context                |
+| binary    | Write to tmp directory      | Write to project directory    | Decode and pass directly into model context |
 
-Inline mode passes content directly to the model via pydantic-ai's multimodal UserPrompt. Whether the model accepts a given content type (image, video, audio, PDF, etc.) depends on the model's capabilities. If the model does not support the content type, execution fails with an error -- the runtime does not silently fall back to file mode.
+Inline mode passes content directly to the model via pydantic-ai's multimodal UserPrompt. Whether the model accepts a given content type (image, video, audio, PDF, etc.) depends on the model's capabilities. If the model does not support the content type, execution fails with an error -- the runtime does not silently fall back to ephemeral mode.
 
 ### Deferred Tool Feedback
 

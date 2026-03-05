@@ -124,23 +124,31 @@ When loading an existing conversation (`/c/:id`) that has an active stream sessi
 
 ## Input Area
 
-Pinned to the bottom of the chat view.
+Pinned to the bottom of the chat view. Supports text, image paste, file upload, and drag-and-drop.
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Input["Input Area"]
-        TA["Auto-resize textarea"]
-        SEND["Send button"]
+        direction TB
+        PREVIEW["Attachment preview strip<br/>(thumbnails + file chips)"]
+        subgraph Row["Input Row"]
+            direction LR
+            ATTACH["Attach button"]
+            TA["Auto-resize textarea"]
+            SEND["Send / Stop button"]
+        end
     end
 ```
 
+The preview strip is only visible when attachments are present. Attach button opens a native file picker.
+
 ### States
 
-| State     | Send Button | Textarea        | Extra Controls |
-| --------- | ----------- | --------------- | -------------- |
-| Idle      | Send        | Enabled         | None           |
-| Streaming | Stop        | Enabled (steer) | None           |
-| Empty     | Disabled    | Enabled         | None           |
+| State     | Send Button | Textarea        | Attach Button | Attachments |
+| --------- | ----------- | --------------- | ------------- | ----------- |
+| Idle      | Send        | Enabled         | Enabled       | Editable    |
+| Streaming | Stop        | Enabled (steer) | Disabled      | Frozen      |
+| Empty     | Disabled    | Enabled         | Enabled       | Editable    |
 
 ### Send Behavior
 
@@ -148,11 +156,90 @@ flowchart LR
 - **Streaming + Send**: POST `/api/conversations/{id}/steer` (inject guidance)
 - **Stop**: POST `/api/conversations/{id}/interrupt`
 
+All attached content is sent as `InputPart[]` alongside the text part. See Attachments section below.
+
 ### Keyboard
 
-- `Enter`: Send message
+- `Enter`: Send message (with any pending attachments)
 - `Shift+Enter`: New line
+- `Ctrl+V` / `Cmd+V`: Paste images from clipboard (intercepted before text paste)
 - `Escape`: Cancel input / close panels
+
+## Attachments
+
+Users can attach images and files to messages. Attachments are converted to `InputPart` objects and sent alongside text in the `input` array.
+
+### Input Methods
+
+| Method        | Trigger                    | Accepted Content |
+| ------------- | -------------------------- | ---------------- |
+| Clipboard     | Paste (Ctrl+V / Cmd+V)     | Images only      |
+| File picker   | Click attach button        | All files        |
+| Drag and drop | Drop files onto input area | All files        |
+
+### Storage Mode Auto-Selection
+
+The UI automatically chooses the `storage` mode based on MIME type. No manual storage mode picker is exposed.
+
+| Content Type       | storage     | Rationale                                         |
+| ------------------ | ----------- | ------------------------------------------------- |
+| Images (`image/*`) | `inline`    | Direct to model context for vision                |
+| All other files    | `ephemeral` | Downloaded/written for agent to analyze via tools |
+
+### Client-Side Limits
+
+| Constraint        | Limit  | Behavior when exceeded        |
+| ----------------- | ------ | ----------------------------- |
+| Inline (images)   | 20 MB  | Show error toast, reject file |
+| Ephemeral (files) | 100 MB | Show error toast, reject file |
+| Max attachments   | 10     | Disable attach button         |
+
+### Attachment Preview Strip
+
+Shown above the textarea inside the input wrapper when attachments are present.
+
+```mermaid
+flowchart LR
+    subgraph Strip["Preview Strip"]
+        IMG["Image thumbnail<br/>+ remove X"]
+        FILE["File chip<br/>icon + name + size + X"]
+    end
+```
+
+**Image attachments**: Square thumbnail (`h-16 w-16 rounded-lg object-cover`) with a small X button overlay (top-right corner). Uses `URL.createObjectURL` for local preview.
+
+**File attachments**: Compact chip (`bg-muted rounded-lg px-3 py-2`) showing file type icon, truncated filename, and human-readable size. X button to remove.
+
+The strip scrolls horizontally if attachments overflow.
+
+### Wire Format
+
+When sending, each attachment becomes an `InputPart`:
+
+| Attachment Type | InputPart fields                                                           |
+| --------------- | -------------------------------------------------------------------------- |
+| Image (paste)   | `type: "binary"`, `data: base64`, `mime: "image/png"`, `storage: "inline"` |
+| Image (file)    | `type: "binary"`, `data: base64`, `mime: detected`, `storage: "inline"`    |
+| Other file      | `type: "binary"`, `data: base64`, `mime: detected`, `storage: "ephemeral"` |
+
+Text content (if any) is always the first part: `{ type: "text", text: "..." }`. Attachments follow in order.
+
+### User Message Display
+
+When rendering user messages (both live and from history), non-text input parts are displayed:
+
+| Part Type             | Display                                                    |
+| --------------------- | ---------------------------------------------------------- |
+| `binary` + image MIME | Inline thumbnail (clickable to view full size in a dialog) |
+| `binary` + other MIME | File badge: icon + filename + size                         |
+| `url`                 | Link badge: favicon + truncated URL                        |
+| `file`                | Path badge: file icon + project-relative path              |
+
+For history-loaded messages, binary image data is rendered from the base64 `data` field stored in the turn's `input` array. Non-image binaries show metadata only (no preview).
+
+### Drag-and-Drop
+
+The entire input area acts as a drop zone. On drag-over, the input wrapper shows a visual highlight (`border-primary border-dashed bg-primary/5`). Dropping adds files to the attachment list following the same auto-selection rules.
 
 ## Conversation Header
 

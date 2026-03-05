@@ -39,17 +39,17 @@ Sessions are never mutated after commit. A new execution always produces a new s
 
 ### Input Parts
 
-Input is a list of content parts, stored as JSONB on the session row. Each part has a `type` and optional `mode` to control delivery.
+Input is a list of content parts, stored as JSONB on the session row. Each part has a `type` and optional `storage` to control delivery.
 
-| Field | Type    | Required | Description                            |
-| ----- | ------- | -------- | -------------------------------------- |
-| type  | enum    | Yes      | `text` / `url` / `file` / `binary`     |
-| text  | string  | Cond.    | Text content (type=text)               |
-| url   | string  | Cond.    | Resource URL (type=url)                |
-| path  | string  | Cond.    | Project-relative file path (type=file) |
-| data  | string  | Cond.    | Base64-encoded content (type=binary)   |
-| mime  | string? | No       | MIME type hint (for url/binary)        |
-| mode  | enum?   | No       | Per-part delivery: `file` / `inline`   |
+| Field   | Type    | Required | Description                                              |
+| ------- | ------- | -------- | -------------------------------------------------------- |
+| type    | enum    | Yes      | `text` / `url` / `file` / `binary`                       |
+| text    | string  | Cond.    | Text content (type=text)                                 |
+| url     | string  | Cond.    | Resource URL (type=url)                                  |
+| path    | string  | Cond.    | Project-relative file path (type=file)                   |
+| data    | string  | Cond.    | Base64-encoded content (type=binary)                     |
+| mime    | string? | No       | MIME type hint (for url/binary)                          |
+| storage | enum?   | No       | Storage: `ephemeral` (default) / `persistent` / `inline` |
 
 See [03-execution.md](03-execution.md) for input mapping behavior.
 

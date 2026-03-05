@@ -22,6 +22,7 @@ import {
 } from "../api/conversations";
 import type {
   ConversationRunRequest,
+  InputPart,
   TurnResponse,
   DisplayEvent,
   TextMessageChunk,
@@ -56,6 +57,8 @@ export interface ChatMessage {
   thinking: string;
   toolCalls: ToolCall[];
   isStreaming: boolean;
+  /** Non-text input parts (images, files, URLs) for display. */
+  attachments: InputPart[];
   /** Source session ID for pagination cursor (set for history-loaded messages). */
   sessionId?: string;
 }
@@ -99,7 +102,11 @@ interface ChatState {
   loadMoreMessages: () => Promise<void>;
 
   /** Send a message (new conversation or continue existing). */
-  sendMessage: (text: string, opts: { workspaceId: string; presetId?: string }) => Promise<void>;
+  sendMessage: (
+    text: string,
+    opts: { workspaceId: string; presetId?: string },
+    attachments?: InputPart[],
+  ) => Promise<void>;
 
   /** Interrupt the running agent. */
   interrupt: () => Promise<void>;
@@ -186,6 +193,7 @@ function displayEventsToMessage(sessionId: string, events: DisplayEvent[]): Chat
     thinking,
     toolCalls,
     isStreaming: false,
+    attachments: [],
     sessionId,
   };
 }
@@ -202,7 +210,8 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
     // User message from input parts
     if (turn.input?.length) {
       const textParts = turn.input.filter((p) => p.type === "text" && p.text).map((p) => p.text!);
-      if (textParts.length > 0) {
+      const attachments = turn.input.filter((p) => p.type !== "text");
+      if (textParts.length > 0 || attachments.length > 0) {
         messages.push({
           id: `${turn.session_id}-user`,
           role: "user",
@@ -210,6 +219,7 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
           thinking: "",
           toolCalls: [],
           isStreaming: false,
+          attachments,
           sessionId: turn.session_id,
         });
       }
@@ -226,6 +236,7 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
         thinking: "",
         toolCalls: [],
         isStreaming: false,
+        attachments: [],
         sessionId: turn.session_id,
       });
     }
@@ -235,7 +246,7 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
 }
 
 /** Create a blank user ChatMessage. */
-function makeUserMessage(text: string): ChatMessage {
+function makeUserMessage(text: string, attachments: InputPart[] = []): ChatMessage {
   return {
     id: crypto.randomUUID(),
     role: "user",
@@ -243,6 +254,7 @@ function makeUserMessage(text: string): ChatMessage {
     thinking: "",
     toolCalls: [],
     isStreaming: false,
+    attachments,
   };
 }
 
@@ -255,6 +267,7 @@ function makeAssistantPlaceholder(): ChatMessage {
     thinking: "",
     toolCalls: [],
     isStreaming: true,
+    attachments: [],
   };
 }
 
@@ -641,7 +654,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
   },
 
-  sendMessage: async (text, opts) => {
+  sendMessage: async (text, opts, attachments) => {
     const { conversationId, streamingState, _abortController: existing } = get();
 
     // If already streaming, treat as steer
@@ -657,7 +670,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     // Optimistically add user + assistant placeholder
     set((state) => ({
-      messages: [...state.messages, makeUserMessage(text), makeAssistantPlaceholder()],
+      messages: [...state.messages, makeUserMessage(text, attachments), makeAssistantPlaceholder()],
       streamingState: "connecting",
       error: null,
       _abortController: abortController,
@@ -666,7 +679,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     try {
       const { selectedProjectIds } = get();
       const body: ConversationRunRequest = {
-        input: [{ type: "text", text }],
+        input: [...(text ? [{ type: "text" as const, text }] : []), ...(attachments ?? [])],
         transport: "stream", // Prefer stream transport for reconnection support
         project_ids: selectedProjectIds,
       };

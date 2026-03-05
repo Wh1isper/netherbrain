@@ -4,6 +4,7 @@ import { useChatStore } from "@/stores/chat";
 import { useAppStore } from "@/stores/app";
 import { listConversations } from "@/api/conversations";
 import { updateWorkspace, listWorkspaces } from "@/api/workspaces";
+import type { InputPart } from "@/api/types";
 import MessageList from "@/components/chat/MessageList";
 import ChatInput from "@/components/chat/ChatInput";
 import ConversationHeader from "@/components/chat/ConversationHeader";
@@ -100,9 +101,9 @@ export default function Chat() {
   // -----------------------------------------------------------------------
 
   const handleSend = useCallback(
-    (text: string) => {
+    (text: string, attachments?: InputPart[]) => {
       if (!currentWorkspaceId) return;
-      void sendMessage(text, { workspaceId: currentWorkspaceId });
+      void sendMessage(text, { workspaceId: currentWorkspaceId }, attachments);
     },
     [currentWorkspaceId, sendMessage],
   );

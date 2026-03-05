@@ -192,7 +192,7 @@ export interface InputPart {
   path?: string;
   data?: string;
   mime?: string;
-  mode?: "file" | "inline";
+  storage?: "ephemeral" | "persistent" | "inline";
 }
 
 export interface TurnResponse {

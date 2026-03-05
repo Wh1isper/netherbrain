@@ -3,10 +3,12 @@
 Maps the ``list[InputPart]`` wire format to ``UserPromptT`` (the type
 accepted by ``stream_agent(user_prompt=...)``).
 
-Two delivery modes per part:
+Three storage modes per part:
 
-- **file** (default): Write content to the project directory and reference
-  the path in a text instruction.  Safe for all models.
+- **ephemeral** (default): Write content to the tmp directory (cleaned
+  after session) and reference the path.  Safe for all models.
+- **persistent**: Write content to the project directory (survives
+  sessions) and reference the path.
 - **inline**: Pass content directly into the model context as multimodal
   ``UserContent``.  Model-dependent; fails if unsupported.
 
@@ -32,7 +34,7 @@ from pydantic_ai.messages import (
     VideoUrl,
 )
 
-from netherbrain.agent_runtime.models.enums import ContentMode, InputPartType
+from netherbrain.agent_runtime.models.enums import InputPartType, StorageMode
 from netherbrain.agent_runtime.models.input import InputPart
 
 if TYPE_CHECKING:
@@ -127,8 +129,14 @@ async def _download_url(
     url: str,
     file_operator: FileOperator,
     client: httpx.AsyncClient,
+    *,
+    persistent: bool = False,
 ) -> str:
-    """Download a URL to the agent's tmp directory via FileOperator.
+    """Download a URL via FileOperator.
+
+    When *persistent* is ``False`` (default), writes to the tmp directory
+    (ephemeral, cleaned after session).  When ``True``, writes to the
+    project directory (persistent, survives sessions).
 
     Returns a structured description of the downloaded file.
 
@@ -169,18 +177,30 @@ async def _download_url(
         content = b"".join(chunks)
 
     content_type = response.headers.get("content-type", "unknown")
-    abs_path = await file_operator.write_tmp_file(filename, content)
-    logger.debug("Downloaded %s -> %s (%s, %d bytes)", url, abs_path, content_type, total)
+    if persistent:
+        await file_operator.write_file(filename, content)
+        saved_ref = filename  # project-relative path
+        hint = ""
+    else:
+        saved_ref = await file_operator.write_tmp_file(filename, content)
+        hint = "\nNote: This is a temporary file that will be deleted after the session. Move it to the project directory if you need to keep it."
+    storage_label = "persistent" if persistent else "ephemeral"
+    logger.debug("Downloaded %s -> %s (%s, %d bytes, %s)", url, saved_ref, content_type, total, storage_label)
 
-    return f"[File downloaded from URL]\nSource: {url}\nSaved to: {abs_path}\nType: {content_type}\nSize: {total} bytes"
+    return f"[File downloaded from URL]\nSource: {url}\nSaved to: {saved_ref}\nType: {content_type}\nSize: {total} bytes{hint}"
 
 
 async def _write_binary(
     data: bytes,
     mime: str,
     file_operator: FileOperator,
+    *,
+    persistent: bool = False,
 ) -> str:
-    """Write binary data to the agent's tmp directory via FileOperator.
+    """Write binary data via FileOperator.
+
+    When *persistent* is ``False`` (default), writes to the tmp directory.
+    When ``True``, writes to the project directory.
 
     Returns a structured description of the written file.
 
@@ -193,10 +213,16 @@ async def _write_binary(
     ext = mimetypes.guess_extension(mime) or ".bin"
     filename = f"{uuid.uuid4().hex[:12]}{ext}"
 
-    abs_path = await file_operator.write_tmp_file(filename, data)
-    logger.debug("Wrote binary (%s, %d bytes) -> %s", mime, len(data), abs_path)
+    if persistent:
+        await file_operator.write_file(filename, data)
+        saved_ref = filename  # project-relative path
+        hint = ""
+    else:
+        saved_ref = await file_operator.write_tmp_file(filename, data)
+        hint = "\nNote: This is a temporary file that will be deleted after the session. Move it to the project directory if you need to keep it."
+    logger.debug("Wrote binary (%s, %d bytes) -> %s", mime, len(data), saved_ref)
 
-    return f"[Binary data saved]\nSaved to: {abs_path}\nType: {mime}\nSize: {len(data)} bytes"
+    return f"[Binary data saved]\nSaved to: {saved_ref}\nType: {mime}\nSize: {len(data)} bytes{hint}"
 
 
 def _resolve_file_path(path: str) -> str:
@@ -227,11 +253,12 @@ async def map_input_to_prompt(
     parts:
         Input parts from the API request.
     file_operator:
-        SDK FileOperator for file I/O.  Required for ``mode=file``
-        operations on url/binary parts and ``mode=inline`` on file parts.
+        SDK FileOperator for file I/O.  Required for ``storage=ephemeral``
+        and ``storage=persistent`` operations on url/binary parts, and
+        ``storage=inline`` on file parts.
     http_client:
-        HTTP client for downloading URLs in ``mode=file``.  A temporary
-        client is created if not provided.
+        HTTP client for downloading URLs.  A temporary client is created
+        if not provided.
 
     Returns
     -------
@@ -295,16 +322,21 @@ async def _map_url_part(
 ) -> UserContent | object:
     """Map a URL InputPart, with download fallback to inline on failure."""
     url = part.url or ""
-    if part.mode == ContentMode.INLINE:
+    if part.storage == StorageMode.INLINE:
         return _url_to_inline_content(url, part.mime)
-    # mode=file: download via FileOperator, fall back to inline on failure
+    # ephemeral/persistent: download via FileOperator, fall back to inline
     if file_operator is None:
         logger.debug("No file operator for URL download, falling back to inline: %s", url)
         return _url_to_inline_content(url, part.mime)
     if http_client is None:
         return _NEEDS_HTTP_CLIENT
     try:
-        return await _download_url(url, file_operator, http_client)
+        return await _download_url(
+            url,
+            file_operator,
+            http_client,
+            persistent=part.storage == StorageMode.PERSISTENT,
+        )
     except Exception:
         logger.warning("Download failed for %s, falling back to inline", url, exc_info=True)
         return _url_to_inline_content(url, part.mime)
@@ -329,12 +361,13 @@ async def _map_single_part(
 
         case InputPartType.FILE:
             file_path = part.path or ""
-            if part.mode == ContentMode.INLINE:
+            if part.storage == StorageMode.INLINE:
                 if file_operator is None:
                     msg = "File operator required for inline file input"
                     raise ValueError(msg)
                 return await _map_file_inline(file_path, part.mime, file_operator)
-            # mode=file: reference the file by cleaned path
+            # ephemeral/persistent: reference the file by cleaned path
+            # (file already exists in project dir)
             clean_path = _resolve_file_path(file_path)
             return f"[Project file]\nPath: {clean_path}"
 
@@ -374,13 +407,18 @@ async def _map_binary_part(
     """Map a binary InputPart to either inline content or a file reference."""
     raw = base64.b64decode(part.data or "", validate=True)
     mime = part.mime or "application/octet-stream"
-    if part.mode == ContentMode.INLINE:
+    if part.storage == StorageMode.INLINE:
         if len(raw) > _MAX_INLINE_BYTES:
             msg = f"Binary data too large for inline mode: {len(raw)} bytes (limit: {_MAX_INLINE_BYTES})"
             raise ValueError(msg)
         return _bytes_to_inline_content(raw, mime)
-    # mode=file: write via FileOperator
+    # ephemeral/persistent: write via FileOperator
     if file_operator is None:
-        msg = "File operator required for mode=file binary input"
+        msg = "File operator required for ephemeral/persistent binary input"
         raise ValueError(msg)
-    return await _write_binary(raw, mime, file_operator)
+    return await _write_binary(
+        raw,
+        mime,
+        file_operator,
+        persistent=part.storage == StorageMode.PERSISTENT,
+    )

@@ -4,15 +4,16 @@ Defines the wire-format for user input as described in
 spec/agent_runtime/07-api.md (Input Format section).
 
 Input is a list of content parts.  Each part has a ``type`` that determines
-which field carries the payload, and an optional ``mode`` that controls how
-the part is delivered to the model (write to file vs. pass inline).
+which field carries the payload, and an optional ``storage`` that controls
+how the part is stored and delivered (ephemeral tmp, persistent project
+directory, or inline to model context).
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field, model_validator
 
-from netherbrain.agent_runtime.models.enums import ContentMode, InputPartType
+from netherbrain.agent_runtime.models.enums import InputPartType, StorageMode
 
 
 class InputPart(BaseModel):
@@ -35,9 +36,10 @@ class InputPart(BaseModel):
         Base64-encoded binary content (required when type=binary).
     mime:
         MIME type hint for url/binary parts.
-    mode:
-        Delivery mode: ``file`` (default, write to environment) or
-        ``inline`` (pass directly to model context).
+    storage:
+        Storage mode: ``ephemeral`` (default, tmp dir cleaned after
+        session), ``persistent`` (project dir, survives sessions),
+        or ``inline`` (pass directly to model context).
     """
 
     type: InputPartType
@@ -46,7 +48,7 @@ class InputPart(BaseModel):
     path: str | None = None
     data: str | None = None
     mime: str | None = None
-    mode: ContentMode = ContentMode.FILE
+    storage: StorageMode = StorageMode.EPHEMERAL
 
     @model_validator(mode="after")
     def _validate_payload(self) -> InputPart:
@@ -81,24 +83,24 @@ def text_part(text: str) -> InputPart:
     return InputPart(type=InputPartType.TEXT, text=text)
 
 
-def url_part(url: str, *, mime: str | None = None, mode: ContentMode = ContentMode.FILE) -> InputPart:
+def url_part(url: str, *, mime: str | None = None, storage: StorageMode = StorageMode.EPHEMERAL) -> InputPart:
     """Create a URL input part."""
-    return InputPart(type=InputPartType.URL, url=url, mime=mime, mode=mode)
+    return InputPart(type=InputPartType.URL, url=url, mime=mime, storage=storage)
 
 
-def file_part(path: str, *, mode: ContentMode = ContentMode.FILE) -> InputPart:
+def file_part(path: str, *, storage: StorageMode = StorageMode.EPHEMERAL) -> InputPart:
     """Create a file input part."""
-    return InputPart(type=InputPartType.FILE, path=path, mode=mode)
+    return InputPart(type=InputPartType.FILE, path=path, storage=storage)
 
 
 def binary_part(
     data: str,
     *,
     mime: str = "application/octet-stream",
-    mode: ContentMode = ContentMode.FILE,
+    storage: StorageMode = StorageMode.EPHEMERAL,
 ) -> InputPart:
     """Create a binary input part (base64-encoded data)."""
-    return InputPart(type=InputPartType.BINARY, data=data, mime=mime, mode=mode)
+    return InputPart(type=InputPartType.BINARY, data=data, mime=mime, storage=storage)
 
 
 # ---------------------------------------------------------------------------

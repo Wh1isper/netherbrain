@@ -207,6 +207,25 @@ White/near-white panel in light mode, slightly elevated dark surface in
 dark mode. Active conversation uses `sidebar-accent` (subtle green tint).
 Footer has theme toggle, settings, and logout.
 
+### Attachments
+
+**Preview strip**: Horizontal scroll container inside the input wrapper, above
+the textarea. Only visible when attachments are present. Uses `gap-2` spacing.
+
+**Image thumbnail**: `h-16 w-16 rounded-lg object-cover` with a small
+remove button overlay (`absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-foreground/80 text-background`). Shows local preview via `URL.createObjectURL`.
+
+**File chip**: `bg-muted rounded-lg px-3 py-2 text-sm` with file type icon
+(from lucide-react), truncated filename (`max-w-[140px] truncate`), and
+human-readable size in muted text. Remove button inline.
+
+**Drop zone highlight**: On drag-over, input wrapper transitions to
+`border-primary border-dashed bg-primary/5`.
+
+**User message attachments (history)**: Image thumbnails render inline
+below the text (`rounded-lg max-h-48 cursor-pointer`). File/URL parts
+render as compact badges (`bg-muted/60 rounded-md px-2 py-1 text-xs`).
+
 ### Login / Auth Pages
 
 Centered card on page background. Brand icon (Bot) with `bg-primary/10`.
