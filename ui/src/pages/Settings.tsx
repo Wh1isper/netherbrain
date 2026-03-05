@@ -33,7 +33,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { listPresets, createPreset, updatePreset, deletePreset, listToolsets } from "@/api/presets";
+import {
+  listPresets,
+  createPreset,
+  updatePreset,
+  deletePreset,
+  listToolsets,
+  listModelPresets,
+} from "@/api/presets";
+import { updateUser } from "@/api/users";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   listWorkspaces,
   createWorkspace,
@@ -49,6 +64,7 @@ import type {
   PresetResponse,
   WorkspaceResponse,
   ToolsetInfo,
+  ModelPresetsResponse,
   UserResponse,
   ApiKeyResponse,
   ApiKeyCreateResponse,
@@ -102,17 +118,42 @@ function ErrorBanner({ message }: { message: string }) {
 // Preset tab
 // ============================================================================
 
+interface McpServerDraft {
+  url: string;
+  transport: "streamable_http" | "sse";
+  headers: string;
+  tool_prefix: string;
+  timeout: string;
+}
+
 interface PresetDraft {
   name: string;
   description: string;
   is_default: boolean;
+  // Model
   model_name: string;
+  model_settings_preset: string;
+  model_config_preset: string;
   temperature: string;
   max_tokens: string;
+  // System prompt
   system_prompt: string;
+  // Toolsets
   toolsets: Record<string, boolean>;
+  // Subagents
   subagents_include_builtin: boolean;
   subagents_async_enabled: boolean;
+  // Environment
+  env_mode: "local" | "sandbox";
+  env_container_id: string;
+  env_container_workdir: string;
+  // Tool config
+  tool_skip_url_verification: boolean;
+  tool_enable_load_document: boolean;
+  tool_image_model: string;
+  tool_video_model: string;
+  // MCP servers
+  mcp_servers: McpServerDraft[];
 }
 
 function presetToDraft(p: PresetResponse): PresetDraft {
@@ -120,17 +161,34 @@ function presetToDraft(p: PresetResponse): PresetDraft {
   for (const ts of p.toolsets) {
     toolsetMap[ts.toolset_name] = ts.enabled !== false;
   }
+  const ms = p.model.model_settings as Record<string, number | undefined> | null;
   return {
     name: p.name,
     description: p.description ?? "",
     is_default: p.is_default,
     model_name: p.model.name,
-    temperature: p.model.temperature != null ? String(p.model.temperature) : "",
-    max_tokens: p.model.max_tokens != null ? String(p.model.max_tokens) : "",
+    model_settings_preset: p.model.model_settings_preset ?? "",
+    model_config_preset: p.model.model_config_preset ?? "",
+    temperature: ms?.temperature != null ? String(ms.temperature) : "",
+    max_tokens: ms?.max_tokens != null ? String(ms.max_tokens) : "",
     system_prompt: p.system_prompt,
     toolsets: toolsetMap,
-    subagents_include_builtin: p.subagents?.include_builtin ?? false,
+    subagents_include_builtin: p.subagents?.include_builtin ?? true,
     subagents_async_enabled: p.subagents?.async_enabled ?? false,
+    env_mode: p.environment?.mode ?? "local",
+    env_container_id: p.environment?.container_id ?? "",
+    env_container_workdir: p.environment?.container_workdir ?? "/workspace",
+    tool_skip_url_verification: p.tool_config?.skip_url_verification ?? true,
+    tool_enable_load_document: p.tool_config?.enable_load_document ?? false,
+    tool_image_model: p.tool_config?.image_understanding_model ?? "",
+    tool_video_model: p.tool_config?.video_understanding_model ?? "",
+    mcp_servers: (p.mcp_servers ?? []).map((s) => ({
+      url: s.url,
+      transport: s.transport ?? "streamable_http",
+      headers: s.headers ? JSON.stringify(s.headers, null, 2) : "",
+      tool_prefix: s.tool_prefix ?? "",
+      timeout: s.timeout != null ? String(s.timeout) : "",
+    })),
   };
 }
 
@@ -144,12 +202,22 @@ function emptyPresetDraft(cloneSource?: PresetResponse): PresetDraft {
     description: "",
     is_default: false,
     model_name: "",
+    model_settings_preset: "",
+    model_config_preset: "",
     temperature: "",
     max_tokens: "",
     system_prompt: "",
     toolsets: {},
-    subagents_include_builtin: false,
+    subagents_include_builtin: true,
     subagents_async_enabled: false,
+    env_mode: "local",
+    env_container_id: "",
+    env_container_workdir: "/workspace",
+    tool_skip_url_verification: true,
+    tool_enable_load_document: false,
+    tool_image_model: "",
+    tool_video_model: "",
+    mcp_servers: [],
   };
 }
 
@@ -157,6 +225,7 @@ function PresetEditor({
   preset,
   cloneSource,
   availableToolsets,
+  modelPresets,
   onSave,
   onDelete,
   onClone,
@@ -165,6 +234,7 @@ function PresetEditor({
   preset: PresetResponse | null;
   cloneSource?: PresetResponse;
   availableToolsets: ToolsetInfo[];
+  modelPresets: ModelPresetsResponse | null;
   onSave: (draft: PresetDraft) => Promise<void>;
   onDelete: () => void;
   onClone: () => void;
@@ -283,8 +353,48 @@ function PresetEditor({
                 id="model-name"
                 value={draft.model_name}
                 onChange={(e) => set("model_name", e.target.value)}
-                placeholder="e.g. claude-3-5-sonnet-20241022"
+                placeholder="e.g. anthropic:claude-sonnet-4"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="settings-preset">Settings preset</Label>
+                <Select
+                  value={draft.model_settings_preset || "_none"}
+                  onValueChange={(v) => set("model_settings_preset", v === "_none" ? "" : v)}
+                >
+                  <SelectTrigger id="settings-preset" className="text-sm">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">None</SelectItem>
+                    {modelPresets?.model_settings_presets.map((p) => (
+                      <SelectItem key={p.name} value={p.name}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="config-preset">Config preset</Label>
+                <Select
+                  value={draft.model_config_preset || "_none"}
+                  onValueChange={(v) => set("model_config_preset", v === "_none" ? "" : v)}
+                >
+                  <SelectTrigger id="config-preset" className="text-sm">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">None</SelectItem>
+                    {modelPresets?.model_config_presets.map((p) => (
+                      <SelectItem key={p.name} value={p.name}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -370,6 +480,99 @@ function PresetEditor({
 
           <Separator />
 
+          {/* Environment */}
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Environment
+            </h3>
+            <div className="space-y-1.5">
+              <Label>Mode</Label>
+              <Select
+                value={draft.env_mode}
+                onValueChange={(v) => set("env_mode", v as "local" | "sandbox")}
+              >
+                <SelectTrigger className="text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">Local</SelectItem>
+                  <SelectItem value="sandbox">Sandbox</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {draft.env_mode === "sandbox" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="container-id">Container ID</Label>
+                  <Input
+                    id="container-id"
+                    value={draft.env_container_id}
+                    onChange={(e) => set("env_container_id", e.target.value)}
+                    placeholder="Required for sandbox"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="container-workdir">Working directory</Label>
+                  <Input
+                    id="container-workdir"
+                    value={draft.env_container_workdir}
+                    onChange={(e) => set("env_container_workdir", e.target.value)}
+                    placeholder="/workspace"
+                  />
+                </div>
+              </div>
+            )}
+          </section>
+
+          <Separator />
+
+          {/* Tool Config */}
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Tool Config
+            </h3>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-input accent-primary"
+                checked={draft.tool_skip_url_verification}
+                onChange={(e) => set("tool_skip_url_verification", e.target.checked)}
+              />
+              <span className="text-sm">Skip URL verification</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-input accent-primary"
+                checked={draft.tool_enable_load_document}
+                onChange={(e) => set("tool_enable_load_document", e.target.checked)}
+              />
+              <span className="text-sm">Enable document loading</span>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="img-model">Image understanding model</Label>
+                <Input
+                  id="img-model"
+                  value={draft.tool_image_model}
+                  onChange={(e) => set("tool_image_model", e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="vid-model">Video understanding model</Label>
+                <Input
+                  id="vid-model"
+                  value={draft.tool_video_model}
+                  onChange={(e) => set("tool_video_model", e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+            </div>
+          </section>
+
+          <Separator />
+
           {/* Subagents */}
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -395,6 +598,150 @@ function PresetEditor({
             </label>
           </section>
 
+          <Separator />
+
+          {/* MCP Servers */}
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              MCP Servers
+            </h3>
+            {draft.mcp_servers.map((srv, idx) => (
+              <div key={idx} className="rounded-md border border-border p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Server {idx + 1}
+                  </span>
+                  <button
+                    onClick={() =>
+                      setDraft((d) => ({
+                        ...d,
+                        mcp_servers: d.mcp_servers.filter((_, i) => i !== idx),
+                      }))
+                    }
+                    className="text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2 space-y-1">
+                    <Label className="text-xs">URL</Label>
+                    <Input
+                      value={srv.url}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          mcp_servers: d.mcp_servers.map((s, i) =>
+                            i === idx ? { ...s, url: e.target.value } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="http://localhost:8080/mcp"
+                      className="text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Transport</Label>
+                    <Select
+                      value={srv.transport}
+                      onValueChange={(v) =>
+                        setDraft((d) => ({
+                          ...d,
+                          mcp_servers: d.mcp_servers.map((s, i) =>
+                            i === idx ? { ...s, transport: v as "streamable_http" | "sse" } : s,
+                          ),
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="streamable_http">Streamable HTTP</SelectItem>
+                        <SelectItem value="sse">SSE</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tool prefix</Label>
+                    <Input
+                      value={srv.tool_prefix}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          mcp_servers: d.mcp_servers.map((s, i) =>
+                            i === idx ? { ...s, tool_prefix: e.target.value } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="optional"
+                      className="text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Timeout (s)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={srv.timeout}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          mcp_servers: d.mcp_servers.map((s, i) =>
+                            i === idx ? { ...s, timeout: e.target.value } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="default"
+                      className="text-xs"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Headers (JSON)</Label>
+                  <Textarea
+                    value={srv.headers}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        mcp_servers: d.mcp_servers.map((s, i) =>
+                          i === idx ? { ...s, headers: e.target.value } : s,
+                        ),
+                      }))
+                    }
+                    placeholder='{"Authorization": "Bearer ..."}'
+                    className="font-mono text-xs min-h-[60px] resize-y"
+                    rows={2}
+                  />
+                </div>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setDraft((d) => ({
+                  ...d,
+                  mcp_servers: [
+                    ...d.mcp_servers,
+                    {
+                      url: "",
+                      transport: "streamable_http",
+                      headers: "",
+                      tool_prefix: "",
+                      timeout: "",
+                    },
+                  ],
+                }))
+              }
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Add MCP Server
+            </Button>
+          </section>
+
           {/* Bottom padding */}
           <div className="h-4" />
         </div>
@@ -418,6 +765,7 @@ function PresetEditor({
 function PresetsTab() {
   const [presets, setPresets] = useState<PresetResponse[]>([]);
   const [availableToolsets, setAvailableToolsets] = useState<ToolsetInfo[]>([]);
+  const [modelPresets, setModelPresets] = useState<ModelPresetsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<"view" | "new" | "clone">("view");
@@ -432,9 +780,10 @@ function PresetsTab() {
     setLoading(true);
     setError(null);
     try {
-      const [ps, ts] = await Promise.all([listPresets(), listToolsets()]);
+      const [ps, ts, mp] = await Promise.all([listPresets(), listToolsets(), listModelPresets()]);
       setPresets(ps);
       setAvailableToolsets(ts);
+      setModelPresets(mp);
       if (ps.length > 0 && !selectedId) {
         setSelectedId(ps[0].preset_id);
         setMode("view");
@@ -473,41 +822,123 @@ function PresetsTab() {
     setSaving(true);
     setError(null);
     try {
+      // When editing, preserve backend fields that the UI doesn't expose.
+      const base = mode === "view" ? selectedPreset : null;
+
+      // Merge toolsets: preserve exclude_tools from existing entries.
+      const existingToolsets = base?.toolsets ?? [];
       const toolsets = availableToolsets
         .filter((ts) => draft.toolsets[ts.name])
-        .map((ts) => ({ toolset_name: ts.name, enabled: true }));
+        .map((ts) => {
+          const existing = existingToolsets.find((e) => e.toolset_name === ts.name);
+          return {
+            toolset_name: ts.name,
+            enabled: true,
+            ...(existing?.exclude_tools?.length ? { exclude_tools: existing.exclude_tools } : {}),
+          };
+        });
+
+      // Build model_settings dict from individual overrides.
+      const modelSettingsOverrides: Record<string, unknown> = {};
+      const tempVal = parseFloat(draft.temperature);
+      if (draft.temperature !== "" && Number.isFinite(tempVal))
+        modelSettingsOverrides.temperature = tempVal;
+      const maxTokVal = parseInt(draft.max_tokens, 10);
+      if (draft.max_tokens !== "" && Number.isFinite(maxTokVal))
+        modelSettingsOverrides.max_tokens = maxTokVal;
+
       const model = {
         name: draft.model_name,
-        temperature: draft.temperature !== "" ? parseFloat(draft.temperature) : null,
-        max_tokens: draft.max_tokens !== "" ? parseInt(draft.max_tokens, 10) : null,
+        model_settings_preset: draft.model_settings_preset || null,
+        model_settings:
+          Object.keys(modelSettingsOverrides).length > 0 ? modelSettingsOverrides : null,
+        model_config_preset: draft.model_config_preset || null,
+        // Preserve existing model_config_overrides (UI doesn't edit this).
+        model_config_overrides: base?.model?.model_config_overrides ?? null,
       };
+
       const subagents = {
         include_builtin: draft.subagents_include_builtin,
         async_enabled: draft.subagents_async_enabled,
+        // Preserve existing subagent refs (UI doesn't edit these).
+        ...(base?.subagents?.refs?.length ? { refs: base.subagents.refs } : {}),
+      };
+
+      const environment = {
+        mode: draft.env_mode,
+        // Preserve workspace/project references from existing preset.
+        ...(base?.environment?.workspace_id ? { workspace_id: base.environment.workspace_id } : {}),
+        ...(base?.environment?.project_ids?.length
+          ? { project_ids: base.environment.project_ids }
+          : {}),
+        ...(draft.env_mode === "sandbox"
+          ? {
+              container_id: draft.env_container_id || null,
+              container_workdir: draft.env_container_workdir || "/workspace",
+            }
+          : {}),
+      };
+
+      const tool_config = {
+        skip_url_verification: draft.tool_skip_url_verification,
+        enable_load_document: draft.tool_enable_load_document,
+        image_understanding_model: draft.tool_image_model || null,
+        // Preserve model_settings dicts (UI doesn't edit these).
+        ...(base?.tool_config?.image_understanding_model_settings
+          ? {
+              image_understanding_model_settings:
+                base.tool_config.image_understanding_model_settings,
+            }
+          : {}),
+        video_understanding_model: draft.tool_video_model || null,
+        ...(base?.tool_config?.video_understanding_model_settings
+          ? {
+              video_understanding_model_settings:
+                base.tool_config.video_understanding_model_settings,
+            }
+          : {}),
+      };
+
+      const mcp_servers = draft.mcp_servers
+        .filter((s) => s.url.trim())
+        .map((s) => {
+          let headers: Record<string, string> | null = null;
+          if (s.headers.trim()) {
+            try {
+              headers = JSON.parse(s.headers);
+            } catch {
+              /* ignore */
+            }
+          }
+          const timeoutVal = parseFloat(s.timeout);
+          return {
+            url: s.url,
+            transport: s.transport,
+            headers,
+            tool_prefix: s.tool_prefix || null,
+            timeout: s.timeout !== "" && Number.isFinite(timeoutVal) ? timeoutVal : null,
+          };
+        });
+
+      const payload = {
+        name: draft.name,
+        description: draft.description || null,
+        is_default: draft.is_default,
+        model,
+        system_prompt: draft.system_prompt,
+        toolsets,
+        subagents,
+        environment,
+        tool_config,
+        mcp_servers,
       };
 
       if (mode === "view" && selectedPreset) {
-        const updated = await updatePreset(selectedPreset.preset_id, {
-          name: draft.name,
-          description: draft.description || null,
-          is_default: draft.is_default,
-          model,
-          system_prompt: draft.system_prompt,
-          toolsets,
-          subagents,
-        });
+        const updated = await updatePreset(selectedPreset.preset_id, payload);
         setPresets((ps) => ps.map((p) => (p.preset_id === updated.preset_id ? updated : p)));
         setSelectedId(updated.preset_id);
       } else {
-        const created = await createPreset({
-          name: draft.name,
-          description: draft.description || null,
-          is_default: draft.is_default,
-          model,
-          system_prompt: draft.system_prompt,
-          toolsets,
-          subagents,
-        });
+        const created = await createPreset(payload);
         setPresets((ps) => [...ps, created]);
         setSelectedId(created.preset_id);
         setMode("view");
@@ -602,6 +1033,7 @@ function PresetsTab() {
             preset={mode === "view" ? selectedPreset : null}
             cloneSource={mode === "clone" ? cloneSource : undefined}
             availableToolsets={availableToolsets}
+            modelPresets={modelPresets}
             onSave={handleSave}
             onDelete={() => void handleDelete()}
             onClone={handleClone}
@@ -653,18 +1085,29 @@ function WorkspaceEditor({
     workspace ? workspaceToDraft(workspace) : emptyWorkspaceDraft(),
   );
   const [newProject, setNewProject] = useState("");
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     setDraft(workspace ? workspaceToDraft(workspace) : emptyWorkspaceDraft());
     setNewProject("");
+    setProjectError(null);
   }, [workspace?.workspace_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addProject = () => {
     const val = newProject.trim();
-    if (!val || draft.projects.includes(val)) return;
+    if (!val) return;
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(val) || val.length > 64) {
+      setProjectError("Use letters, numbers, dots, hyphens, underscores only");
+      return;
+    }
+    if (draft.projects.includes(val)) {
+      setProjectError("Project already exists");
+      return;
+    }
     setDraft((d) => ({ ...d, projects: [...d.projects, val] }));
     setNewProject("");
+    setProjectError(null);
   };
 
   const removeProject = (p: string) =>
@@ -723,13 +1166,18 @@ function WorkspaceEditor({
 
           <Separator />
 
-          {/* Folders */}
+          {/* Projects */}
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Folders
+              Projects
             </h3>
+            <p className="text-xs text-muted-foreground">
+              Each project creates a managed directory on the server that the agent can access.
+            </p>
             {draft.projects.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No folders added.</p>
+              <p className="text-sm text-muted-foreground">
+                No projects yet. Add one to give the agent file system access.
+              </p>
             ) : (
               <div className="space-y-1.5">
                 {draft.projects.map((p) => (
@@ -753,15 +1201,21 @@ function WorkspaceEditor({
             <div className="flex gap-2">
               <Input
                 value={newProject}
-                onChange={(e) => setNewProject(e.target.value)}
+                onChange={(e) => {
+                  setNewProject(e.target.value);
+                  setProjectError(null);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     addProject();
                   }
                 }}
-                placeholder="Add folder path..."
-                className="flex-1 font-mono text-xs"
+                placeholder="New project name (e.g. my-app)"
+                className={[
+                  "flex-1 font-mono text-xs",
+                  projectError ? "border-destructive" : "",
+                ].join(" ")}
               />
               <Button
                 variant="outline"
@@ -772,6 +1226,7 @@ function WorkspaceEditor({
                 Add
               </Button>
             </div>
+            {projectError && <p className="text-xs text-destructive">{projectError}</p>}
           </section>
 
           <div className="h-4" />
@@ -1003,9 +1458,11 @@ function SecretRevealDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2">
-          <code className="flex-1 text-sm font-mono break-all select-all">{secret}</code>
-          <Button variant="ghost" size="sm" onClick={() => void handleCopy()}>
+        <div className="flex items-start gap-2 rounded-md border border-border bg-muted px-3 py-2">
+          <code className="flex-1 text-sm font-mono break-all select-all whitespace-pre-line">
+            {secret}
+          </code>
+          <Button variant="ghost" size="sm" className="shrink-0" onClick={() => void handleCopy()}>
             {copied ? "Copied" : "Copy"}
           </Button>
         </div>
@@ -1119,9 +1576,7 @@ function ChangePasswordForm() {
         {mismatch && <p className="text-xs text-destructive">Passwords do not match.</p>}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {success && (
-        <p className="text-sm text-green-600 dark:text-green-400">Password changed successfully.</p>
-      )}
+      {success && <p className="text-sm text-primary">Password changed successfully.</p>}
       <Button type="submit" size="sm" disabled={!canSubmit}>
         {saving ? "Saving..." : "Change password"}
       </Button>
@@ -1129,7 +1584,7 @@ function ChangePasswordForm() {
   );
 }
 
-function ApiKeysSection() {
+function ApiKeysSection({ userId }: { userId?: string }) {
   const [keys, setKeys] = useState<ApiKeyResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -1140,13 +1595,13 @@ function ApiKeysSection() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setKeys(await listKeys());
+      setKeys(await listKeys(userId));
     } catch {
       setError("Failed to load API keys.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     void load();
@@ -1308,7 +1763,7 @@ function AccountTab() {
           <p className="text-xs text-muted-foreground">
             API keys can be used for programmatic access. They do not expire unless revoked.
           </p>
-          <ApiKeysSection />
+          <ApiKeysSection userId={user?.user_id} />
         </section>
 
         <div className="h-4" />
@@ -1527,6 +1982,16 @@ function UsersTab() {
           ) : (
             users.map((u) => {
               const isSelf = u.user_id === currentUser?.user_id;
+              const handleRoleChange = async (newRole: "admin" | "user") => {
+                if (newRole === u.role) return;
+                setError(null);
+                try {
+                  await updateUser(u.user_id, { role: newRole });
+                  void load();
+                } catch {
+                  setError("Failed to update role.");
+                }
+              };
               return (
                 <div
                   key={u.user_id}
@@ -1555,9 +2020,24 @@ function UsersTab() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 capitalize">
-                        {u.role}
-                      </Badge>
+                      {isSelf ? (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 capitalize">
+                          {u.role}
+                        </Badge>
+                      ) : (
+                        <Select
+                          value={u.role}
+                          onValueChange={(v) => void handleRoleChange(v as "admin" | "user")}
+                        >
+                          <SelectTrigger className="h-5 w-20 text-[10px] px-1.5 py-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="user">user</SelectItem>
+                            <SelectItem value="admin">admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">

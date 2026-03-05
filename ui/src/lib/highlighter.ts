@@ -26,7 +26,8 @@ const PRELOADED_LANGS = [
   "shell",
 ];
 
-const THEMES = ["github-dark", "github-light"] as const;
+/* Warm themes that complement the earthy design system */
+const THEMES = ["vitesse-dark", "vitesse-light"] as const;
 
 export async function getHighlighter(): Promise<Highlighter> {
   if (instance) return instance;
@@ -56,7 +57,7 @@ export async function highlightCode(
 ): Promise<string> {
   try {
     const highlighter = await getHighlighter();
-    const shikiTheme = theme === "dark" ? "github-dark" : "github-light";
+    const shikiTheme = theme === "dark" ? "vitesse-dark" : "vitesse-light";
 
     // Check if language is loaded; if not, try loading it dynamically
     const loadedLangs = highlighter.getLoadedLanguages();

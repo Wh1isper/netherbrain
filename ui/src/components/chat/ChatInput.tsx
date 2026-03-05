@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from "react";
-import { Send, Square } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StreamingState } from "@/stores/chat";
 
@@ -61,40 +61,42 @@ export default function ChatInput({
   );
 
   return (
-    <div className="border-t border-border bg-background px-4 py-3">
-      <div className="mx-auto max-w-3xl flex items-end gap-2">
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          placeholder={isStreaming ? "Send a message to guide the agent..." : "Send a message..."}
-          className="flex-1 resize-none rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm
-            placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring
-            disabled:opacity-50"
-          onInput={adjustHeight}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-        />
-        {isStreaming ? (
-          <Button
-            variant="destructive"
-            size="icon"
-            className="h-10 w-10 shrink-0 rounded-lg"
-            onClick={onInterrupt}
-            aria-label="Stop"
-          >
-            <Square className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Button
-            size="icon"
-            className="h-10 w-10 shrink-0 rounded-lg"
-            onClick={handleSend}
+    <div className="bg-background px-4 py-3">
+      <div className="mx-auto max-w-3xl">
+        <div className="flex items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm transition-shadow focus-within:shadow-md focus-within:border-primary/20">
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            placeholder={isStreaming ? "Send a message to guide the agent..." : "Send a message..."}
+            className="flex-1 resize-none bg-transparent px-1 py-1.5 text-[0.9375rem] leading-relaxed
+              placeholder:text-muted-foreground focus:outline-none
+              disabled:opacity-50"
+            onInput={adjustHeight}
+            onKeyDown={handleKeyDown}
             disabled={disabled}
-            aria-label="Send"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        )}
+          />
+          {isStreaming ? (
+            <Button
+              variant="destructive"
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-xl"
+              onClick={onInterrupt}
+              aria-label="Stop"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-xl"
+              onClick={handleSend}
+              disabled={disabled}
+              aria-label="Send"
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

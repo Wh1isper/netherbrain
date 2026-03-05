@@ -8,6 +8,7 @@ interface AppState {
   authToken: string | null;
   user: UserResponse | null;
   setAuth: (token: string, user: UserResponse) => void;
+  setUser: (user: UserResponse) => void;
   logout: () => void;
 
   // Theme
@@ -40,6 +41,7 @@ export const useAppStore = create<AppState>()(
         setAuthToken(token);
         set({ authToken: token, user });
       },
+      setUser: (user) => set({ user }),
       logout: () => {
         setAuthToken(null);
         set({ authToken: null, user: null });

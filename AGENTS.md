@@ -82,6 +82,7 @@ netherbrain/
   im_gateway/          # IM bot gateway
     gateway.py         # Gateway logic
 ui/                    # Frontend (Vite + React + TypeScript)
+  design-system.md     # Visual design language (colors, typography, spacing, components)
   spec/                # UI design specification
     00-overview.md     # Product model, workspace-centric design, tech stack
     01-layout.md       # Page structure, navigation, responsive behavior
@@ -256,12 +257,13 @@ Tags:
 
 Chat-app style web interface served by the agent-runtime at root path (`/`).
 
-- **Design language**: Modern chat app (ChatGPT/Claude), not admin dashboard.
+- **Design language**: Warm, earthy aesthetic. See `ui/design-system.md` for the full design system (color tokens, typography, spacing, component patterns). All UI changes must follow this spec.
 - **Workspace-centric**: Workspaces organize conversations by project context.
-- **Default workspace**: Auto-created on first launch (`webui-default`, project: `webui`, metadata: `{"source": "webui", "default": true}`).
+- **Default workspace**: Auto-created on first launch (`webui-default`, no projects, metadata: `{"source": "webui", "default": true}`).
 - **Responsive**: Desktop and mobile are both first-class.
-- **Tech stack**: Tailwind CSS + shadcn/ui + Zustand + react-markdown + Shiki.
+- **Tech stack**: Tailwind CSS v4 + shadcn/ui + Zustand + react-markdown + Shiki (vitesse themes).
 - **Two pages**: Chat (`/`, `/c/:id`) and Settings (`/settings`).
+- **Theme**: Light (warm beige) and dark (warm charcoal) modes. Brand color is earthy green (`~#55644a`). CSS tokens defined in `src/index.css` using oklch color space.
 
 ## Observability
 

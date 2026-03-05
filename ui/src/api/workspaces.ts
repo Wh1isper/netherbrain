@@ -40,7 +40,7 @@ export async function ensureDefaultWorkspace(): Promise<{
   const created = await createWorkspace({
     workspace_id: "webui-default",
     name: "Default",
-    projects: ["webui"],
+    projects: [],
     metadata: { source: "webui", default: true },
   });
   all = [...all, created];

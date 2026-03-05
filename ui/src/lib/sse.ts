@@ -154,10 +154,14 @@ export type AGUIEvent =
  * Reads the response body incrementally and yields parsed AG-UI
  * event objects. Handles multi-line data fields and ignores
  * comment lines (`:` prefix) and event type fields.
+ *
+ * The optional `onEventId` callback is invoked with each SSE `id:` field,
+ * enabling callers to track the last event ID for reconnection.
  */
 export async function* parseSSEStream(
   response: Response,
   signal?: AbortSignal,
+  onEventId?: (id: string) => void,
 ): AsyncGenerator<AGUIEvent> {
   const body = response.body;
   if (!body) throw new Error("Response body is not readable");
@@ -181,27 +185,39 @@ export async function* parseSSEStream(
       buffer = parts.pop() ?? "";
 
       for (const part of parts) {
-        const event = parseSSEBlock(part);
-        if (event) yield event;
+        const parsed = parseSSEBlock(part);
+        if (parsed) {
+          if (parsed.id && onEventId) onEventId(parsed.id);
+          yield parsed.event;
+        }
       }
     }
 
     // Flush remaining buffer
     if (buffer.trim()) {
-      const event = parseSSEBlock(buffer);
-      if (event) yield event;
+      const parsed = parseSSEBlock(buffer);
+      if (parsed) {
+        if (parsed.id && onEventId) onEventId(parsed.id);
+        yield parsed.event;
+      }
     }
   } finally {
     reader.releaseLock();
   }
 }
 
+interface ParsedSSEBlock {
+  event: AGUIEvent;
+  id: string | null;
+}
+
 /**
  * Parse a single SSE block (lines between blank-line delimiters)
- * into an AG-UI event object.
+ * into an AG-UI event object with its SSE event ID.
  */
-function parseSSEBlock(raw: string): AGUIEvent | null {
+function parseSSEBlock(raw: string): ParsedSSEBlock | null {
   const dataLines: string[] = [];
+  let eventId: string | null = null;
 
   for (const line of raw.split("\n")) {
     // Skip comments and empty lines
@@ -209,8 +225,10 @@ function parseSSEBlock(raw: string): AGUIEvent | null {
 
     if (line.startsWith("data:")) {
       dataLines.push(line.slice(5).trimStart());
+    } else if (line.startsWith("id:")) {
+      eventId = line.slice(3).trimStart();
     }
-    // id: and event: fields are ignored (we parse type from JSON data)
+    // event: field is ignored (we parse type from JSON data)
   }
 
   if (dataLines.length === 0) return null;
@@ -218,7 +236,7 @@ function parseSSEBlock(raw: string): AGUIEvent | null {
   const data = dataLines.join("\n");
 
   try {
-    return JSON.parse(data) as AGUIEvent;
+    return { event: JSON.parse(data) as AGUIEvent, id: eventId };
   } catch {
     return null;
   }

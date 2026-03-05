@@ -80,9 +80,47 @@ stateDiagram-v2
 
 ### Connection
 
-Chat page uses SSE transport (`transport=sse`) for direct streaming. The UI consumes `POST /api/conversations/run` and processes the event stream.
+Chat page uses stream transport (`transport=stream`) for resilient streaming backed by Redis Streams. On connection drop, the UI reconnects automatically with no event loss.
 
-Reconnection on SSE drop: check session status, reattach via `/conversations/{id}/events` with `Last-Event-ID` if still running, or reload turns via `GET /conversations/{id}/turns` if completed.
+Fallback: when Redis is not configured (422 from server), the UI retries with `transport=sse` for direct streaming without reconnection support.
+
+```mermaid
+sequenceDiagram
+    participant UI
+    participant API
+    participant Redis
+
+    UI->>API: POST /conversations/run (transport=stream)
+    API-->>UI: 202 {conversation_id, stream_key}
+    API->>Redis: XADD events
+
+    UI->>API: GET /conversations/{id}/events
+    API->>Redis: XREAD
+    Redis-->>API: events
+    API-->>UI: SSE stream (id: stream-entry-id)
+
+    Note over UI,API: Connection drops
+
+    UI->>API: GET /conversations/{id}/events<br/>Last-Event-ID: stream-entry-id
+    API->>Redis: XREAD from cursor
+    Redis-->>API: missed events
+    API-->>UI: SSE stream resumes
+```
+
+#### Reconnection behavior
+
+| Scenario                         | Action                                           |
+| -------------------------------- | ------------------------------------------------ |
+| Stream drops, session running    | Reconnect with `Last-Event-ID` (up to 3 times)   |
+| Retries exhausted, session done  | Reload turns via `GET /conversations/{id}/turns` |
+| Retries exhausted, session alive | Show "connection lost" error                     |
+| Bridge returns 404               | Session finished; reload turns                   |
+| Bridge returns 410               | Stream expired; reload turns                     |
+| 409 Conversation busy            | Reattach to existing stream via bridge           |
+
+#### Reattach on navigation
+
+When loading an existing conversation (`/c/:id`) that has an active stream session, the UI loads turn history first, then reattaches to the live stream via `GET /conversations/{id}/events`.
 
 ## Input Area
 
@@ -141,10 +179,43 @@ Turns are returned in chronological order. Each turn contains `session_id`, `inp
 
 Clicking "+ New Chat" in the sidebar:
 
-1. Creates a new conversation via `POST /api/conversations/run`
-2. Workspace's default preset is used (or system default)
-3. Conversation metadata includes `{"workspace_id": "..."}`
-4. Focus moves to the input area
+1. Resets chat state (clears messages, project selection)
+2. Focus moves to the input area
+3. User optionally selects projects to mount from the workspace's project pool
+4. First message triggers `POST /api/conversations/run` with `project_ids` and `metadata.workspace_id`
+5. Workspace's default preset is used (or system default)
+
+## Project Selection
+
+Workspaces define a pool of available projects (filesystem paths). Users choose which projects to mount per conversation.
+
+```mermaid
+flowchart LR
+    WS["Workspace<br/>(project pool)"] --> SEL["User Selection<br/>(0..N projects)"]
+    SEL --> RUN["POST /conversations/run<br/>project_ids=[...]"]
+    RUN --> AGENT["Agent CWD = first project"]
+```
+
+### Behavior
+
+| Scenario             | project_ids sent       | Agent behavior                  |
+| -------------------- | ---------------------- | ------------------------------- |
+| No projects selected | `[]`                   | Pure conversation mode (no CWD) |
+| One project selected | `["/path/to/project"]` | CWD = that project              |
+| Multiple selected    | `["/a", "/b", "/c"]`   | CWD = first, all are accessible |
+
+### UI
+
+- **Project selector**: Shown above the input area when workspace has projects. Each project is a toggleable chip. First selected project shows a "cwd" indicator.
+- **Conversation header**: Shows mounted projects as read-only badges.
+- **Default**: No projects selected (pure conversation mode).
+- **Existing conversations**: Project selection is restored from `latest_session.project_ids`. User can change selection before sending the next message.
+- **During streaming**: Project selector is disabled.
+
+### Data Flow
+
+- `workspace_id` is stored only in conversation metadata (for sidebar filtering). It is NOT sent as a top-level field in the run request.
+- `project_ids` is always sent explicitly in the run request, reflecting the user's selection.
 
 ## Conversation Lifecycle
 

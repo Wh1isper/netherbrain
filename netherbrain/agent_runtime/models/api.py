@@ -234,6 +234,28 @@ class SessionStatusResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Turns (conversation history)
+# ---------------------------------------------------------------------------
+
+
+class TurnResponse(BaseModel):
+    """A single turn (session) in conversation history."""
+
+    session_id: str
+    input: list[dict] | None = None
+    final_message: str | None = None
+    display_messages: list[dict] | None = None
+    created_at: datetime
+
+
+class TurnsPageResponse(BaseModel):
+    """Paginated turn history response."""
+
+    turns: list[TurnResponse]
+    has_more: bool
+
+
+# ---------------------------------------------------------------------------
 # Execution requests
 # ---------------------------------------------------------------------------
 

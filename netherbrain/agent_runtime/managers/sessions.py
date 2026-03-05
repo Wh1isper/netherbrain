@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -54,6 +55,25 @@ class SessionData:
 
     state: SessionState | None = None
     """Full SDK state (only loaded when ``include_state=True``)."""
+
+
+@dataclass
+class TurnData:
+    """A single turn (session) in a conversation's turn history."""
+
+    session_id: str
+    input: list[dict[str, Any]] | None
+    final_message: str | None
+    created_at: datetime
+    display_messages: DisplayMessages | None = None
+
+
+@dataclass
+class TurnsPage:
+    """Paginated turn history for a conversation."""
+
+    turns: list[TurnData]
+    has_more: bool
 
 
 class SessionManager:
@@ -292,45 +312,83 @@ class SessionManager:
         conversation_id: str,
         *,
         include_display: bool = False,
-    ) -> list[dict]:
-        """Get input/output pairs for all committed sessions in a conversation.
+        limit: int | None = None,
+        before: str | None = None,
+    ) -> TurnsPage:
+        """Get input/output pairs for committed sessions in a conversation.
 
-        Returns a list of dicts with ``input``, ``final_message``, and
-        ``session_id`` in chronological order.  Sessions without final_message
-        are included (they represent in-progress or failed turns).
+        Returns a ``TurnsPage`` containing typed ``TurnData`` objects
+        in chronological order.
 
-        When ``include_display`` is True, each turn additionally includes
-        ``display_messages`` loaded from the State Store.
+        Parameters
+        ----------
+        limit:
+            Maximum number of turns to return.  When set, returns the
+            most recent turns (from the end of the conversation).
+        before:
+            Session ID cursor for pagination.  Returns turns older than
+            this session.  Combined with ``limit`` for page-by-page loading.
+        include_display:
+            When True, each turn includes ``display_messages`` loaded
+            from the State Store.
         """
-        stmt = (
-            select(
-                SessionRow.session_id,
-                SessionRow.input,
-                SessionRow.final_message,
-                SessionRow.created_at,
-            )
-            .where(
-                SessionRow.conversation_id == conversation_id,
-                SessionRow.status.in_([
-                    SessionStatus.COMMITTED,
-                    SessionStatus.AWAITING_TOOL_RESULTS,
-                ]),
-            )
-            .order_by(SessionRow.created_at.asc())
-        )
+        base_filter = [
+            SessionRow.conversation_id == conversation_id,
+            SessionRow.status.in_([
+                SessionStatus.COMMITTED,
+                SessionStatus.AWAITING_TOOL_RESULTS,
+            ]),
+        ]
+
+        # Cursor filter: turns older than the given session_id.
+        if before is not None:
+            before_subq = select(SessionRow.created_at).where(SessionRow.session_id == before).scalar_subquery()
+            base_filter.append(SessionRow.created_at < before_subq)
+
+        # Determine fetch count (limit + 1 to detect has_more).
+        fetch_count = (limit + 1) if limit is not None else None
+
+        stmt = select(
+            SessionRow.session_id,
+            SessionRow.input,
+            SessionRow.final_message,
+            SessionRow.created_at,
+        ).where(*base_filter)
+
+        if fetch_count is not None:
+            # Pagination: query in reverse chronological order so LIMIT
+            # gives us the most recent turns, then reverse to chronological.
+            stmt = stmt.order_by(SessionRow.created_at.desc(), SessionRow.session_id.desc()).limit(fetch_count)
+        else:
+            # No pagination: chronological order directly.
+            stmt = stmt.order_by(SessionRow.created_at.asc(), SessionRow.session_id.asc())
+
         result = await db.execute(stmt)
-        turns = []
-        for row in result.all():
-            turn: dict = {
-                "session_id": row.session_id,
-                "input": row.input,
-                "final_message": row.final_message,
-                "created_at": row.created_at.isoformat() if row.created_at else None,
-            }
-            if include_display:
-                turn["display_messages"] = await self._store.read_display_messages(row.session_id)
-            turns.append(turn)
-        return turns
+        rows = result.all()
+
+        # Detect has_more and trim to limit.
+        has_more = False
+        if limit is not None and len(rows) > limit:
+            has_more = True
+            rows = rows[:limit]
+
+        # Reverse to chronological order when using DESC pagination.
+        if fetch_count is not None:
+            rows = list(reversed(rows))
+
+        turns: list[TurnData] = []
+        for row in rows:
+            display = await self._store.read_display_messages(row.session_id) if include_display else None
+            turns.append(
+                TurnData(
+                    session_id=row.session_id,
+                    input=row.input,
+                    final_message=row.final_message,
+                    created_at=row.created_at,
+                    display_messages=display,
+                )
+            )
+        return TurnsPage(turns=turns, has_more=has_more)
 
     # -- Startup recovery ------------------------------------------------------
 

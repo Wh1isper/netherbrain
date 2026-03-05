@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,9 +43,12 @@ export default function Login() {
 
   return (
     <div className="flex h-full items-center justify-center bg-background">
-      <div className="w-full max-w-sm space-y-6 p-8 rounded-lg border border-border bg-card shadow-sm">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold text-foreground">Netherbrain</h1>
+      <div className="w-full max-w-sm space-y-6 p-8 rounded-2xl border border-border bg-card shadow-md">
+        <div className="space-y-2 text-center">
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 mx-auto">
+            <Bot className="h-5 w-5 text-primary" />
+          </div>
+          <h1 className="text-xl font-semibold text-foreground">Welcome back</h1>
           <p className="text-sm text-muted-foreground">Sign in to continue.</p>
         </div>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
@@ -61,6 +65,7 @@ export default function Login() {
               }}
               autoFocus
               autoComplete="username"
+              className="rounded-xl"
             />
           </div>
           <div className="space-y-1.5">
@@ -74,12 +79,13 @@ export default function Login() {
                 setError("");
               }}
               autoComplete="current-password"
+              className="rounded-xl"
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button
             type="submit"
-            className="w-full"
+            className="w-full rounded-xl"
             disabled={loading || !userId.trim() || !password}
           >
             {loading ? "Signing in..." : "Sign in"}

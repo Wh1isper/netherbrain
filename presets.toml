@@ -242,7 +242,7 @@ enabled = true
 [[workspaces]]
 workspace_id = "webui-default"
 name = "Default"
-projects = ["webui"]
+projects = []
 
 [workspaces.metadata]
 source = "webui"

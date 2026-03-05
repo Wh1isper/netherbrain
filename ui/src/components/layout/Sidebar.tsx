@@ -45,13 +45,15 @@ function ConversationItem({ conv, active }: { conv: ConversationResponse; active
     <NavLink
       to={`/c/${conv.conversation_id}`}
       className={[
-        "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-        "hover:bg-accent hover:text-accent-foreground",
-        active ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground",
+        "flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors",
+        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        active
+          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+          : "text-muted-foreground",
       ].join(" ")}
     >
       <span className="flex-1 truncate">{title}</span>
-      <span className="shrink-0 text-xs text-muted-foreground/60">
+      <span className="shrink-0 text-[11px] text-muted-foreground/50">
         {formatRelativeTime(conv.updated_at)}
       </span>
     </NavLink>
@@ -131,14 +133,18 @@ export default function Sidebar() {
     navigate("/login");
   };
 
+  // -----------------------------------------------------------------------
+  // Collapsed sidebar — slim icon bar
+  // -----------------------------------------------------------------------
+
   if (!sidebarOpen) {
     return (
-      <div className="flex h-full w-12 shrink-0 flex-col items-center border-r border-border bg-sidebar py-3 gap-2">
+      <div className="flex h-full w-12 shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar py-3 gap-2">
         <Button
           variant="ghost"
           size="icon"
           onClick={toggleSidebar}
-          className="text-muted-foreground"
+          className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
         >
           <PanelLeftOpen className="h-4 w-4" />
         </Button>
@@ -146,7 +152,7 @@ export default function Sidebar() {
           variant="ghost"
           size="icon"
           onClick={handleNewChat}
-          className="text-muted-foreground"
+          className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
         >
           <SquarePen className="h-4 w-4" />
         </Button>
@@ -154,16 +160,22 @@ export default function Sidebar() {
     );
   }
 
+  // -----------------------------------------------------------------------
+  // Expanded sidebar
+  // -----------------------------------------------------------------------
+
   return (
-    <div className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-sidebar">
+    <div className="flex h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-3 border-b border-border">
-        <span className="flex-1 font-semibold text-sm text-sidebar-foreground">Netherbrain</span>
+      <div className="flex items-center gap-2 px-3 py-3 border-b border-sidebar-border">
+        <span className="flex-1 font-semibold text-sm text-sidebar-foreground tracking-tight">
+          Netherbrain
+        </span>
         <Button
           variant="ghost"
           size="icon"
           onClick={handleNewChat}
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
           title="New chat"
         >
           <SquarePen className="h-4 w-4" />
@@ -172,7 +184,7 @@ export default function Sidebar() {
           variant="ghost"
           size="icon"
           onClick={toggleSidebar}
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
           title="Collapse sidebar"
         >
           <PanelLeftClose className="h-4 w-4" />
@@ -183,7 +195,10 @@ export default function Sidebar() {
       <div className="px-3 py-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="w-full justify-between text-sm h-8">
+            <Button
+              variant="outline"
+              className="w-full justify-between text-sm h-8 rounded-xl border-sidebar-border"
+            >
               <span className="truncate">{currentWorkspace?.name ?? "Select workspace"}</span>
               <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
             </Button>
@@ -218,7 +233,7 @@ export default function Sidebar() {
       <ScrollArea className="flex-1 px-2">
         <div className="space-y-0.5 py-1">
           {conversations.length === 0 ? (
-            <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+            <p className="px-3 py-6 text-xs text-muted-foreground text-center leading-relaxed">
               No conversations yet.
               <br />
               Start a new chat to begin.
@@ -236,11 +251,11 @@ export default function Sidebar() {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="flex items-center gap-1 px-3 py-3 border-t border-border">
+      <div className="flex items-center gap-1 px-3 py-3 border-t border-sidebar-border">
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
           onClick={toggleTheme}
           title="Toggle theme"
         >
@@ -252,7 +267,7 @@ export default function Sidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
           onClick={() => navigate("/settings")}
           title="Settings"
         >
@@ -261,7 +276,7 @@ export default function Sidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
           onClick={handleLogout}
           title="Sign out"
         >

@@ -212,12 +212,13 @@ async def test_conversation_turns(manager: SessionManager, db_session: AsyncSess
         final_message="answer 2",
     )
 
-    turns = await manager.get_conversation_turns(db_session, conv_id)
-    assert len(turns) == 2
-    assert turns[0]["input"] == input1
-    assert turns[0]["final_message"] == "answer 1"
-    assert turns[1]["input"] == input2
-    assert turns[1]["final_message"] == "answer 2"
+    page = await manager.get_conversation_turns(db_session, conv_id)
+    assert len(page.turns) == 2
+    assert not page.has_more
+    assert page.turns[0].input == input1
+    assert page.turns[0].final_message == "answer 1"
+    assert page.turns[1].input == input2
+    assert page.turns[1].final_message == "answer 2"
 
 
 @pytest.mark.integration

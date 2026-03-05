@@ -9,8 +9,9 @@ import Chat from "@/pages/Chat";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import { useAppStore } from "@/stores/app";
-import { changePassword } from "@/api/auth";
+import { changePassword, getMe } from "@/api/auth";
 import { ApiError } from "@/api/client";
+import { Bot } from "lucide-react";
 
 // -- Force change password (first login) ------------------------------------
 
@@ -51,8 +52,11 @@ function ForceChangePassword() {
 
   return (
     <div className="flex h-full items-center justify-center bg-background">
-      <div className="w-full max-w-sm space-y-6 p-8 rounded-lg border border-border bg-card shadow-sm">
-        <div className="space-y-1">
+      <div className="w-full max-w-sm space-y-6 p-8 rounded-2xl border border-border bg-card shadow-md">
+        <div className="space-y-2 text-center">
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 mx-auto">
+            <Bot className="h-5 w-5 text-primary" />
+          </div>
           <h1 className="text-xl font-semibold text-foreground">Change Password</h1>
           <p className="text-sm text-muted-foreground">
             Welcome, {user?.display_name}. Please set a new password to continue.
@@ -102,7 +106,7 @@ function ForceChangePassword() {
             {mismatch && <p className="text-xs text-destructive">Passwords do not match.</p>}
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={!canSubmit}>
+          <Button type="submit" className="w-full rounded-xl" disabled={!canSubmit}>
             {loading ? "Saving..." : "Set new password"}
           </Button>
         </form>
@@ -132,7 +136,8 @@ function AppShell() {
 // -- Root --------------------------------------------------------------------
 
 export default function App() {
-  const { theme, authToken, user } = useAppStore();
+  const { theme, authToken, user, setUser } = useAppStore();
+  const [verifying, setVerifying] = useState(true);
 
   // Sync theme to <html> class
   useEffect(() => {
@@ -144,7 +149,37 @@ export default function App() {
     }
   }, [theme]);
 
+  // Verify token and refresh user data on app load
+  useEffect(() => {
+    if (!authToken) {
+      setVerifying(false);
+      return;
+    }
+
+    let cancelled = false;
+    getMe()
+      .then((freshUser) => {
+        if (!cancelled) setUser(freshUser);
+      })
+      .catch(() => {
+        // 401 is handled by the global handler (triggers logout).
+        // For other errors, keep existing user data and proceed.
+      })
+      .finally(() => {
+        if (!cancelled) setVerifying(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const needsPasswordChange = authToken && user?.must_change_password;
+
+  // Show nothing while verifying token on initial load
+  if (verifying && authToken) {
+    return null;
+  }
 
   return (
     <TooltipProvider>

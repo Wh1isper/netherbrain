@@ -49,6 +49,8 @@ from netherbrain.agent_runtime.models.api import (
     MailboxSummary,
     SessionResponse,
     SteerRequest,
+    TurnResponse,
+    TurnsPageResponse,
 )
 from netherbrain.agent_runtime.models.enums import SessionStatus, SessionType, Transport
 from netherbrain.agent_runtime.transport.bridge import StreamGoneError, bridge_stream_to_sse
@@ -279,7 +281,7 @@ async def handle_list_conversations(
     try:
         return await list_conversations(
             db,
-            user_id=None if auth.is_admin else auth.user_id,
+            user_id=auth.user_id,
             status=conversation_status,
             metadata_contains=metadata_contains,
             limit=limit,
@@ -363,20 +365,41 @@ async def handle_update_conversation(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{conversation_id}/turns")
+@router.get("/{conversation_id}/turns", response_model=TurnsPageResponse)
 async def handle_get_conversation_turns(
     conversation_id: str,
     db: DbSession,
     manager: SessionMgr,
     auth: CurrentUser,
     include_display: bool = Query(False),
-) -> list[dict]:
+    limit: int | None = Query(None, ge=1, le=200),
+    before: str | None = Query(None, description="Session ID cursor for pagination"),
+) -> TurnsPageResponse:
     try:
         await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
 
-    return await manager.get_conversation_turns(db, conversation_id, include_display=include_display)
+    page = await manager.get_conversation_turns(
+        db,
+        conversation_id,
+        include_display=include_display,
+        limit=limit,
+        before=before,
+    )
+    return TurnsPageResponse(
+        turns=[
+            TurnResponse(
+                session_id=t.session_id,
+                input=t.input,
+                final_message=t.final_message,
+                display_messages=t.display_messages,
+                created_at=t.created_at,
+            )
+            for t in page.turns
+        ],
+        has_more=page.has_more,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -22,9 +22,10 @@ export type SessionType = "agent" | "async_subagent";
 
 export interface ModelPreset {
   name: string;
-  temperature?: number | null;
-  max_tokens?: number | null;
-  context_window?: number | null;
+  model_settings_preset?: string | null;
+  model_settings?: Record<string, unknown> | null;
+  model_config_preset?: string | null;
+  model_config_overrides?: Record<string, unknown> | null;
 }
 
 export interface ToolsetSpec {
@@ -58,14 +59,17 @@ export interface ToolConfigSpec {
   skip_url_verification?: boolean;
   enable_load_document?: boolean;
   image_understanding_model?: string | null;
+  image_understanding_model_settings?: Record<string, unknown> | null;
   video_understanding_model?: string | null;
+  video_understanding_model_settings?: Record<string, unknown> | null;
 }
 
 export interface McpServerSpec {
-  name: string;
-  transport: string;
-  url?: string | null;
-  env?: Record<string, string> | null;
+  url: string;
+  transport?: "streamable_http" | "sse";
+  headers?: Record<string, string> | null;
+  tool_prefix?: string | null;
+  timeout?: number | null;
 }
 
 export interface PresetResponse {
@@ -92,6 +96,7 @@ export interface PresetCreate {
   system_prompt: string;
   toolsets?: ToolsetSpec[];
   environment?: EnvironmentSpec;
+  tool_config?: ToolConfigSpec;
   subagents?: SubagentSpec;
   mcp_servers?: McpServerSpec[];
   is_default?: boolean;
@@ -104,6 +109,7 @@ export interface PresetUpdate {
   system_prompt?: string;
   toolsets?: ToolsetSpec[];
   environment?: EnvironmentSpec;
+  tool_config?: ToolConfigSpec;
   subagents?: SubagentSpec;
   mcp_servers?: McpServerSpec[];
   is_default?: boolean;
@@ -146,7 +152,6 @@ export interface LatestSessionInfo {
 
 export interface ActiveSessionInfo {
   session_id: string;
-  status: SessionStatus;
   transport: Transport;
   stream_key: string | null;
 }
@@ -186,15 +191,62 @@ export interface InputPart {
   url?: string;
   path?: string;
   data?: string;
-  media_type?: string;
+  mime?: string;
+  mode?: "file" | "inline";
 }
 
 export interface TurnResponse {
   session_id: string;
   input: InputPart[] | null;
   final_message: string | null;
+  display_messages: DisplayEvent[] | null;
   created_at: string;
 }
+
+export interface TurnsResponse {
+  turns: TurnResponse[];
+  has_more: boolean;
+}
+
+// -- Display message events (compressed AG-UI chunks) -----------------------
+
+export interface TextMessageChunk {
+  type: "TEXT_MESSAGE_CHUNK";
+  messageId: string;
+  role: string;
+  delta: string;
+}
+
+export interface ToolCallChunk {
+  type: "TOOL_CALL_CHUNK";
+  toolCallId: string;
+  toolCallName: string;
+  parentMessageId?: string;
+  delta: string;
+}
+
+export interface ToolCallResultDisplay {
+  type: "TOOL_CALL_RESULT";
+  toolCallId: string;
+  messageId: string;
+  content: string;
+  role: string;
+  status?: string;
+}
+
+export interface ReasoningMessageChunk {
+  type: "REASONING_MESSAGE_CHUNK";
+  messageId: string;
+  delta: string;
+}
+
+/** Discriminated union of display event types. */
+export type DisplayEvent =
+  | TextMessageChunk
+  | ToolCallChunk
+  | ToolCallResultDisplay
+  | ReasoningMessageChunk
+  | { type: string }; // catch-all for CUSTOM / unknown event types
 
 // -- Run request -------------------------------------------------------------
 
@@ -204,12 +256,47 @@ export interface ConversationRunRequest {
   workspace_id?: string | null;
   project_ids?: string[] | null;
   metadata?: Record<string, unknown> | null;
+  config_override?: Record<string, unknown> | null;
   input?: InputPart[] | null;
   transport?: Transport;
 }
 
 export interface SteerRequest {
   input: InputPart[];
+}
+
+// -- Conversation fork/fire -------------------------------------------------
+
+export interface ConversationForkRequest {
+  preset_id: string;
+  from_session_id?: string | null;
+  workspace_id?: string | null;
+  project_ids?: string[] | null;
+  metadata?: Record<string, unknown> | null;
+  config_override?: Record<string, unknown> | null;
+  input?: InputPart[] | null;
+  transport?: Transport;
+}
+
+export interface ConversationFireRequest {
+  preset_id?: string | null;
+  workspace_id?: string | null;
+  project_ids?: string[] | null;
+  config_override?: Record<string, unknown> | null;
+  input?: InputPart[] | null;
+  transport?: Transport;
+}
+
+// -- Mailbox ----------------------------------------------------------------
+
+export interface MailboxMessageResponse {
+  message_id: string;
+  conversation_id: string;
+  source_session_id: string;
+  source_type: string;
+  subagent_name: string;
+  created_at: string;
+  delivered_to: string | null;
 }
 
 // -- Toolsets (capability discovery) ----------------------------------------
@@ -219,6 +306,25 @@ export interface ToolsetInfo {
   description: string;
   tools: string[];
   is_alias: boolean;
+}
+
+// -- Model Presets (capability discovery) -----------------------------------
+
+export interface ModelSettingsPresetInfo {
+  name: string;
+  settings: Record<string, unknown>;
+}
+
+export interface ModelConfigPresetInfo {
+  name: string;
+  config: Record<string, unknown>;
+}
+
+export interface ModelPresetsResponse {
+  model_settings_presets: ModelSettingsPresetInfo[];
+  model_settings_aliases: Record<string, string>;
+  model_config_presets: ModelConfigPresetInfo[];
+  model_config_aliases: Record<string, string>;
 }
 
 // -- Auth / Users ------------------------------------------------------------

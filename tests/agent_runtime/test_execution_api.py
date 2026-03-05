@@ -656,6 +656,7 @@ async def test_conversation_turns_success(client: AsyncClient, db_session: Async
     resp = await client.get("/api/conversations/conv-turns/turns")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 1
-    assert data[0]["input"] == [{"type": "text", "text": "question"}]
-    assert data[0]["final_message"] == "answer"
+    assert data["has_more"] is False
+    assert len(data["turns"]) == 1
+    assert data["turns"][0]["input"] == [{"type": "text", "text": "question"}]
+    assert data["turns"][0]["final_message"] == "answer"

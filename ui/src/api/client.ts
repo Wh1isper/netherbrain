@@ -33,7 +33,7 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
-  params?: Record<string, string | number | undefined>,
+  params?: Record<string, string | number | boolean | undefined>,
 ): Promise<T> {
   const url = new URL(path, window.location.origin);
   if (params) {
@@ -83,7 +83,7 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string, params?: Record<string, string | number | undefined>) =>
+  get: <T>(path: string, params?: Record<string, string | number | boolean | undefined>) =>
     request<T>("GET", path, undefined, params),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
 };

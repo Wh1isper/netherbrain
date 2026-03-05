@@ -590,7 +590,7 @@ async def execute_session(  # noqa: C901
         delegate_tool = create_async_delegate_tool(delegate_ctx)
         extra_agent_tools = [delegate_tool]
 
-    runtime, paths = create_service_runtime(
+    runtime, _paths = create_service_runtime(
         config,
         settings,
         state=resumable_state,
@@ -599,7 +599,13 @@ async def execute_session(  # noqa: C901
     )
 
     # -- Map input -------------------------------------------------------------
-    user_prompt = await map_input_to_prompt(input_parts, paths)
+    # File operations need FileOperator, which is only available after the
+    # environment is entered (inside stream_agent).  Use user_prompt_factory
+    # so prompt construction runs at the right time.
+
+    async def _build_prompt(rt: AgentRuntime) -> str | list:
+        result = await map_input_to_prompt(input_parts, rt.env.file_operator)
+        return result or ""
 
     # -- Build deferred tool results (if continuing) ---------------------------
     deferred_results = None
@@ -659,7 +665,7 @@ async def execute_session(  # noqa: C901
             agent_trace("main", model=model_id) as _agent_span,
             stream_agent(
                 runtime,
-                user_prompt=user_prompt or None,
+                user_prompt_factory=_build_prompt,
                 deferred_tool_results=deferred_results,
                 post_node_hook=usage_emitter.post_node_hook,
             ) as streamer,

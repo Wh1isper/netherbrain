@@ -23,7 +23,7 @@ POST /api/workspaces/create
 {
   workspace_id: "webui-default",
   name: "Default",
-  projects: ["webui"],
+  projects: [],
   metadata: {"source": "webui", "default": true}
 }
 ```

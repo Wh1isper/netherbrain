@@ -183,7 +183,7 @@ Async subagent orchestration.
 - [x] Chat: thinking/reasoning section (collapsed by default)
 - [x] Chat: streaming state controls (Stop button -> interrupt, Send while streaming -> steer)
 - [x] Chat: conversation header (editable title, preset badge)
-- [ ] Chat: SSE reconnect on drop (check status, reattach or reload turns)
+- [x] Chat: SSE reconnect on drop (stream transport + bridge with Last-Event-ID resume, SSE fallback)
 - [ ] Chat: mobile responsive (full-screen chat view, back button)
 - [ ] Chat: Shiki bundle optimization (dynamic import for languages)
 

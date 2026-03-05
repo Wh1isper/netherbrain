@@ -1,5 +1,11 @@
 import { api } from "./client";
-import type { PresetResponse, PresetCreate, PresetUpdate, ToolsetInfo } from "./types";
+import type {
+  PresetResponse,
+  PresetCreate,
+  PresetUpdate,
+  ToolsetInfo,
+  ModelPresetsResponse,
+} from "./types";
 
 export async function listPresets(): Promise<PresetResponse[]> {
   return api.get<PresetResponse[]>("/api/presets/list");
@@ -23,4 +29,8 @@ export async function deletePreset(id: string): Promise<void> {
 
 export async function listToolsets(): Promise<ToolsetInfo[]> {
   return api.get<ToolsetInfo[]>("/api/toolsets");
+}
+
+export async function listModelPresets(): Promise<ModelPresetsResponse> {
+  return api.get<ModelPresetsResponse>("/api/model-presets");
 }

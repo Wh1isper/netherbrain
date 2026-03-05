@@ -4,8 +4,11 @@ import type {
   ConversationDetailResponse,
   ConversationUpdate,
   ConversationRunRequest,
+  ConversationForkRequest,
+  ConversationFireRequest,
   SteerRequest,
-  TurnResponse,
+  TurnsResponse,
+  MailboxMessageResponse,
 } from "./types";
 
 export async function listConversations(opts?: {
@@ -38,8 +41,15 @@ export async function updateConversation(
   return api.post<ConversationResponse>(`/api/conversations/${id}/update`, body);
 }
 
-export async function getConversationTurns(id: string): Promise<TurnResponse[]> {
-  return api.get<TurnResponse[]>(`/api/conversations/${id}/turns`);
+export async function getConversationTurns(
+  id: string,
+  opts?: { includeDisplay?: boolean; limit?: number; before?: string },
+): Promise<TurnsResponse> {
+  const params: Record<string, string | number | boolean> = {};
+  if (opts?.includeDisplay) params["include_display"] = true;
+  if (opts?.limit) params["limit"] = opts.limit;
+  if (opts?.before) params["before"] = opts.before;
+  return api.get<TurnsResponse>(`/api/conversations/${id}/turns`, params);
 }
 
 export async function runConversation(body: ConversationRunRequest): Promise<Response> {
@@ -57,10 +67,75 @@ export async function runConversation(body: ConversationRunRequest): Promise<Res
   });
 }
 
+export async function streamConversationEvents(
+  id: string,
+  opts?: { lastEventId?: string; signal?: AbortSignal },
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+  };
+  const token = getAuthToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (opts?.lastEventId) headers["Last-Event-ID"] = opts.lastEventId;
+
+  return fetch(`/api/conversations/${id}/events`, {
+    method: "GET",
+    headers,
+    signal: opts?.signal,
+  });
+}
+
 export async function interruptConversation(id: string): Promise<void> {
   return api.post<void>(`/api/conversations/${id}/interrupt`);
 }
 
 export async function steerConversation(id: string, body: SteerRequest): Promise<void> {
   return api.post<void>(`/api/conversations/${id}/steer`, body);
+}
+
+export async function forkConversation(
+  id: string,
+  body: ConversationForkRequest,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  };
+  const token = getAuthToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  return fetch(`/api/conversations/${id}/fork`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fireConversation(
+  id: string,
+  body: ConversationFireRequest,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  };
+  const token = getAuthToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  return fetch(`/api/conversations/${id}/fire`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getMailbox(
+  id: string,
+  opts?: { pendingOnly?: boolean; limit?: number; offset?: number },
+): Promise<MailboxMessageResponse[]> {
+  const params: Record<string, string | number | boolean> = {};
+  if (opts?.pendingOnly) params["pending_only"] = true;
+  if (opts?.limit) params["limit"] = opts.limit;
+  if (opts?.offset) params["offset"] = opts.offset;
+  return api.get<MailboxMessageResponse[]>(`/api/conversations/${id}/mailbox`, params);
 }

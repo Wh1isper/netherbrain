@@ -67,15 +67,16 @@ Actions: "+ New Workspace" button at top.
 
 ### Workspace Editor
 
-| Section | Fields                                           |
-| ------- | ------------------------------------------------ |
-| General | name                                             |
-| Folders | Ordered list of project_ids (add/remove/reorder) |
-| Preset  | Default preset selector (optional)               |
+| Section  | Fields                                           |
+| -------- | ------------------------------------------------ |
+| General  | name                                             |
+| Projects | Ordered list of project_ids (add/remove/reorder) |
+| Preset   | Default preset selector (optional)               |
 
-Folder management:
+Project management:
 
-- Text input to add a new folder (project_id = directory name)
+- Text input to add a new project (project_id = storage directory name)
+- Each project maps to a managed directory on the server
 - Drag to reorder (first = default working directory)
 - Click to remove
 

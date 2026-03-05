@@ -8,13 +8,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic_ai.messages import AudioUrl, BinaryContent, DocumentUrl, ImageUrl, VideoUrl
+from ya_agent_sdk.environment.local import LocalFileOperator
 
-from netherbrain.agent_runtime.execution.environment import ProjectPaths
 from netherbrain.agent_runtime.execution.input import (
+    _MAX_DOWNLOAD_BYTES,
+    _MAX_INLINE_BYTES,
     _classify_mime,
     _resolve_file_path,
     _url_to_inline_content,
-    _write_binary_to_project,
+    _write_binary,
     map_input_to_prompt,
 )
 from netherbrain.agent_runtime.models.enums import ContentMode, InputPartType
@@ -208,48 +210,75 @@ def test_url_to_inline_unknown_mime() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_paths(tmp_path: Path) -> ProjectPaths:
-    return ProjectPaths(
-        data_root=tmp_path,
-        prefix=None,
-        project_ids=["test-proj"],
+def _make_file_operator(tmp_path: Path) -> LocalFileOperator:
+    """Create a LocalFileOperator with tmp support for testing."""
+    tmp_dir = tmp_path / ".agent_tmp"
+    tmp_dir.mkdir()
+    return LocalFileOperator(
+        default_path=tmp_path,
+        tmp_dir=tmp_dir,
     )
 
 
-def test_resolve_file_path(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    result = _resolve_file_path("src/main.py", paths)
-    assert result == "/workspace/test-proj/src/main.py"
+def _mock_stream_client(
+    content: bytes,
+    *,
+    headers: dict[str, str] | None = None,
+    error: Exception | None = None,
+) -> MagicMock:
+    """Create a mock httpx client with streaming support.
+
+    If ``error`` is provided, ``stream()`` raises it on ``__aenter__``.
+    """
+    hdrs = {"content-type": "application/octet-stream", **(headers or {})}
+
+    response = MagicMock()
+    response.raise_for_status = MagicMock()
+    response.headers = hdrs
+
+    async def aiter_bytes():
+        yield content
+
+    response.aiter_bytes = aiter_bytes
+
+    # Build async context manager for client.stream()
+    cm = MagicMock()
+    if error:
+        cm.__aenter__ = AsyncMock(side_effect=error)
+    else:
+        cm.__aenter__ = AsyncMock(return_value=response)
+    cm.__aexit__ = AsyncMock(return_value=False)
+
+    client = MagicMock()
+    client.stream = MagicMock(return_value=cm)
+    client.aclose = AsyncMock()
+    return client
 
 
-def test_resolve_file_path_leading_slash(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    result = _resolve_file_path("/src/main.py", paths)
-    assert result == "/workspace/test-proj/src/main.py"
+def test_resolve_file_path() -> None:
+    result = _resolve_file_path("src/main.py")
+    assert result == "src/main.py"
 
 
-def test_resolve_file_path_leading_dot_slash(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    result = _resolve_file_path("./src/main.py", paths)
-    assert result == "/workspace/test-proj/src/main.py"
+def test_resolve_file_path_leading_slash() -> None:
+    result = _resolve_file_path("/src/main.py")
+    assert result == "src/main.py"
 
 
-def test_write_binary_to_project(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.ensure_directories()
+def test_resolve_file_path_leading_dot_slash() -> None:
+    result = _resolve_file_path("./src/main.py")
+    assert result == "src/main.py"
 
-    result = _write_binary_to_project(b"hello", "text/plain", paths)
-    assert result.startswith("/workspace/test-proj/.tmp/")
-    assert result.endswith(".txt")
 
-    # Verify file was written
-    real_path = paths.default_real_path
-    assert real_path is not None
-    tmp_dir = real_path / ".tmp"
-    assert tmp_dir.exists()
-    files = list(tmp_dir.iterdir())
-    assert len(files) == 1
-    assert files[0].read_bytes() == b"hello"
+@pytest.mark.anyio
+async def test_write_binary(tmp_path: Path) -> None:
+    file_op = _make_file_operator(tmp_path)
+
+    result = await _write_binary(b"hello", "text/plain", file_op)
+    assert "[Binary data saved]" in result
+    assert "Type: text/plain" in result
+    assert "Size: 5 bytes" in result
+    assert "Saved to:" in result
 
 
 # ---------------------------------------------------------------------------
@@ -306,42 +335,38 @@ async def test_map_inline_binary() -> None:
 
 @pytest.mark.anyio
 async def test_map_file_mode_file_part(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.ensure_directories()
+    file_op = _make_file_operator(tmp_path)
 
     parts = [file_part("src/main.py")]
-    result = await map_input_to_prompt(parts, paths)
+    result = await map_input_to_prompt(parts, file_op)
     assert isinstance(result, list)
-    assert "[See file: /workspace/test-proj/src/main.py]" in result[0]
+    assert "[Project file]" in result[0]
+    assert "Path: src/main.py" in result[0]
 
 
 @pytest.mark.anyio
 async def test_map_file_mode_binary_part(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.ensure_directories()
+    file_op = _make_file_operator(tmp_path)
 
     raw = b"binary content"
     data_b64 = base64.b64encode(raw).decode()
     parts = [binary_part(data_b64, mime="application/pdf")]
-    result = await map_input_to_prompt(parts, paths)
+    result = await map_input_to_prompt(parts, file_op)
     assert isinstance(result, list)
-    assert "[Binary file written:" in result[0]
+    assert "[Binary data saved]" in result[0]
 
 
 @pytest.mark.anyio
 async def test_map_inline_file_part(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.ensure_directories()
+    file_op = _make_file_operator(tmp_path)
 
-    # Create a real file
-    real_dir = paths.default_real_path
-    assert real_dir is not None
-    src_dir = real_dir / "src"
+    # Create a real file in the default path
+    src_dir = tmp_path / "src"
     src_dir.mkdir()
     (src_dir / "main.py").write_bytes(b"print('hello')")
 
     parts = [file_part("src/main.py", mode=ContentMode.INLINE)]
-    result = await map_input_to_prompt(parts, paths)
+    result = await map_input_to_prompt(parts, file_op)
     assert isinstance(result, list)
     assert isinstance(result[0], BinaryContent)
     assert result[0].data == b"print('hello')"
@@ -349,38 +374,29 @@ async def test_map_inline_file_part(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_map_inline_file_not_found(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.ensure_directories()
+    file_op = _make_file_operator(tmp_path)
 
     parts = [file_part("nonexistent.py", mode=ContentMode.INLINE)]
     with pytest.raises(FileNotFoundError, match=r"nonexistent\.py"):
-        await map_input_to_prompt(parts, paths)
+        await map_input_to_prompt(parts, file_op)
 
 
 @pytest.mark.anyio
 async def test_map_file_mode_url_downloads(tmp_path: Path) -> None:
-    paths = _make_paths(tmp_path)
-    paths.ensure_directories()
+    file_op = _make_file_operator(tmp_path)
 
-    # Mock HTTP client
-    mock_response = MagicMock()
-    mock_response.content = b"downloaded content"
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client.aclose = AsyncMock()
+    mock_client = _mock_stream_client(b"downloaded content", headers={"content-type": "text/plain"})
 
     parts = [url_part("https://example.com/file.txt")]
-    result = await map_input_to_prompt(parts, paths, http_client=mock_client)
+    result = await map_input_to_prompt(parts, file_op, http_client=mock_client)
 
     assert isinstance(result, list)
-    assert "[Downloaded file:" in result[0]
+    assert "[File downloaded from URL]" in result[0]
+    assert "Source: https://example.com/file.txt" in result[0]
 
-    # Verify file was actually written
-    downloads_dir = paths.default_real_path / "downloads"  # type: ignore[operator]
-    assert downloads_dir.exists()
-    files = list(downloads_dir.iterdir())
+    # Verify file was actually written to tmp dir
+    tmp_dir = tmp_path / ".agent_tmp"
+    files = list(tmp_dir.iterdir())
     assert len(files) == 1
     assert files[0].read_bytes() == b"downloaded content"
 
@@ -403,7 +419,100 @@ async def test_map_mixed_text_and_inline() -> None:
 
 
 @pytest.mark.anyio
-async def test_map_no_paths_for_file_mode_raises() -> None:
-    parts = [file_part("some/file.txt")]
-    with pytest.raises(ValueError, match="Project paths required"):
+async def test_map_no_file_operator_for_file_mode_raises() -> None:
+    parts = [file_part("some/file.txt", mode=ContentMode.INLINE)]
+    with pytest.raises(ValueError, match="File operator required"):
         await map_input_to_prompt(parts, None)
+
+
+@pytest.mark.anyio
+async def test_map_url_download_fallback_no_file_operator() -> None:
+    """URL mode=file without file_operator falls back to inline."""
+    parts = [url_part("https://x.com/image.png", mime="image/png")]
+    result = await map_input_to_prompt(parts, None)
+    assert isinstance(result, list)
+    assert isinstance(result[0], ImageUrl)
+
+
+@pytest.mark.anyio
+async def test_map_url_download_fallback_on_error(tmp_path: Path) -> None:
+    """URL mode=file with download failure falls back to inline."""
+    file_op = _make_file_operator(tmp_path)
+
+    mock_client = _mock_stream_client(b"", error=Exception("network error"))
+
+    parts = [url_part("https://x.com/photo.jpg", mime="image/jpeg")]
+    result = await map_input_to_prompt(parts, file_op, http_client=mock_client)
+    assert isinstance(result, list)
+    assert isinstance(result[0], ImageUrl)
+
+
+# ---------------------------------------------------------------------------
+# Security: download size limits and URL scheme validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_download_rejects_file_scheme(tmp_path: Path) -> None:
+    """file:// URL falls back to inline (scheme not allowed)."""
+    file_op = _make_file_operator(tmp_path)
+    mock_client = _mock_stream_client(b"data")
+
+    parts = [url_part("file:///etc/passwd", mime="text/plain")]
+    result = await map_input_to_prompt(parts, file_op, http_client=mock_client)
+    assert isinstance(result, list)
+    # Falls back to inline (DocumentUrl) because file:// is rejected
+    assert isinstance(result[0], DocumentUrl)
+
+
+@pytest.mark.anyio
+async def test_download_rejects_oversized_content_length(tmp_path: Path) -> None:
+    """Download with Content-Length exceeding limit falls back to inline."""
+    file_op = _make_file_operator(tmp_path)
+    oversized = str(_MAX_DOWNLOAD_BYTES + 1)
+    mock_client = _mock_stream_client(b"data", headers={"content-length": oversized})
+
+    parts = [url_part("https://x.com/huge.bin", mime="application/octet-stream")]
+    result = await map_input_to_prompt(parts, file_op, http_client=mock_client)
+    assert isinstance(result, list)
+    assert isinstance(result[0], DocumentUrl)  # inline fallback
+
+
+@pytest.mark.anyio
+async def test_download_rejects_oversized_stream(tmp_path: Path) -> None:
+    """Download that exceeds size limit during streaming falls back to inline."""
+    file_op = _make_file_operator(tmp_path)
+    # Create content larger than limit (no Content-Length header)
+    oversized_content = b"x" * (_MAX_DOWNLOAD_BYTES + 1)
+    mock_client = _mock_stream_client(oversized_content)
+
+    parts = [url_part("https://x.com/huge.bin", mime="application/octet-stream")]
+    result = await map_input_to_prompt(parts, file_op, http_client=mock_client)
+    assert isinstance(result, list)
+    assert isinstance(result[0], DocumentUrl)  # inline fallback
+
+
+@pytest.mark.anyio
+async def test_binary_inline_rejects_oversized(tmp_path: Path) -> None:
+    """Inline binary data exceeding context size limit raises ValueError."""
+    file_op = _make_file_operator(tmp_path)
+    oversized = b"x" * (_MAX_INLINE_BYTES + 1)
+    data_b64 = base64.b64encode(oversized).decode()
+
+    parts = [binary_part(data_b64, mime="application/octet-stream", mode=ContentMode.INLINE)]
+    with pytest.raises(ValueError, match="too large for inline"):
+        await map_input_to_prompt(parts, file_op)
+
+
+@pytest.mark.anyio
+async def test_inline_file_rejects_oversized(tmp_path: Path) -> None:
+    """Inline file read exceeding context size limit raises ValueError."""
+    file_op = _make_file_operator(tmp_path)
+
+    # Create a file larger than inline limit
+    big_file = tmp_path / "big.bin"
+    big_file.write_bytes(b"x" * (_MAX_INLINE_BYTES + 1))
+
+    parts = [file_part("big.bin", mode=ContentMode.INLINE)]
+    with pytest.raises(ValueError, match="too large for inline"):
+        await map_input_to_prompt(parts, file_op)
