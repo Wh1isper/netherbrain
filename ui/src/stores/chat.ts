@@ -160,7 +160,7 @@ function makeAssistantPlaceholder(): ChatMessage {
 
 function handleEvent(
   event: AGUIEvent,
-  get: () => ChatState,
+  _get: () => ChatState,
   set: (updater: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
 ): void {
   switch (event.type) {

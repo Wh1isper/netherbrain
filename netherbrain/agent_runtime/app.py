@@ -214,6 +214,7 @@ async def health(request: Request) -> dict[str, str]:
 from netherbrain.agent_runtime.routers.auth import router as auth_router  # noqa: E402
 from netherbrain.agent_runtime.routers.conversations import router as conversations_router  # noqa: E402
 from netherbrain.agent_runtime.routers.keys import router as keys_router  # noqa: E402
+from netherbrain.agent_runtime.routers.model_presets import router as model_presets_router  # noqa: E402
 from netherbrain.agent_runtime.routers.presets import router as presets_router  # noqa: E402
 from netherbrain.agent_runtime.routers.sessions import router as sessions_router  # noqa: E402
 from netherbrain.agent_runtime.routers.toolsets import router as toolsets_router  # noqa: E402
@@ -228,6 +229,7 @@ api.include_router(workspaces_router)
 api.include_router(conversations_router)
 api.include_router(sessions_router)
 api.include_router(toolsets_router)
+api.include_router(model_presets_router)
 
 app.include_router(api)
 

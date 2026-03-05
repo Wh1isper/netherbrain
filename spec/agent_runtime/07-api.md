@@ -47,18 +47,18 @@ flowchart TB
 
 Create a new agent preset.
 
-| Field         | Type    | Required | Description                                                 |
-| ------------- | ------- | -------- | ----------------------------------------------------------- |
-| preset_id     | string  | Yes      | Unique slug identifier                                      |
-| name          | string  | Yes      | Display name                                                |
-| description   | string? | No       | Description                                                 |
-| model         | JSON    | Yes      | ModelPreset (name, context_window, temperature, max_tokens) |
-| system_prompt | string  | Yes      | System prompt (Jinja2 template)                             |
-| toolsets      | JSON    | Yes      | list[ToolsetSpec]                                           |
-| environment   | JSON?   | No       | EnvironmentSpec (mode, workspace_id/project_ids)            |
-| subagents     | JSON?   | No       | SubagentSpec                                                |
-| mcp_servers   | JSON?   | No       | list[McpServerSpec] (external MCP server connections)       |
-| is_default    | bool    | No       | Set as default preset (default: false)                      |
+| Field         | Type    | Required | Description                                                                                            |
+| ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| preset_id     | string  | Yes      | Unique slug identifier                                                                                 |
+| name          | string  | Yes      | Display name                                                                                           |
+| description   | string? | No       | Description                                                                                            |
+| model         | JSON    | Yes      | ModelPreset (name, model_settings_preset, model_settings, model_config_preset, model_config_overrides) |
+| system_prompt | string  | Yes      | System prompt (Jinja2 template)                                                                        |
+| toolsets      | JSON    | Yes      | list[ToolsetSpec]                                                                                      |
+| environment   | JSON?   | No       | EnvironmentSpec (mode, workspace_id/project_ids)                                                       |
+| subagents     | JSON?   | No       | SubagentSpec                                                                                           |
+| mcp_servers   | JSON?   | No       | list[McpServerSpec] (external MCP server connections)                                                  |
+| is_default    | bool    | No       | Set as default preset (default: false)                                                                 |
 
 ### GET /api/presets/list
 
@@ -386,6 +386,49 @@ Service health check (no auth required).
 }
 ```
 
+## Discovery
+
+Stateless capability-discovery endpoints. No database access; responses reflect the server's built-in registries.
+
+### GET /api/toolsets
+
+List available toolsets and their constituent tools. (Existing endpoint.)
+
+### GET /api/model-presets
+
+List available SDK ModelSettings and ModelConfig presets. Returns preset names, descriptions, and the raw settings dict for each. Enables the UI to present preset options dynamically without hardcoding names.
+
+Response structure:
+
+```json
+{
+  "model_settings_presets": [
+    {
+      "name": "anthropic_high",
+      "settings": { "max_tokens": 21504, "anthropic_thinking": { "type": "enabled", "budget_tokens": 32768 }, ... }
+    },
+    ...
+  ],
+  "model_settings_aliases": {
+    "anthropic": "anthropic_default",
+    "high": "anthropic_high",
+    ...
+  },
+  "model_config_presets": [
+    {
+      "name": "claude_200k",
+      "config": { "context_window": 200000, "max_images": 20, ... }
+    },
+    ...
+  ],
+  "model_config_aliases": {
+    "claude": "claude_200k",
+    "anthropic": "claude_200k",
+    ...
+  }
+}
+```
+
 ## Endpoint Summary
 
 ```mermaid
@@ -445,6 +488,11 @@ flowchart LR
     subgraph Infra["Infrastructure"]
         H1["GET /api/health (no auth)"]
     end
+
+    subgraph Discovery["Discovery"]
+        D1["GET /api/toolsets"]
+        D2["GET /api/model-presets"]
+    end
 ```
 
 | Tier               | Scope                  | Access                    | Description                                     |
@@ -457,4 +505,6 @@ flowchart LR
 | **Chat**           | `/api/conversations/*` | User-scoped               | Conversation lifecycle, streaming, control      |
 | **Sessions**       | `/api/sessions/*`      | User-scoped               | Explicit session DAG control, in-flight control |
 | **Infrastructure** | `/api/health`          | No auth                   | Health check                                    |
+| **Discovery**      | `/api/toolsets`        | Any authenticated         | Available toolsets and tools                    |
+| **Discovery**      | `/api/model-presets`   | Any authenticated         | Available model settings and config presets     |
 | **UI**             | `/` (root)             | Browser                   | Built-in web UI (static SPA)                    |

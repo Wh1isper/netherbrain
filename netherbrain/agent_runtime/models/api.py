@@ -353,6 +353,40 @@ class MailboxMessageResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Model Presets (capability discovery)
+# ---------------------------------------------------------------------------
+
+
+class ModelSettingsPresetInfo(BaseModel):
+    """A single SDK ModelSettings preset."""
+
+    name: str
+    """Preset name (e.g., 'anthropic_high')."""
+
+    settings: dict
+    """Raw ModelSettings dict."""
+
+
+class ModelConfigPresetInfo(BaseModel):
+    """A single SDK ModelConfig preset."""
+
+    name: str
+    """Preset name (e.g., 'claude_200k')."""
+
+    config: dict
+    """Raw ModelConfig dict (capabilities serialized as string list)."""
+
+
+class ModelPresetsResponse(BaseModel):
+    """All available SDK model presets."""
+
+    model_settings_presets: list[ModelSettingsPresetInfo]
+    model_settings_aliases: dict[str, str]
+    model_config_presets: list[ModelConfigPresetInfo]
+    model_config_aliases: dict[str, str]
+
+
+# ---------------------------------------------------------------------------
 # Toolsets (capability discovery)
 # ---------------------------------------------------------------------------
 

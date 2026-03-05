@@ -43,12 +43,28 @@ class McpServerSpec(BaseModel):
 
 
 class ModelPreset(BaseModel):
-    """LLM model selection and settings."""
+    """LLM model selection and settings.
+
+    Uses SDK preset names for common provider configurations, with optional
+    dict overrides for fine-tuning.  Resolution order:
+
+    - ModelSettings: preset dict (from model_settings_preset) <- model_settings override
+    - ModelConfig: preset dict (from model_config_preset) <- model_config override
+    """
 
     name: str = Field(description="Provider-qualified model name, e.g. 'anthropic:claude-sonnet-4'")
-    context_window: int | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
+    model_settings_preset: str | None = Field(
+        default=None, description="SDK ModelSettings preset name, e.g. 'anthropic_high'"
+    )
+    model_settings: dict | None = Field(
+        default=None, description="Explicit ModelSettings overrides (merged on top of preset)"
+    )
+    model_config_preset: str | None = Field(default=None, description="SDK ModelConfig preset name, e.g. 'claude_200k'")
+    model_config_overrides: dict | None = Field(
+        default=None,
+        description="Explicit ModelConfig overrides (merged on top of preset). "
+        "Named 'model_config_overrides' to avoid collision with Pydantic's reserved 'model_config' attribute.",
+    )
 
 
 class ToolsetSpec(BaseModel):

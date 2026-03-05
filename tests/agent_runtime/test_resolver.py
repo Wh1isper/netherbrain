@@ -118,11 +118,11 @@ async def test_resolve_preset_not_found_raises(db_session: AsyncSession) -> None
 async def test_override_model(db_session: AsyncSession) -> None:
     await _create_preset(db_session, "p1", is_default=True)
 
-    override = ConfigOverride(model=ModelPreset(name="openai:gpt-4o", temperature=0.5))
+    override = ConfigOverride(model=ModelPreset(name="openai:gpt-4o", model_settings={"temperature": 0.5}))
     cfg = await resolve_config(db_session, override=override)
 
     assert cfg.model.name == "openai:gpt-4o"
-    assert cfg.model.temperature == 0.5
+    assert cfg.model.model_settings == {"temperature": 0.5}
 
 
 @pytest.mark.integration
@@ -190,7 +190,7 @@ async def test_no_override_preserves_preset(db_session: AsyncSession) -> None:
         db_session,
         "p1",
         is_default=True,
-        model={"name": "openai:gpt-4o", "temperature": 0.7},
+        model={"name": "openai:gpt-4o", "model_settings": {"temperature": 0.7}},
         system_prompt="Keep it short.",
         toolsets=[{"toolset_name": "core", "enabled": True}],
         environment={
@@ -203,7 +203,7 @@ async def test_no_override_preserves_preset(db_session: AsyncSession) -> None:
     cfg = await resolve_config(db_session)
 
     assert cfg.model.name == "openai:gpt-4o"
-    assert cfg.model.temperature == 0.7
+    assert cfg.model.model_settings == {"temperature": 0.7}
     assert cfg.system_prompt == "Keep it short."
     assert len(cfg.toolsets) == 1
     assert cfg.environment_mode == EnvironmentMode.SANDBOX

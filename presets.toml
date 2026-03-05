@@ -76,6 +76,8 @@ Reference files with paths and line numbers when discussing code changes.
 
 [presets.model]
 name = "gateway@anthropic:claude-opus-4-6"
+model_settings_preset = "anthropic_default"
+model_config_preset = "claude_200k"
 
 [[presets.toolsets]]
 toolset_name = "core"
@@ -123,6 +125,8 @@ system_prompt = "You are a helpful assistant."
 
 [presets.model]
 name = "gateway@anthropic:claude-sonnet-4-6"
+model_settings_preset = "anthropic_low"
+model_config_preset = "claude_200k"
 
 [[presets]]
 preset_id = "subagent-code-reviewer"
@@ -141,6 +145,8 @@ If no major issue is found, state residual risks and missing tests.
 
 [presets.model]
 name = "gateway@anthropic:claude-opus-4-6"
+model_settings_preset = "anthropic_default"
+model_config_preset = "claude_200k"
 
 [[presets.toolsets]]
 toolset_name = "core"
@@ -162,6 +168,8 @@ Avoid speculative conclusions; show reasoning from observed facts.
 
 [presets.model]
 name = "gateway@anthropic:claude-opus-4-6"
+model_settings_preset = "anthropic_default"
+model_config_preset = "claude_200k"
 
 [[presets.toolsets]]
 toolset_name = "core"
@@ -182,6 +190,8 @@ Escalate only when blocked by missing context, permissions, or conflicting const
 
 [presets.model]
 name = "gateway@anthropic:claude-opus-4-6"
+model_settings_preset = "anthropic_default"
+model_config_preset = "claude_200k"
 
 [[presets.toolsets]]
 toolset_name = "core"
@@ -200,6 +210,8 @@ When uncertain, verify by reading source rather than guessing.
 
 [presets.model]
 name = "gateway@anthropic:claude-sonnet-4-6"
+model_settings_preset = "anthropic_low"
+model_config_preset = "claude_200k"
 
 [[presets.toolsets]]
 toolset_name = "core"
@@ -218,6 +230,8 @@ For uncertain or fast-changing topics, state assumptions clearly.
 
 [presets.model]
 name = "gateway@anthropic:claude-sonnet-4-6"
+model_settings_preset = "anthropic_low"
+model_config_preset = "claude_200k"
 
 [[presets.toolsets]]
 toolset_name = "core"

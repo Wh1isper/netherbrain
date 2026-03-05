@@ -120,12 +120,19 @@ At most one preset has `is_default = true`. This is used when a conversation or 
 
 ### ModelPreset (JSON)
 
-| Field          | Type   | Description                                                 |
-| -------------- | ------ | ----------------------------------------------------------- |
-| name           | string | Provider-qualified name (e.g., `anthropic:claude-sonnet-4`) |
-| context_window | int?   | Override context window size                                |
-| temperature    | float? | Sampling temperature                                        |
-| max_tokens     | int?   | Max output tokens                                           |
+| Field                  | Type    | Description                                                             |
+| ---------------------- | ------- | ----------------------------------------------------------------------- |
+| name                   | string  | Provider-qualified name (e.g., `anthropic:claude-sonnet-4`)             |
+| model_settings_preset  | string? | SDK ModelSettings preset name (e.g., `anthropic_high`, `openai_medium`) |
+| model_settings         | dict?   | Explicit ModelSettings overrides (merged on top of preset)              |
+| model_config_preset    | string? | SDK ModelConfig preset name (e.g., `claude_200k`, `gemini_1m`)          |
+| model_config_overrides | dict?   | Explicit ModelConfig overrides (merged on top of preset)                |
+
+**Resolution order** for ModelSettings: start with SDK preset dict (if `model_settings_preset` is set), then shallow-merge `model_settings` dict on top (override wins). If neither is set, the SDK uses its own defaults.
+
+Same logic applies to ModelConfig: start with SDK preset dict (if `model_config_preset` is set), then shallow-merge `model_config_overrides` dict on top. The override field is named `model_config_overrides` instead of `model_config` to avoid collision with Pydantic's reserved `model_config` attribute.
+
+The SDK provides built-in presets for common provider configurations (thinking budgets, reasoning effort, cache policies, beta headers). These are discoverable via the `GET /api/model-presets` endpoint. See the ya-agent-sdk `presets.py` module for the full list.
 
 ### McpServerSpec (JSON)
 

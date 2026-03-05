@@ -123,20 +123,34 @@ def test_resolve_model_settings_defaults() -> None:
     assert settings is not None
 
 
-def test_resolve_model_settings_all_fields() -> None:
-    model = ModelPreset(name="openai:gpt-4o", temperature=0.7, max_tokens=4096)
+def test_resolve_model_settings_preset_only() -> None:
+    model = ModelPreset(name="anthropic:claude-sonnet-4", model_settings_preset="anthropic_high")
+    settings = resolve_model_settings(model)
+
+    assert settings.get("anthropic_thinking") is not None
+    assert settings.get("max_tokens") == 21 * 1024
+
+
+def test_resolve_model_settings_override_only() -> None:
+    model = ModelPreset(name="openai:gpt-4o", model_settings={"temperature": 0.7, "max_tokens": 4096})
     settings = resolve_model_settings(model)
 
     assert settings.get("temperature") == 0.7
     assert settings.get("max_tokens") == 4096
 
 
-def test_resolve_model_settings_partial() -> None:
-    model = ModelPreset(name="openai:gpt-4o", temperature=0.5)
+def test_resolve_model_settings_preset_plus_override() -> None:
+    model = ModelPreset(
+        name="anthropic:claude-sonnet-4",
+        model_settings_preset="anthropic_medium",
+        model_settings={"temperature": 0.3},
+    )
     settings = resolve_model_settings(model)
 
-    assert settings.get("temperature") == 0.5
-    assert settings.get("max_tokens") is None
+    # Override applied
+    assert settings.get("temperature") == 0.3
+    # Preset base preserved
+    assert settings.get("anthropic_thinking") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -151,9 +165,19 @@ def test_resolve_model_config_defaults() -> None:
 
 
 def test_resolve_model_config_context_window() -> None:
-    model = ModelPreset(name="anthropic:claude-sonnet-4", context_window=200000)
+    model = ModelPreset(name="anthropic:claude-sonnet-4", model_config_preset="claude_200k")
     cfg = resolve_model_config(model)
-    assert cfg.context_window == 200000
+    assert cfg.context_window == 200_000
+
+
+def test_resolve_model_config_override() -> None:
+    model = ModelPreset(
+        name="anthropic:claude-sonnet-4",
+        model_config_preset="claude_200k",
+        model_config_overrides={"context_window": 100_000},
+    )
+    cfg = resolve_model_config(model)
+    assert cfg.context_window == 100_000
 
 
 # ---------------------------------------------------------------------------

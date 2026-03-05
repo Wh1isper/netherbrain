@@ -134,23 +134,37 @@ def resolve_tools(toolsets: list[ToolsetSpec]) -> list[type[BaseTool]]:
 def resolve_model_settings(model: ModelPreset) -> ModelSettings:
     """Map ``ModelPreset`` to SDK ``ModelSettings``.
 
-    Only explicitly set fields are included; ``None`` values are omitted
-    so the SDK uses its own defaults.
+    Resolution order:
+    1. Load SDK preset dict (if ``model_settings_preset`` is set).
+    2. Shallow-merge ``model_settings`` dict on top (override wins).
+    3. Return as ``ModelSettings``.
     """
-    settings: dict[str, Any] = {}
-    if model.temperature is not None:
-        settings["temperature"] = model.temperature
-    if model.max_tokens is not None:
-        settings["max_tokens"] = model.max_tokens
-    return ModelSettings(**settings) if settings else ModelSettings()
+    from ya_agent_sdk.presets import get_model_settings as sdk_get_model_settings
+
+    base: dict[str, Any] = {}
+    if model.model_settings_preset is not None:
+        base = dict(sdk_get_model_settings(model.model_settings_preset))
+    if model.model_settings is not None:
+        base = {**base, **model.model_settings}
+    return ModelSettings(**base) if base else ModelSettings()
 
 
 def resolve_model_config(model: ModelPreset) -> ModelConfig:
-    """Map ``ModelPreset`` to SDK ``ModelConfig``."""
-    kwargs: dict[str, Any] = {}
-    if model.context_window is not None:
-        kwargs["context_window"] = model.context_window
-    return ModelConfig(**kwargs)
+    """Map ``ModelPreset`` to SDK ``ModelConfig``.
+
+    Resolution order:
+    1. Load SDK preset dict (if ``model_config_preset`` is set).
+    2. Shallow-merge ``model_config`` dict on top (override wins).
+    3. Return as ``ModelConfig``.
+    """
+    from ya_agent_sdk.presets import get_model_cfg as sdk_get_model_cfg
+
+    base: dict[str, Any] = {}
+    if model.model_config_preset is not None:
+        base = dict(sdk_get_model_cfg(model.model_config_preset))
+    if model.model_config_overrides is not None:
+        base = {**base, **model.model_config_overrides}
+    return ModelConfig(**base) if base else ModelConfig()
 
 
 # ---------------------------------------------------------------------------

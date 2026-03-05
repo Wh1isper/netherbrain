@@ -85,46 +85,49 @@ interface MarkdownContentProps {
 
 export default memo(function MarkdownContent({ content }: MarkdownContentProps) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+    <div
       className="prose prose-sm dark:prose-invert max-w-none break-words
         prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-ol:my-2
         prose-li:my-0.5 prose-blockquote:my-2 prose-pre:my-0 prose-hr:my-4
         prose-table:my-2 prose-img:my-2"
-      components={{
-        // Code blocks and inline code
-        code({ className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || "");
-          const codeString = String(children).replace(/\n$/, "");
-
-          // If it has a language class or contains newlines, render as block
-          if (match || codeString.includes("\n")) {
-            return <CodeBlock lang={match?.[1] ?? ""} code={codeString} />;
-          }
-
-          return <InlineCode {...props}>{children}</InlineCode>;
-        },
-        // Strip the wrapping <pre> since CodeBlock handles its own
-        pre({ children }) {
-          return <>{children}</>;
-        },
-        // Links open in new tab
-        a({ children, href, ...props }) {
-          return (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-              {...props}
-            >
-              {children}
-            </a>
-          );
-        },
-      }}
     >
-      {content}
-    </ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Code blocks and inline code
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || "");
+            const codeString = String(children).replace(/\n$/, "");
+
+            // If it has a language class or contains newlines, render as block
+            if (match || codeString.includes("\n")) {
+              return <CodeBlock lang={match?.[1] ?? ""} code={codeString} />;
+            }
+
+            return <InlineCode {...props}>{children}</InlineCode>;
+          },
+          // Strip the wrapping <pre> since CodeBlock handles its own
+          pre({ children }) {
+            return <>{children}</>;
+          },
+          // Links open in new tab
+          a({ children, href, ...props }) {
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+                {...props}
+              >
+                {children}
+              </a>
+            );
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   );
 });
