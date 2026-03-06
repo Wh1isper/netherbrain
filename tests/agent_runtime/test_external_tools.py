@@ -120,6 +120,14 @@ def test_validate_arguments_empty_schema() -> None:
     assert _validate_arguments({"any": "data"}, {}) is None
 
 
+def test_validate_arguments_malformed_schema() -> None:
+    """Malformed schema should skip validation gracefully, not raise."""
+    # Properties is not a dict -- will fail in _build_pydantic_model.
+    assert _validate_arguments({"x": 1}, {"properties": "not_a_dict"}) is None
+    # Property with completely bogus structure.
+    assert _validate_arguments({"x": 1}, {"properties": {"x": "not_a_dict"}}) is None
+
+
 # ---------------------------------------------------------------------------
 # _build_description
 # ---------------------------------------------------------------------------

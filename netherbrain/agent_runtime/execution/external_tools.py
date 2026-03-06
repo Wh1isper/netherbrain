@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import httpx
+from pydantic import ValidationError, create_model
 from pydantic_ai import RunContext, Tool
 
 if TYPE_CHECKING:
@@ -30,13 +31,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Optional jsonschema for argument validation.
-try:
-    import jsonschema as _jsonschema  # noqa: F401
-
-    _HAS_JSONSCHEMA = True
-except ImportError:
-    _HAS_JSONSCHEMA = False
+# JSON Schema type -> Python type mapping for dynamic Pydantic models.
+_JSON_SCHEMA_TYPE_MAP: dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -44,24 +47,52 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
+def _build_pydantic_model(schema: dict) -> type | None:
+    """Build a dynamic Pydantic model from a JSON Schema object definition.
+
+    Handles flat object schemas with typed properties.  Returns ``None``
+    when the schema has no ``properties`` (nothing to validate).
+    """
+    properties = schema.get("properties")
+    if not properties:
+        return None
+
+    required = set(schema.get("required", []))
+
+    fields: dict[str, Any] = {}
+    for name, prop in properties.items():
+        python_type = _JSON_SCHEMA_TYPE_MAP.get(prop.get("type", ""), Any)
+        if name in required:
+            fields[name] = (python_type, ...)
+        else:
+            fields[name] = (python_type | None, None)
+
+    return create_model("ExternalToolArgs", **fields)
+
+
 def _validate_arguments(arguments: dict, schema: dict) -> str | None:
-    """Validate arguments against a JSON Schema.
+    """Validate *arguments* against a JSON Schema using a dynamic Pydantic model.
 
     Returns an error message string if validation fails, or ``None`` if
-    arguments are valid (or validation is unavailable).
+    arguments are valid.  If the schema itself is malformed, validation is
+    skipped with a warning (we do not trust external schemas to be correct).
     """
     if not schema:
         return None
 
-    if not _HAS_JSONSCHEMA:
+    try:
+        model = _build_pydantic_model(schema)
+    except Exception:
+        logger.warning("Failed to build validation model from schema, skipping validation", exc_info=True)
         return None
 
-    from jsonschema import ValidationError, validate
+    if model is None:
+        return None
 
     try:
-        validate(instance=arguments, schema=schema)
+        model.model_validate(arguments)
     except ValidationError as exc:
-        return f"Argument validation failed: {exc.message}"
+        return f"Argument validation failed: {exc}"
 
     return None
 

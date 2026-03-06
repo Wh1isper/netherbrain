@@ -149,7 +149,7 @@ class Session(Base):
     input: Mapped[dict | None] = mapped_column("input", JSONB)
     final_message: Mapped[str | None] = mapped_column(Text)
     deferred_tools: Mapped[dict | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(TimestampTZ, server_default=text("clock_timestamp()"))
 
 
 class MailboxMessage(Base):

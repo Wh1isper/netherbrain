@@ -108,7 +108,9 @@ def upgrade() -> None:
         sa.Column("input", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("final_message", sa.Text(), nullable=True),
         sa.Column("deferred_tools", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.text("clock_timestamp()"), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["conversation_id"], ["conversations.conversation_id"], name="fk_sessions_conversation_id"
         ),
