@@ -57,6 +57,7 @@ async def handle_execute(body: SessionExecuteRequest, db: DbSession, execution: 
             config_override=body.config_override,
             transport=body.transport,
             user_id=auth.user_id,
+            external_tools=body.external_tools,
         )
     except InputRequiredError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None

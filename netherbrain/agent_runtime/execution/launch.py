@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
     from netherbrain.agent_runtime.managers.sessions import SessionManager
+    from netherbrain.agent_runtime.models.api import ExternalToolSpec
     from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
     from netherbrain.agent_runtime.models.session import SessionState
     from netherbrain.agent_runtime.registry import SessionRegistry
@@ -82,6 +83,7 @@ async def launch_session(
     session_type: SessionType = SessionType.AGENT,
     spawned_by: str | None = None,
     subagent_name: str | None = None,
+    external_tools: Sequence[ExternalToolSpec] | None = None,
 ) -> LaunchResult:
     """Create a session, set up transport, and launch execution in background.
 
@@ -188,6 +190,7 @@ async def launch_session(
             tool_results=list(tool_results) if tool_results else None,
             event_transport=event_transport,
             subagent_name=subagent_name,
+            external_tools=list(external_tools) if external_tools else None,
         ),
         name=f"execute-{session_id}",
     )
@@ -226,6 +229,7 @@ async def _run_execution(
     tool_results: list[ToolResult] | None,
     event_transport: object,
     subagent_name: str | None = None,
+    external_tools: list[ExternalToolSpec] | None = None,
 ) -> None:
     """Background task wrapper for execute_session.
 
@@ -252,6 +256,7 @@ async def _run_execution(
                 subagent_name=subagent_name,
                 session_factory=session_factory,
                 redis=redis,
+                external_tools=external_tools,
             )
             logger.info(
                 "Execution completed: session=%s status=%s",

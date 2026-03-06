@@ -256,6 +256,29 @@ class TurnsPageResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# External tools (per-request callback injection)
+# ---------------------------------------------------------------------------
+
+
+class ExternalToolSpec(BaseModel):
+    """Client-injected callback tool definition.
+
+    External tools allow session callers to inject HTTP callback endpoints
+    that the agent can invoke during execution.  The agent sees only the
+    model-facing fields (name, description, parameters_schema); transport
+    details (method, url, headers) are hidden from the model.
+    """
+
+    name: str = Field(description="Tool identifier, chosen by caller.")
+    description: str = Field(description="What the tool does (natural language).")
+    parameters_schema: dict = Field(default_factory=dict, description="JSON Schema for tool arguments.")
+    method: str = Field(default="POST", description="HTTP method for the callback.")
+    url: str = Field(description="Callback URL.")
+    headers: dict[str, str] = Field(default_factory=dict, description="HTTP headers (auth tokens, etc.).")
+    timeout: int = Field(default=30, ge=1, le=300, description="Request timeout in seconds.")
+
+
+# ---------------------------------------------------------------------------
 # Execution requests
 # ---------------------------------------------------------------------------
 
@@ -266,6 +289,10 @@ class _ExecutionInputMixin(BaseModel):
     input: list[InputPart] | None = None
     user_interactions: list[UserInteraction] | None = None
     tool_results: list[ToolResult] | None = None
+    external_tools: list[ExternalToolSpec] | None = Field(
+        default=None,
+        description="Client-injected callback tools (per-request, not persisted).",
+    )
 
 
 class ConversationRunRequest(_ExecutionInputMixin):

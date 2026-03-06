@@ -168,6 +168,7 @@ Main entry point. Create a new conversation or continue an existing one.
 | input             | JSON?   | Cond.    | User input (see Input Format)                                        |
 | user_interactions | JSON?   | Cond.    | HITL approval feedback                                               |
 | tool_results      | JSON?   | Cond.    | External tool execution results                                      |
+| external_tools    | JSON?   | No       | Client-injected callback tools (see External Tools)                  |
 | transport         | enum    | No       | `sse` (default) / `stream`                                           |
 
 At least one of `input`, `user_interactions`, `tool_results` must be provided.
@@ -203,16 +204,17 @@ At least one of `input`, `user_interactions`, `tool_results` must be provided.
 
 Fork a new conversation from a session in this conversation.
 
-| Field           | Type    | Required | Description                                      |
-| --------------- | ------- | -------- | ------------------------------------------------ |
-| preset_id       | string  | Yes      | Agent preset                                     |
-| input           | JSON    | Yes      | User input (see Input Format)                    |
-| from_session_id | string? | No       | Fork point. Default: latest committed session    |
-| workspace_id    | string? | No       | Workspace reference (overrides fork-point env)   |
-| project_ids     | list?   | No       | Ad-hoc project list (overrides fork-point env)   |
-| metadata        | JSON?   | No       | Client-defined metadata for the new conversation |
-| config_override | JSON?   | No       | Per-request overrides                            |
-| transport       | enum    | No       | `sse` (default) / `stream`                       |
+| Field           | Type    | Required | Description                                         |
+| --------------- | ------- | -------- | --------------------------------------------------- |
+| preset_id       | string  | Yes      | Agent preset                                        |
+| input           | JSON    | Yes      | User input (see Input Format)                       |
+| from_session_id | string? | No       | Fork point. Default: latest committed session       |
+| workspace_id    | string? | No       | Workspace reference (overrides fork-point env)      |
+| project_ids     | list?   | No       | Ad-hoc project list (overrides fork-point env)      |
+| metadata        | JSON?   | No       | Client-defined metadata for the new conversation    |
+| config_override | JSON?   | No       | Per-request overrides                               |
+| external_tools  | JSON?   | No       | Client-injected callback tools (see External Tools) |
+| transport       | enum    | No       | `sse` (default) / `stream`                          |
 
 Creates a new conversation (`conversation_id = new session_id`).
 
@@ -229,6 +231,7 @@ Drain mailbox and create continuation. See [06-async-agents.md](06-async-agents.
 | user_interactions | JSON?   | No       | Optional HITL feedback                                  |
 | tool_results      | JSON?   | No       | Optional external tool results                          |
 | config_override   | JSON?   | No       | Per-request overrides                                   |
+| external_tools    | JSON?   | No       | Client-injected callback tools (see External Tools)     |
 | transport         | enum    | No       | `stream` (default) / `sse`                              |
 
 Rejects with `422` if mailbox is empty.
@@ -341,6 +344,7 @@ Direct session execution with explicit parameters. Building block for conversati
 | workspace_id      | string? | No       | Workspace reference                    |
 | project_ids       | list?   | No       | Ad-hoc project list                    |
 | config_override   | JSON?   | No       | Per-request overrides                  |
+| external_tools    | JSON?   | No       | Client-injected callback tools         |
 | input             | JSON?   | Cond.    | User input (see Input Format)          |
 | user_interactions | JSON?   | Cond.    | HITL approval feedback                 |
 | tool_results      | JSON?   | Cond.    | External tool results                  |

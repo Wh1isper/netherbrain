@@ -62,6 +62,7 @@ if TYPE_CHECKING:
 
     from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
     from netherbrain.agent_runtime.managers.sessions import SessionManager
+    from netherbrain.agent_runtime.models.api import ExternalToolSpec
     from netherbrain.agent_runtime.registry import SessionRegistry
     from netherbrain.agent_runtime.settings import NetherSettings
 
@@ -500,6 +501,7 @@ async def execute_session(  # noqa: C901
     subagent_name: str | None = None,
     session_factory: async_sessionmaker | None = None,
     redis: aioredis.Redis | None = None,
+    external_tools: Sequence[ExternalToolSpec] | None = None,
 ) -> ExecutionResult:
     """Execute an agent session to completion.
 
@@ -547,6 +549,8 @@ async def execute_session(  # noqa: C901
         DB session factory for background operations (async delegate tool).
     redis:
         Redis client for stream transport (async delegate tool).
+    external_tools:
+        Client-injected callback tools (per-request, ephemeral).
 
     Returns
     -------
@@ -589,6 +593,16 @@ async def execute_session(  # noqa: C901
         )
         delegate_tool = create_async_delegate_tool(delegate_ctx)
         extra_agent_tools = [delegate_tool]
+
+    # Build external meta tool if caller injected external tools.
+    if external_tools:
+        from netherbrain.agent_runtime.execution.external_tools import create_external_meta_tool
+
+        meta_tool = create_external_meta_tool(external_tools)
+        if extra_agent_tools is None:
+            extra_agent_tools = [meta_tool]
+        else:
+            extra_agent_tools.append(meta_tool)
 
     runtime, _paths = create_service_runtime(
         config,

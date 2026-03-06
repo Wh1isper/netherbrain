@@ -108,6 +108,7 @@ async def handle_run(body: ConversationRunRequest, db: DbSession, execution: Exe
             metadata=body.metadata,
             transport=body.transport,
             user_id=auth.user_id,
+            external_tools=body.external_tools,
         )
     except InputRequiredError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
@@ -160,6 +161,7 @@ async def handle_fork(
             metadata=body.metadata,
             transport=body.transport,
             user_id=auth.user_id,
+            external_tools=body.external_tools,
         )
     except (
         ConversationNotFoundError,
@@ -452,6 +454,7 @@ async def handle_fire(
             config_override=body.config_override,
             transport=body.transport,
             user_id=auth.user_id,
+            external_tools=body.external_tools,
         )
     except ConversationNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from None

@@ -125,7 +125,9 @@ flowchart TB
     ADP --> ENV["project_ids -> Environment paths"]
     ADP --> SUB["subagent refs -> SubagentConfig[]"]
 
-    MODEL & MCFG & TCFG & TS & SP & STATE & ENV & SUB --> CA["create_agent()"]
+    REQ[Request] --> EXT["external_tools -> meta tool<br/>(call_external)"]
+
+    MODEL & MCFG & TCFG & TS & SP & STATE & ENV & SUB & EXT --> CA["create_agent()"]
 
     ADP --> UP["input -> user_prompt"]
     ADP --> UI["user_interactions -> DeferredToolResults.approvals"]

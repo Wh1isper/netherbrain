@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     from netherbrain.agent_runtime.managers.sessions import SessionManager
+    from netherbrain.agent_runtime.models.api import ExternalToolSpec
     from netherbrain.agent_runtime.models.session import SessionState
     from netherbrain.agent_runtime.registry import SessionRegistry
     from netherbrain.agent_runtime.settings import NetherSettings
@@ -174,6 +175,7 @@ class ExecutionManager:
         metadata: dict | None = None,
         transport: Transport = Transport.SSE,
         user_id: str | None = None,
+        external_tools: Sequence[ExternalToolSpec] | None = None,
     ) -> LaunchResult:
         """Create a new conversation or continue an existing one.
 
@@ -232,6 +234,7 @@ class ExecutionManager:
             user_id=user_id,
             user_interactions=user_interactions,
             tool_results=tool_results,
+            external_tools=external_tools,
         )
 
         # Apply metadata to new conversations.
@@ -255,6 +258,7 @@ class ExecutionManager:
         metadata: dict | None = None,
         transport: Transport = Transport.SSE,
         user_id: str | None = None,
+        external_tools: Sequence[ExternalToolSpec] | None = None,
     ) -> LaunchResult:
         """Fork a new conversation from a session in an existing conversation.
 
@@ -294,6 +298,7 @@ class ExecutionManager:
             parent_state=parent_state,
             conversation_id=uuid.uuid4().hex,
             user_id=user_id,
+            external_tools=external_tools,
         )
 
         if metadata:
@@ -342,6 +347,7 @@ class ExecutionManager:
         config_override: dict | None = None,
         transport: Transport = Transport.STREAM,
         user_id: str | None = None,
+        external_tools: Sequence[ExternalToolSpec] | None = None,
     ) -> LaunchResult:
         """Drain mailbox and launch a continuation session.
 
@@ -439,6 +445,7 @@ class ExecutionManager:
                 user_id=user_id,
                 user_interactions=user_interactions,
                 tool_results=tool_results,
+                external_tools=external_tools,
             )
         except Exception:
             # Revert claim: set delivered_to back to NULL.
@@ -495,6 +502,7 @@ class ExecutionManager:
         config_override: dict | None = None,
         transport: Transport = Transport.SSE,
         user_id: str | None = None,
+        external_tools: Sequence[ExternalToolSpec] | None = None,
     ) -> LaunchResult:
         """Direct session execution with explicit parameters.
 
@@ -546,6 +554,7 @@ class ExecutionManager:
             user_id=user_id,
             user_interactions=user_interactions,
             tool_results=tool_results,
+            external_tools=external_tools,
         )
 
     def interrupt_session(self, session_id: str) -> bool:

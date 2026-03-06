@@ -245,6 +245,59 @@ Workspaces are optional. Callers can always pass `project_ids` directly in the r
 
 `project_id` is not a registered entity -- it is purely a storage mapping key. Any valid slug used as a `project_id` automatically maps to `{DATA_ROOT}/{DATA_PREFIX}/projects/{project_id}/`, with the directory created on first access.
 
+## External Tools (Per-Request)
+
+External tools allow session callers (im-gateway, chat UI, third-party clients) to inject callback endpoints that the agent can invoke during execution. Unlike MCP servers (preset-level, persistent), external tools are ephemeral and scoped to a single run.
+
+### Definition
+
+Each external tool has a model-facing side and a transport side:
+
+| Field             | Visibility | Description                              |
+| ----------------- | ---------- | ---------------------------------------- |
+| name              | Agent      | Tool identifier, chosen by caller        |
+| description       | Agent      | What the tool does (natural language)    |
+| parameters_schema | Agent      | JSON Schema for arguments                |
+| method            | Hidden     | HTTP method (default: POST)              |
+| url               | Hidden     | Callback URL                             |
+| headers           | Hidden     | HTTP headers (auth tokens, content-type) |
+| timeout           | Hidden     | Request timeout in seconds (default: 30) |
+
+### Meta Tool
+
+External tools are exposed to the agent as a single meta tool (`call_external`). The agent calls it with a tool name and arguments dict. The runtime validates arguments against the stored JSON Schema, then proxies the HTTP request to the callback URL.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant RT as Runtime (meta tool)
+    participant CB as Callback URL
+
+    A->>RT: call_external(name, arguments)
+    RT->>RT: Validate arguments against schema
+    RT->>CB: HTTP request (method, url, headers, body=arguments)
+    CB-->>RT: Response
+    RT-->>A: Tool result (response body)
+```
+
+The meta tool description is dynamically generated from registered external tools, listing each tool's name, description, and parameter schema.
+
+### Lifecycle
+
+External tools are passed per-request (not stored in presets or sessions). Every execution endpoint that triggers a run (`run`, `fire`, `fork`) accepts an `external_tools` field. The caller must re-supply the definitions on each request -- the runtime does not persist them across runs.
+
+This avoids storing sensitive data (auth headers) and keeps the caller in control of tool availability and credentials.
+
+### Relationship to MCP Servers
+
+| Aspect    | MCP Servers                     | External Tools                     |
+| --------- | ------------------------------- | ---------------------------------- |
+| Scope     | Preset-level (persistent)       | Request-level (ephemeral)          |
+| Discovery | ToolSearchToolSet (on-demand)   | Meta tool (always visible)         |
+| Protocol  | MCP (streamable HTTP / SSE)     | Plain HTTP callback                |
+| Auth      | Preset headers                  | Per-request headers                |
+| Use case  | Third-party service integration | Client callback (IM actions, etc.) |
+
 ## Config Resolver
 
 ```mermaid
