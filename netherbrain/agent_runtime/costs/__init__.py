@@ -191,6 +191,15 @@ HAIKU_3_5_PRICING = StaticPricingModel(
 # OpenAI (standard tier pricing)
 # =============================================================================
 
+GPT_5_4_PRICING = DynamicPricingModel(
+    input_tokens_1M_price={272 * K: 2.50, 1050 * K: 5.00},
+    output_tokens_1M_price={272 * K: 15.00, 1050 * K: 22.50},
+    cache_read_input_tokens_1M_price={272 * K: 0.25, 1050 * K: 0.50},
+)
+GPT_5_4_PRO_PRICING = DynamicPricingModel(
+    input_tokens_1M_price={272 * K: 30.00, 1050 * K: 60.00},
+    output_tokens_1M_price={272 * K: 180.00, 1050 * K: 270.00},
+)
 GPT_5_2_PRICING = StaticPricingModel(
     input_tokens_1M_price=1.75,
     cache_read_input_tokens_1M_price=0.175,
@@ -437,6 +446,8 @@ REGISTERED_MODELS: dict[str, StaticPricingModel | DynamicPricingModel] = {
     # OpenAI
     # -------------------------------------------------------------------------
     # GPT-5 family
+    "gpt-5.4": GPT_5_4_PRICING,
+    "gpt-5.4-pro": GPT_5_4_PRO_PRICING,
     "gpt-5.3-codex": GPT_5_2_PRICING,
     "gpt-5.2": GPT_5_2_PRICING,
     "gpt-5.2-codex": GPT_5_2_PRICING,
@@ -466,6 +477,8 @@ REGISTERED_MODELS: dict[str, StaticPricingModel | DynamicPricingModel] = {
     "o4-mini": O4_MINI_PRICING,
     "o1": O1_PRICING,
     # Azure aliases
+    "azure/gpt-5.4": GPT_5_4_PRICING,
+    "azure/gpt-5.4-pro": GPT_5_4_PRO_PRICING,
     "azure/gpt-5.2": GPT_5_2_PRICING,
     "azure/gpt-5.2-codex": GPT_5_2_PRICING,
     "azure/gpt-5.1": GPT_5_1_PRICING,
