@@ -50,7 +50,9 @@ from netherbrain.agent_runtime.settings import NetherSettings
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from pydantic_ai.mcp import MCPServer
     from pydantic_ai.messages import ModelMessage
+    from pydantic_ai.toolsets.abstract import AbstractToolset
     from y_agent_environment.resources import ResourceRegistryState
 
 logger = logging.getLogger(__name__)
@@ -218,16 +220,14 @@ def resolve_subagent_configs(
 # ---------------------------------------------------------------------------
 
 
-def resolve_mcp_servers(
+def _build_mcp_server_instances(
     specs: list[McpServerSpec],
-) -> list[Any]:
-    """Map ``McpServerSpec`` list to pydantic-ai MCP server toolsets.
+) -> list[MCPServer]:
+    """Build raw pydantic-ai MCP server instances from specs.
 
     Each spec becomes an ``MCPServerStreamableHTTP`` or ``MCPServerSSE``
-    instance that participates in the agent's tool selection.
-
-    Returns an empty list if no MCP servers are configured or if the
-    ``mcp`` optional dependency is not installed.
+    instance.  Returns an empty list if no specs or if the ``mcp``
+    optional dependency is not installed.
     """
     if not specs:
         return []
@@ -238,7 +238,7 @@ def resolve_mcp_servers(
         logger.warning("pydantic-ai[mcp] not installed, skipping MCP server configuration")
         return []
 
-    servers: list[Any] = []
+    servers: list[MCPServer] = []
     for spec in specs:
         kwargs: dict[str, Any] = {}
         if spec.headers:
@@ -257,6 +257,53 @@ def resolve_mcp_servers(
         logger.info("MCP server configured: %s (%s)", spec.url, spec.transport)
 
     return servers
+
+
+def resolve_mcp_servers(
+    specs: list[McpServerSpec],
+) -> AbstractToolset[AgentContext] | list[MCPServer] | None:
+    """Wrap MCP servers in ``ToolSearchToolSet`` for on-demand tool loading.
+
+    Each ``McpServerSpec`` becomes a pydantic-ai MCP server instance, then
+    all servers are wrapped in a single ``ToolSearchToolSet``.  The model
+    sees only a ``tool_search`` tool initially and discovers MCP tools
+    on demand, reducing context usage.
+
+    ``tool_prefix`` serves as the namespace ID; ``description`` provides
+    the human-readable namespace description for search.
+
+    Returns ``None`` if no MCP servers are configured or dependencies
+    are missing.
+    """
+    servers = _build_mcp_server_instances(specs)
+    if not servers:
+        return None
+
+    try:
+        from ya_agent_sdk.toolsets.tool_search import ToolSearchToolSet, create_best_strategy
+    except ImportError:
+        logger.warning("ya-agent-sdk tool_search not available, passing MCP servers directly")
+        # Graceful fallback: return raw servers as a list (old behavior).
+        return servers
+
+    # Extract namespace descriptions from specs.
+    descriptions: dict[str, str] = {}
+    for spec in specs:
+        if spec.description and spec.tool_prefix:
+            descriptions[spec.tool_prefix] = spec.description
+
+    toolset = ToolSearchToolSet(
+        toolsets=servers,
+        namespace_descriptions=descriptions or None,
+        search_strategy=create_best_strategy(),
+    )
+
+    logger.info(
+        "Wrapped %d MCP servers in ToolSearchToolSet (descriptions: %d)",
+        len(servers),
+        len(descriptions),
+    )
+    return toolset
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +375,15 @@ def create_service_runtime(
     tool_config = resolve_tool_config(config.tool_config)
 
     # -- MCP servers -----------------------------------------------------------
-    mcp_toolsets = resolve_mcp_servers(config.mcp_servers)
+    # ToolSearchToolSet must be the LAST toolset so that dynamically loaded
+    # tools are appended to the end of the model's tool list, keeping all
+    # existing tool positions stable for KV cache reuse.  Within the toolset,
+    # tool_search itself is always the first tool (handled by the SDK).
+    mcp_toolset = resolve_mcp_servers(config.mcp_servers)
+    toolsets: list[AbstractToolset[AgentContext]] | None = None
+    if mcp_toolset is not None:
+        # ToolSearchToolSet (single wrapper) or list[MCPServer] (fallback).
+        toolsets = [mcp_toolset] if not isinstance(mcp_toolset, list) else mcp_toolset  # type: ignore[list-item]
 
     # -- Create runtime --------------------------------------------------------
     runtime = create_agent(
@@ -338,7 +393,7 @@ def create_service_runtime(
         output_type=[str, DeferredToolRequests],
         env=env,
         tools=all_tools,
-        toolsets=mcp_toolsets or None,
+        toolsets=toolsets,
         tool_config=tool_config,
         system_prompt=system_prompt,
         state=state,
@@ -356,7 +411,7 @@ def create_service_runtime(
         "Created service runtime: model=%s, tools=%d, mcp_servers=%d, projects=%d",
         config.model.name,
         len(all_tools),
-        len(mcp_toolsets),
+        len(config.mcp_servers),
         len(config.project_ids),
     )
 

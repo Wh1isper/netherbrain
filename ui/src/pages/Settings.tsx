@@ -124,6 +124,7 @@ interface McpServerDraft {
   headers: string;
   tool_prefix: string;
   timeout: string;
+  description: string;
 }
 
 interface PresetDraft {
@@ -188,6 +189,7 @@ function presetToDraft(p: PresetResponse): PresetDraft {
       headers: s.headers ? JSON.stringify(s.headers, null, 2) : "",
       tool_prefix: s.tool_prefix ?? "",
       timeout: s.timeout != null ? String(s.timeout) : "",
+      description: s.description ?? "",
     })),
   };
 }
@@ -700,6 +702,22 @@ function PresetEditor({
                   </div>
                 </div>
                 <div className="space-y-1">
+                  <Label className="text-xs">Description</Label>
+                  <Input
+                    value={srv.description}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        mcp_servers: d.mcp_servers.map((s, i) =>
+                          i === idx ? { ...s, description: e.target.value } : s,
+                        ),
+                      }))
+                    }
+                    placeholder="What this server provides (for tool search)"
+                    className="text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
                   <Label className="text-xs">Headers (JSON)</Label>
                   <Textarea
                     value={srv.headers}
@@ -732,6 +750,7 @@ function PresetEditor({
                       headers: "",
                       tool_prefix: "",
                       timeout: "",
+                      description: "",
                     },
                   ],
                 }))
@@ -917,6 +936,7 @@ function PresetsTab() {
             headers,
             tool_prefix: s.tool_prefix || null,
             timeout: s.timeout !== "" && Number.isFinite(timeoutVal) ? timeoutVal : null,
+            description: s.description.trim() || null,
           };
         });
 

@@ -138,15 +138,18 @@ The SDK provides built-in presets for common provider configurations (thinking b
 
 Declares external MCP server connections. Each entry creates a pydantic-ai MCP client toolset at runtime. Only network-based transports are supported (no stdio -- subprocess spawning is not appropriate for a service).
 
-| Field       | Type    | Default           | Description                                                |
-| ----------- | ------- | ----------------- | ---------------------------------------------------------- |
-| url         | string  | (required)        | HTTP endpoint URL of the MCP server                        |
-| transport   | enum    | `streamable_http` | `streamable_http` or `sse`                                 |
-| headers     | dict?   | null              | Custom HTTP headers (e.g., auth tokens)                    |
-| tool_prefix | string? | null              | Namespace prefix for tools to avoid name collisions        |
-| timeout     | float?  | null              | Connection timeout in seconds (null = pydantic-ai default) |
+| Field       | Type    | Default           | Description                                                         |
+| ----------- | ------- | ----------------- | ------------------------------------------------------------------- |
+| url         | string  | (required)        | HTTP endpoint URL of the MCP server                                 |
+| transport   | enum    | `streamable_http` | `streamable_http` or `sse`                                          |
+| headers     | dict?   | null              | Custom HTTP headers (e.g., auth tokens)                             |
+| tool_prefix | string? | null              | Namespace prefix for tools; doubles as namespace ID for tool search |
+| timeout     | float?  | null              | Connection timeout in seconds (null = pydantic-ai default)          |
+| description | string? | null              | Human-readable description for tool search namespace discovery      |
 
-MCP servers are connected at session start and disconnected at session end. They participate in the agent's tool selection alongside built-in toolsets.
+MCP servers are connected at session start and disconnected at session end. At runtime, all MCP servers are wrapped in a `ToolSearchToolSet` for on-demand tool loading. Instead of loading all MCP tool definitions into the model's context window upfront, the model sees a single `tool_search` tool and discovers MCP tools on demand via natural language queries. This reduces context usage significantly when multiple MCP servers are configured.
+
+`tool_prefix` serves as the namespace ID for tool search -- all tools from the same MCP server load atomically when any tool in the namespace is discovered. `description` provides a human-readable summary shown in search results; if omitted, the runtime falls back to the MCP server's instructions or an auto-generated description.
 
 Security note: `headers` may contain bearer tokens for authenticating to the MCP server. These are stored in the preset's JSONB column. For high-security deployments, consider using environment variable references instead of inline tokens.
 

@@ -44,6 +44,7 @@ Form for creating or editing a preset. Organized in sections:
 | Toolsets      | Checklist of available toolsets + exclude config    |
 | Environment   | Shell mode, default workspace/project selection     |
 | Subagents     | Enable builtins, async toggle, preset refs          |
+| MCP Servers   | Dynamic list of external MCP server connections     |
 
 ### Preset Actions
 
