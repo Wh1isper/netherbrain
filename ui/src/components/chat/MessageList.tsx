@@ -89,7 +89,7 @@ export default function MessageList({
   }
 
   return (
-    <ScrollArea className="flex-1" ref={scrollAreaRef}>
+    <ScrollArea className="flex-1 min-h-0" ref={scrollAreaRef}>
       <div className="mx-auto max-w-3xl py-4">
         {/* Top sentinel for infinite scroll */}
         <div ref={topSentinelRef} />

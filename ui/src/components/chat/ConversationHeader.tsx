@@ -39,6 +39,7 @@ interface ConversationHeaderProps {
   projectIds?: string[];
   mailboxCount?: number;
   onTitleChange?: (title: string) => void;
+  onFork?: () => void;
   onArchive?: () => void;
   onFired?: () => void;
 }
@@ -147,6 +148,7 @@ export default function ConversationHeader({
   projectIds,
   mailboxCount = 0,
   onTitleChange,
+  onFork,
   onArchive,
   onFired,
 }: ConversationHeaderProps) {
@@ -309,7 +311,7 @@ export default function ConversationHeader({
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem onClick={onFork} disabled={!onFork}>
                 <GitFork className="h-3.5 w-3.5 mr-2" />
                 Fork conversation
               </DropdownMenuItem>

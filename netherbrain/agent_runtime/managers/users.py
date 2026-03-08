@@ -137,12 +137,13 @@ async def create_user(
     display_name: str,
     role: UserRole = UserRole.USER,
     password: str | None = None,
-) -> tuple[User, str, str]:
-    """Create a user with a password and an initial API key.
+) -> tuple[User, str]:
+    """Create a user with a password.
 
     If ``password`` is not provided, a random one is generated.
-    Returns (user_row, raw_password, raw_api_key).  Both secrets are only
-    available here -- they are never stored in plaintext.
+    Returns (user_row, raw_password).  The password is only available
+    here -- it is never stored in plaintext.
+    API keys are created separately via ``create_api_key()`` when needed.
     Raises ``DuplicateUserError`` if user_id already exists.
     """
     existing = await db.get(User, user_id)
@@ -158,17 +159,11 @@ async def create_user(
         must_change_password=True,
     )
     db.add(user)
-    await db.flush()  # Ensure user row exists before FK reference.
-
-    # Generate initial API key.
-    raw_key, api_key_row = _make_api_key(user_id=user_id, name="initial")
-    db.add(api_key_row)
 
     await db.commit()
     await db.refresh(user)
-    await db.refresh(api_key_row)
 
-    return user, raw_password, raw_key
+    return user, raw_password
 
 
 async def list_users(db: AsyncSession) -> list[User]:
@@ -315,23 +310,22 @@ async def deactivate_user(
 # -- Bootstrap ---------------------------------------------------------------
 
 
-async def bootstrap_admin(db: AsyncSession, *, password: str) -> str | None:
+async def bootstrap_admin(db: AsyncSession, *, password: str) -> None:
     """Create bootstrap admin user if no users exist.
 
     Uses the provided password (typically ``NETHER_AUTH_TOKEN``) so the
     operator does not need to dig through logs.
-    Returns the raw API key if admin was created, None otherwise.
     """
     stmt = select(User).limit(1)
     result = await db.execute(stmt)
     if result.scalar_one_or_none() is not None:
-        return None  # Users exist, skip bootstrap.
+        return  # Users exist, skip bootstrap.
 
     from netherbrain.agent_runtime.middleware import BOOTSTRAP_ADMIN_ID
 
     logger.info("No users found -- creating bootstrap admin user '{}'", BOOTSTRAP_ADMIN_ID)
 
-    _, _raw_password, raw_key = await create_user(
+    await create_user(
         db,
         user_id=BOOTSTRAP_ADMIN_ID,
         display_name="Admin",
@@ -340,8 +334,6 @@ async def bootstrap_admin(db: AsyncSession, *, password: str) -> str | None:
     )
 
     logger.info("Bootstrap admin created. Login with user='{}', password=NETHER_AUTH_TOKEN", BOOTSTRAP_ADMIN_ID)
-    logger.info("Bootstrap admin API key: {}", raw_key)
-    return raw_key
 
 
 # -- API Key CRUD ------------------------------------------------------------

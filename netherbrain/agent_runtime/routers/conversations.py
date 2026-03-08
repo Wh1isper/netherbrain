@@ -47,6 +47,8 @@ from netherbrain.agent_runtime.models.api import (
     LatestSessionInfo,
     MailboxMessageResponse,
     MailboxSummary,
+    PrepareForkRequest,
+    PrepareForkResponse,
     SessionResponse,
     SteerRequest,
     TurnResponse,
@@ -175,6 +177,38 @@ async def handle_fork(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
 
     return _launch_response(result)
+
+
+# ---------------------------------------------------------------------------
+# POST /conversations/{conversation_id}/prepare-fork
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{conversation_id}/prepare-fork", response_model=PrepareForkResponse)
+async def handle_prepare_fork(
+    conversation_id: str, body: PrepareForkRequest, db: DbSession, execution: ExecutionMgr, auth: CurrentUser
+) -> PrepareForkResponse:
+    """Create a forked conversation without launching execution."""
+    try:
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
+    except ConversationNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
+    try:
+        new_id = await execution.prepare_fork(
+            db,
+            conversation_id=conversation_id,
+            from_session_id=body.from_session_id,
+            metadata=body.metadata,
+            user_id=auth.user_id,
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from None
+    except (NoCommittedSessionError, LookupError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from None
+    except (SessionNotInConversationError, ValueError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
+
+    return PrepareForkResponse(conversation_id=new_id)
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +375,9 @@ async def handle_get_conversation(
     # Mailbox summary.
     pending = await count_pending(db, conversation_id=conversation_id)
     result["mailbox"] = MailboxSummary(pending_count=pending)
+
+    # Aggregated usage across all committed sessions.
+    result["usage"] = await manager.get_conversation_usage(db, conversation_id)
 
     return result
 

@@ -7,7 +7,7 @@ interface ThinkingBlockProps {
 }
 
 export default function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   if (!content && !isStreaming) return null;
 
@@ -20,15 +20,30 @@ export default function ThinkingBlock({ content, isStreaming }: ThinkingBlockPro
         <ChevronRight
           className={`h-3 w-3 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
         />
-        <Brain className="h-3 w-3 text-primary/60" />
-        <span>{isStreaming ? "Thinking..." : "Thinking"}</span>
+        <Brain className={`h-3 w-3 text-primary/60 ${isStreaming ? "animate-pulse" : ""}`} />
+        <span>
+          Thinking
+          {isStreaming && <AnimatedDots />}
+        </span>
       </button>
       {expanded && (
-        <div className="mt-1.5 ml-[18px] text-xs text-muted-foreground whitespace-pre-wrap border-l-2 border-primary/20 pl-3 max-h-64 overflow-y-auto leading-relaxed">
+        <div
+          className={`mt-1.5 ml-[18px] text-xs text-muted-foreground whitespace-pre-wrap pl-3 max-h-64 overflow-y-auto leading-relaxed border-l-2 ${
+            isStreaming ? "border-primary/40 animate-pulse" : "border-primary/20"
+          }`}
+        >
           {content}
-          {isStreaming && <span className="animate-pulse text-primary/60">|</span>}
         </div>
       )}
     </div>
+  );
+}
+
+/** Animated ellipsis that cycles through ., .., ... */
+function AnimatedDots() {
+  return (
+    <span className="inline-block w-[1em] text-left overflow-hidden">
+      <span className="animate-[thinking-dots_1.4s_infinite]">...</span>
+    </span>
   );
 }

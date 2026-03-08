@@ -135,6 +135,13 @@ class NoDefaultPresetError(ValueError):
 # ---------------------------------------------------------------------------
 
 
+def _empty_session_state():
+    """Lazy import to avoid circular dependency at module level."""
+    from netherbrain.agent_runtime.models.session import SessionState
+
+    return SessionState()
+
+
 class ExecutionManager:
     """Orchestrates execution lifecycle for conversations and sessions.
 
@@ -205,9 +212,6 @@ class ExecutionManager:
                 raise ConversationBusyError(active)
 
             parent_session_id, parent_state, parent_project_ids = await self._find_parent(db, conversation_id)
-        elif not preset_id:
-            msg = "preset_id is required for new conversations"
-            raise ValueError(msg)
 
         config = await self._resolve_config(
             db,
@@ -306,6 +310,78 @@ class ExecutionManager:
                 await update_conversation(db, result.conversation_id, ConversationUpdate(metadata=metadata))
 
         return result
+
+    async def prepare_fork(
+        self,
+        db: AsyncSession,
+        *,
+        conversation_id: str,
+        from_session_id: str | None = None,
+        metadata: dict | None = None,
+        user_id: str | None = None,
+    ) -> str:
+        """Create a forked conversation without launching execution.
+
+        Copies the fork-point session's state into a new conversation so
+        that the next ``run_conversation`` call on the new conversation
+        resumes from the fork point.
+
+        Returns the new conversation_id.
+
+        Raises
+        ------
+        ConversationNotFoundError: Source conversation not found.
+        LookupError: Fork-point session not found.
+        SessionNotInConversationError: Session doesn't belong to conversation.
+        NoCommittedSessionError: No committed session to fork from.
+        """
+        source_conv = await get_conversation(db, conversation_id)
+
+        parent_row, parent_state = await self._resolve_fork_point(db, conversation_id, from_session_id)
+
+        new_conversation_id = uuid.uuid4().hex
+
+        # Create a new session in the new conversation, linked to the parent.
+        session_row = await self._session_manager.create_session(
+            db,
+            parent_session_id=parent_row.session_id,
+            conversation_id=new_conversation_id,
+            user_id=user_id,
+            preset_id=parent_row.preset_id,
+            project_ids=parent_row.project_ids,
+        )
+
+        # Immediately commit with the parent's state so the new conversation
+        # has a committed session that run_conversation can continue from.
+        await self._session_manager.commit_session(
+            db,
+            session_row.session_id,
+            state=parent_state or _empty_session_state(),
+        )
+
+        # Copy display messages from parent session.
+        store = self._session_manager._store
+        parent_display = await store.read_display_messages(parent_row.session_id)
+        if parent_display is not None:
+            await store.write_display_messages(session_row.session_id, parent_display)
+
+        # Set metadata (including workspace_id) and inherit title/preset.
+        update_fields = ConversationUpdate(
+            default_preset_id=source_conv.default_preset_id or parent_row.preset_id,
+        )
+        if metadata:
+            update_fields.metadata = metadata
+        if source_conv.title:
+            update_fields.title = f"{source_conv.title} (fork)"
+        await update_conversation(db, new_conversation_id, update_fields)
+
+        logger.info(
+            "Prepared fork: {} -> {} (parent_session={})",
+            conversation_id,
+            new_conversation_id,
+            parent_row.session_id,
+        )
+        return new_conversation_id
 
     def interrupt_conversation(self, conversation_id: str) -> int:
         """Interrupt all active sessions in a conversation. Returns count."""

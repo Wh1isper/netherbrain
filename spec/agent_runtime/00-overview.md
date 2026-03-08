@@ -131,3 +131,4 @@ In sandbox mode, the agent sees a virtual path space (e.g., `/workspace/`) for b
 | 06      | [Async Agents](06-async-agents.md)                 | Agent taxonomy, mailbox, fire logic                 |
 | 07      | [API](07-api.md)                                   | Full API surface                                    |
 | 08      | [Multi-Tenancy](08-multi-tenancy.md)               | Users, API keys, role-based access                  |
+| 09      | [File Serve](09-fileserve.md)                      | File browsing, editing, upload, download, shell     |

@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from netherbrain.agent_runtime.context import RuntimeSession
 from netherbrain.agent_runtime.execution.coordinator import execute_session
 from netherbrain.agent_runtime.models.enums import SessionType, Transport
 from netherbrain.agent_runtime.transport.base import EventTransport
@@ -171,6 +172,23 @@ async def launch_session(
         event_transport = redis_transport
         stream_key = redis_transport.key
 
+    # -- Pre-register session in registry ------------------------------------
+    # The session must be visible in the registry immediately so that
+    # GET /events (bridge endpoint) can find it before the background
+    # task reaches the coordinator's full initialisation.
+    runtime_session = RuntimeSession(
+        session_id=session_id,
+        conversation_id=resolved_conversation_id,
+        parent_session_id=parent_session_id,
+        preset_id=config.preset_id,
+        project_ids=config.project_ids,
+        session_type=SessionType.ASYNC_SUBAGENT if subagent_name else SessionType.AGENT,
+        transport=transport,
+        subagent_name=subagent_name,
+        stream_key=stream_key,
+    )
+    registry.register(runtime_session)
+
     # -- Launch background task ------------------------------------------------
     task = asyncio.create_task(
         _run_execution(
@@ -191,6 +209,7 @@ async def launch_session(
             event_transport=event_transport,
             subagent_name=subagent_name,
             external_tools=list(external_tools) if external_tools else None,
+            runtime_session=runtime_session,
         ),
         name=f"execute-{session_id}",
     )
@@ -230,6 +249,7 @@ async def _run_execution(
     event_transport: object,
     subagent_name: str | None = None,
     external_tools: list[ExternalToolSpec] | None = None,
+    runtime_session: RuntimeSession | None = None,
 ) -> None:
     """Background task wrapper for execute_session.
 
@@ -257,6 +277,7 @@ async def _run_execution(
                 session_factory=session_factory,
                 redis=redis,
                 external_tools=external_tools,
+                runtime_session=runtime_session,
             )
             logger.info(
                 "Execution completed: session=%s status=%s",

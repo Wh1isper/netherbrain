@@ -1942,7 +1942,7 @@ function UsersTab() {
     setRevealedSecret({
       title: `User "${result.user.display_name}" Created`,
       description: `Share these credentials with the user. The password cannot be retrieved later.`,
-      secret: `User ID: ${result.user.user_id}\nPassword: ${result.password}\nAPI Key: ${result.api_key.key}`,
+      secret: `User ID: ${result.user.user_id}\nPassword: ${result.password}`,
     });
     void load();
   };

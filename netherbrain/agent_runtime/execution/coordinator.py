@@ -502,6 +502,7 @@ async def execute_session(  # noqa: C901
     session_factory: async_sessionmaker | None = None,
     redis: aioredis.Redis | None = None,
     external_tools: Sequence[ExternalToolSpec] | None = None,
+    runtime_session: RuntimeSession | None = None,
 ) -> ExecutionResult:
     """Execute an agent session to completion.
 
@@ -632,20 +633,26 @@ async def execute_session(  # noqa: C901
 
     # -- Register session in memory --------------------------------------------
     stream_key = f"nether:stream:{session_id}" if transport == Transport.STREAM else None
-    runtime_session = RuntimeSession(
-        session_id=session_id,
-        conversation_id=conversation_id,
-        parent_session_id=parent_session_id,
-        preset_id=config.preset_id,
-        project_ids=config.project_ids,
-        session_type=SessionType.ASYNC_SUBAGENT if subagent_name else SessionType.AGENT,
-        transport=transport,
-        subagent_name=subagent_name,
-        async_subagent_registry=async_subagent_registry,
-        sdk_context=runtime.ctx,
-        stream_key=stream_key,
-    )
-    registry.register(runtime_session)
+    if runtime_session is not None:
+        # Session was pre-registered by launch_session; update with live refs.
+        runtime_session.sdk_context = runtime.ctx
+        runtime_session.async_subagent_registry = async_subagent_registry
+    else:
+        # Direct call (e.g. tests) -- create and register now.
+        runtime_session = RuntimeSession(
+            session_id=session_id,
+            conversation_id=conversation_id,
+            parent_session_id=parent_session_id,
+            preset_id=config.preset_id,
+            project_ids=config.project_ids,
+            session_type=SessionType.ASYNC_SUBAGENT if subagent_name else SessionType.AGENT,
+            transport=transport,
+            subagent_name=subagent_name,
+            async_subagent_registry=async_subagent_registry,
+            sdk_context=runtime.ctx,
+            stream_key=stream_key,
+        )
+        registry.register(runtime_session)
 
     # -- Execute and finalize --------------------------------------------------
     # Variables to carry across the async-with boundary.  State export happens

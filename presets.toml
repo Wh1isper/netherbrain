@@ -118,17 +118,6 @@ description = "Search web documentation and current technical references."
 instruction = "Prefer official docs and include links for important claims."
 
 [[presets]]
-preset_id = "chat-only"
-name = "Chat Only"
-description = "Pure conversation mode without any tools."
-system_prompt = "You are a helpful assistant."
-
-[presets.model]
-name = "gateway@anthropic:claude-sonnet-4-6"
-model_settings_preset = "anthropic_low"
-model_config_preset = "claude_200k"
-
-[[presets]]
 preset_id = "subagent-code-reviewer"
 name = "Subagent: Code Reviewer"
 description = "Expert reviewer for code quality, security, performance, and maintainability."

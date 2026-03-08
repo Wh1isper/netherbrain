@@ -124,7 +124,7 @@ def history() -> None:
 @click.option("--user-id", default="admin", help="Admin user ID (default: admin).")
 @click.option("--display-name", default="Admin", help="Display name (default: Admin).")
 def create_admin(user_id: str, display_name: str) -> None:
-    """Create an admin user and print the initial API key."""
+    """Create an admin user with a generated password."""
     import asyncio
 
     from netherbrain.agent_runtime.db.engine import create_engine, create_session_factory
@@ -144,7 +144,7 @@ def create_admin(user_id: str, display_name: str) -> None:
         try:
             async with factory() as db:
                 try:
-                    _user, _raw_password, raw_key = await create_user(
+                    _user, raw_password = await create_user(
                         db,
                         user_id=user_id,
                         display_name=display_name,
@@ -157,7 +157,7 @@ def create_admin(user_id: str, display_name: str) -> None:
             await engine.dispose()
 
         click.echo(f"Admin user '{user_id}' created.")
-        click.echo(f"API key: {raw_key}")
+        click.echo(f"Password: {raw_password}")
 
     asyncio.run(_run())
 

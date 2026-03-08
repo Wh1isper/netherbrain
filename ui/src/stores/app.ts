@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { WorkspaceResponse, ConversationResponse, UserResponse } from "../api/types";
+import type {
+  WorkspaceResponse,
+  ConversationResponse,
+  UserResponse,
+  PresetResponse,
+} from "../api/types";
 import { setAuthToken, setOnUnauthorized } from "../api/client";
 
 interface AppState {
@@ -24,6 +29,11 @@ interface AppState {
   // Conversations for the current workspace
   conversations: ConversationResponse[];
   setConversations: (convs: ConversationResponse[]) => void;
+  updateConversationInList: (id: string, patch: Partial<ConversationResponse>) => void;
+
+  // Presets (global)
+  presets: PresetResponse[];
+  setPresets: (presets: PresetResponse[]) => void;
 
   // Sidebar collapse
   sidebarOpen: boolean;
@@ -60,6 +70,16 @@ export const useAppStore = create<AppState>()(
       // Conversations
       conversations: [],
       setConversations: (convs) => set({ conversations: convs }),
+      updateConversationInList: (id, patch) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.conversation_id === id ? { ...c, ...patch } : c,
+          ),
+        })),
+
+      // Presets
+      presets: [],
+      setPresets: (presets) => set({ presets }),
 
       // Sidebar
       sidebarOpen: true,

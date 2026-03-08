@@ -251,6 +251,10 @@ Shown at top of the chat area.
 | Preset badge | Shows which agent preset is active                                        |
 | Actions menu | Fork, change preset, archive (status update via same endpoint)            |
 
+### Fork
+
+Fork creates a new conversation that inherits the current conversation's state and history. Uses `POST /conversations/{id}/prepare-fork` (no execution launched). After the API returns the new `conversation_id`, the UI navigates to `/c/{newId}`. The user can then type normally in the forked conversation.
+
 ## Loading History
 
 When the user opens an existing conversation (sidebar click or direct navigation to `/c/:id`):

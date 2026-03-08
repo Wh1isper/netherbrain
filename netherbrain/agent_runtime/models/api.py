@@ -35,7 +35,7 @@ from netherbrain.agent_runtime.models.preset import (
     ToolConfigSpec,
     ToolsetSpec,
 )
-from netherbrain.agent_runtime.models.session import DeferredTools, RunSummary
+from netherbrain.agent_runtime.models.session import DeferredTools, RunSummary, UsageSummary
 
 # ---------------------------------------------------------------------------
 # Preset
@@ -179,6 +179,7 @@ class ConversationDetailResponse(ConversationResponse):
     latest_session: LatestSessionInfo | None = None
     active_session: ActiveSessionInfo | None = None
     mailbox: MailboxSummary | None = None
+    usage: UsageSummary | None = None
 
 
 class ConversationUpdate(BaseModel):
@@ -326,6 +327,22 @@ class ConversationForkRequest(_ExecutionInputMixin):
     metadata: dict | None = None
     config_override: dict | None = None
     transport: Transport = Transport.SSE
+
+
+class PrepareForkRequest(BaseModel):
+    """Request body for POST /api/conversations/{id}/prepare-fork."""
+
+    from_session_id: str | None = Field(
+        default=None,
+        description="Fork point. Default: latest committed session.",
+    )
+    metadata: dict | None = None
+
+
+class PrepareForkResponse(BaseModel):
+    """Response for prepare-fork: the new conversation ID."""
+
+    conversation_id: str
 
 
 class ConversationFireRequest(_ExecutionInputMixin):
@@ -492,11 +509,10 @@ class UserResponse(BaseModel):
 
 
 class UserCreateResponse(BaseModel):
-    """Response for user creation -- includes the initial API key and password."""
+    """Response for user creation -- includes the generated password."""
 
     user: UserResponse
     password: str
-    api_key: ApiKeyCreateResponse
 
 
 # ---------------------------------------------------------------------------

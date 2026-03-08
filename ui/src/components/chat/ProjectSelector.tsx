@@ -138,6 +138,28 @@ export default function ProjectSelector({
             );
           })}
 
+          {/* Quick select/clear actions */}
+          {projects.length > 1 && !disabled && (
+            <>
+              {selected.length < projects.length && (
+                <button
+                  onClick={() => onChange([...projects])}
+                  className="text-[11px] text-muted-foreground hover:text-primary transition-colors px-1"
+                >
+                  all
+                </button>
+              )}
+              {selected.length > 0 && (
+                <button
+                  onClick={() => onChange([])}
+                  className="text-[11px] text-muted-foreground hover:text-primary transition-colors px-1"
+                >
+                  none
+                </button>
+              )}
+            </>
+          )}
+
           {/* Inline create */}
           {onCreateProject && !disabled && (
             <>
@@ -206,7 +228,20 @@ export default function ProjectSelector({
           <span className="text-xs text-muted-foreground">No projects yet</span>
         )}
         {selected.length === 0 && projects.length > 0 && (
-          <span className="text-xs text-muted-foreground">No projects mounted</span>
+          <span className="text-xs text-muted-foreground">
+            No projects mounted
+            {!disabled && projects.length === 1 && (
+              <>
+                {" -- "}
+                <button
+                  onClick={() => onChange([...projects])}
+                  className="text-primary/70 hover:text-primary underline underline-offset-2 transition-colors"
+                >
+                  mount all
+                </button>
+              </>
+            )}
+          </span>
         )}
       </div>
     </TooltipProvider>

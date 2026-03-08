@@ -120,12 +120,12 @@ async def test_run_no_input(client: AsyncClient, db_session: AsyncSession) -> No
 
 @pytest.mark.integration
 async def test_run_new_conversation_missing_preset(client: AsyncClient) -> None:
-    """422 when creating a new conversation without preset_id."""
+    """404 when creating a new conversation without preset_id and no default preset exists."""
     resp = await client.post(
         "/api/conversations/run",
         json={"input": [{"type": "text", "text": "hello"}]},
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 404
 
 
 @pytest.mark.integration

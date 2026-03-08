@@ -16,7 +16,7 @@ Summary: API keys resolve to users with `admin` or `user` roles. The `NETHER_AUT
 flowchart TB
     subgraph Chat["Chat API (conversations)"]
         direction LR
-        C1["run / fork / fire"]
+        C1["run / fork / prepare-fork / fire"]
         C2["interrupt / steer"]
         C3["list / get / turns"]
     end
@@ -217,6 +217,25 @@ Fork a new conversation from a session in this conversation.
 | transport       | enum    | No       | `sse` (default) / `stream`                          |
 
 Creates a new conversation (`conversation_id = new session_id`).
+
+### POST /api/conversations/{conversation_id}/prepare-fork
+
+Prepare a forked conversation without launching execution. Creates the new conversation with a committed session that copies state from the fork point. The caller can then use `run` on the new conversation to continue.
+
+| Field           | Type    | Required | Description                                      |
+| --------------- | ------- | -------- | ------------------------------------------------ |
+| from_session_id | string? | No       | Fork point. Default: latest committed session    |
+| metadata        | JSON?   | No       | Client-defined metadata for the new conversation |
+
+**Response**:
+
+```json
+{
+  "conversation_id": "new-conv-id"
+}
+```
+
+The new conversation inherits the source conversation's `title` (with " (fork)" suffix) and `default_preset_id`. Subsequent `run` calls on the new conversation continue from the copied state.
 
 ### POST /api/conversations/{conversation_id}/fire
 
@@ -433,6 +452,57 @@ Response structure:
 }
 ```
 
+## File Serve
+
+File browsing, preview, editing, upload, and download for managed project directories. No database involvement -- pure filesystem operations scoped by `project_id`. Full specification in [09-fileserve.md](09-fileserve.md).
+
+### GET /api/files/{project_id}/list
+
+List directory contents (flat, one level).
+
+| Query Param | Type   | Default | Description                      |
+| ----------- | ------ | ------- | -------------------------------- |
+| path        | string | ""      | Relative path within the project |
+
+### GET /api/files/{project_id}/read
+
+Read text file content with binary detection and size truncation.
+
+| Query Param | Type   | Default    | Description        |
+| ----------- | ------ | ---------- | ------------------ |
+| path        | string | (required) | Relative file path |
+| max_size    | int    | 1048576    | Max bytes to read  |
+
+### POST /api/files/{project_id}/write
+
+Write text content to a file (atomic write, auto-create parent directories).
+
+### POST /api/files/{project_id}/upload
+
+Upload files via multipart form data. Accepts multiple files and a target directory path.
+
+### GET /api/files/{project_id}/download
+
+Download a single file as a streaming response.
+
+| Query Param | Type   | Default    | Description        |
+| ----------- | ------ | ---------- | ------------------ |
+| path        | string | (required) | Relative file path |
+
+### POST /api/files/{project_id}/download-archive
+
+Package multiple files/directories into a zip archive for download.
+
+## Shell
+
+Interactive terminal access via WebSocket. Spawns a PTY in the project directory, respecting the environment model (local or sandbox/Docker). Full specification in [09-fileserve.md](09-fileserve.md).
+
+### WebSocket /api/shell/{project_id}/connect
+
+Establishes a PTY session. Authentication via query parameter (`?token=...`). Optional `preset_id` query parameter to resolve environment mode (local vs sandbox).
+
+Protocol: binary frames for PTY I/O, JSON text frames for control (resize, exit).
+
 ## Endpoint Summary
 
 ```mermaid
@@ -468,6 +538,7 @@ flowchart LR
     subgraph Chat["Chat (conversations)"]
         C1["POST /api/conversations/run"]
         C2["POST /api/conversations/{id}/fork"]
+        C2b["POST /api/conversations/{id}/prepare-fork"]
         C3["POST /api/conversations/{id}/fire"]
         C4["POST /api/conversations/{id}/interrupt"]
         C5["POST /api/conversations/{id}/steer"]
@@ -497,6 +568,19 @@ flowchart LR
         D1["GET /api/toolsets"]
         D2["GET /api/model-presets"]
     end
+
+    subgraph Files["File Serve"]
+        F1["GET /api/files/{id}/list"]
+        F2["GET /api/files/{id}/read"]
+        F3["POST /api/files/{id}/write"]
+        F4["POST /api/files/{id}/upload"]
+        F5["GET /api/files/{id}/download"]
+        F6["POST /api/files/{id}/download-archive"]
+    end
+
+    subgraph Shell["Shell"]
+        SH1["WS /api/shell/{id}/connect"]
+    end
 ```
 
 | Tier               | Scope                  | Access                    | Description                                     |
@@ -511,4 +595,6 @@ flowchart LR
 | **Infrastructure** | `/api/health`          | No auth                   | Health check                                    |
 | **Discovery**      | `/api/toolsets`        | Any authenticated         | Available toolsets and tools                    |
 | **Discovery**      | `/api/model-presets`   | Any authenticated         | Available model settings and config presets     |
+| **File Serve**     | `/api/files/*`         | Any authenticated         | File browsing, read, write, upload, download    |
+| **Shell**          | `/api/shell/*`         | Any authenticated         | Interactive terminal (WebSocket PTY)            |
 | **UI**             | `/` (root)             | Browser                   | Built-in web UI (static SPA)                    |

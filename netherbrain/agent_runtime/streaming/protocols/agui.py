@@ -537,11 +537,17 @@ class AGUIProtocol(ProtocolAdapter):
             ]
 
         if isinstance(event, MessageReceivedEvent):
+            # Include message text so steering can be reconstructed from
+            # persisted display_messages on history load.
+            texts = [m.content_text for m in event.messages if m.content_text]
             return [
                 self._emit(
                     CustomEvent(
                         name=ExtensionEvent.STEERING_RECEIVED,
-                        value={"message_count": len(event.messages)},
+                        value={
+                            "message_count": len(event.messages),
+                            "text": "\n".join(texts),
+                        },
                     )
                 )
             ]

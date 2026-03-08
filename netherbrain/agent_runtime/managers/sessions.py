@@ -29,7 +29,7 @@ from netherbrain.agent_runtime.models.enums import (
     SessionType,
     Transport,
 )
-from netherbrain.agent_runtime.models.session import RunSummary, SessionState
+from netherbrain.agent_runtime.models.session import RunSummary, SessionState, UsageSummary
 from netherbrain.agent_runtime.store.base import DisplayMessages
 
 if TYPE_CHECKING:
@@ -74,6 +74,28 @@ class TurnsPage:
 
     turns: list[TurnData]
     has_more: bool
+
+
+_TITLE_MAX_LEN = 50
+
+
+def _extract_title(input_parts: list[dict[str, Any]] | None) -> str | None:
+    """Extract a short title from the first text input part.
+
+    Returns the first ``_TITLE_MAX_LEN`` characters of the first text
+    part, or *None* if no text is found.
+    """
+    if not input_parts:
+        return None
+    for part in input_parts:
+        if part.get("type") == "text" and (text := part.get("text")):
+            text = text.strip()
+            if not text:
+                continue
+            if len(text) > _TITLE_MAX_LEN:
+                return text[:_TITLE_MAX_LEN] + "..."
+            return text
+    return None
 
 
 class SessionManager:
@@ -135,6 +157,8 @@ class SessionManager:
                 conversation_id=conversation_id,
                 user_id=user_id,
                 status=ConversationStatus.ACTIVE,
+                title=_extract_title(input_parts),
+                default_preset_id=preset_id,
             )
             db.add(conv)
 
@@ -389,6 +413,70 @@ class SessionManager:
                 )
             )
         return TurnsPage(turns=turns, has_more=has_more)
+
+    # -- Usage aggregation -----------------------------------------------------
+
+    async def get_conversation_usage(
+        self,
+        db: AsyncSession,
+        conversation_id: str,
+    ) -> UsageSummary | None:
+        """Aggregate token usage across all committed sessions in a conversation.
+
+        Queries ``run_summary`` JSONB from all committed/awaiting sessions and
+        sums per-model token counts.  Returns ``None`` if no sessions have
+        usage data.
+        """
+        stmt = select(SessionRow.run_summary).where(
+            SessionRow.conversation_id == conversation_id,
+            SessionRow.status.in_([
+                SessionStatus.COMMITTED,
+                SessionStatus.AWAITING_TOOL_RESULTS,
+            ]),
+            SessionRow.run_summary.isnot(None),
+        )
+        result = await db.execute(stmt)
+        summaries = result.scalars().all()
+
+        if not summaries:
+            return None
+
+        # Aggregate model_usages across all sessions.
+        aggregated: dict[str, dict[str, int]] = {}
+        for raw in summaries:
+            try:
+                run = RunSummary.model_validate(raw)
+            except Exception:
+                logger.debug("Skipping invalid run_summary in conversation usage aggregation")
+                continue
+            for model_id, model_usage in run.usage.model_usages.items():
+                if model_id not in aggregated:
+                    aggregated[model_id] = {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cache_read_tokens": 0,
+                        "cache_write_tokens": 0,
+                        "reasoning_tokens": 0,
+                        "total_tokens": 0,
+                        "requests": 0,
+                    }
+                acc = aggregated[model_id]
+                acc["input_tokens"] += model_usage.input_tokens
+                acc["output_tokens"] += model_usage.output_tokens
+                acc["cache_read_tokens"] += model_usage.cache_read_tokens
+                acc["cache_write_tokens"] += model_usage.cache_write_tokens
+                acc["reasoning_tokens"] += model_usage.reasoning_tokens
+                acc["total_tokens"] += model_usage.total_tokens
+                acc["requests"] += model_usage.requests
+
+        if not aggregated:
+            return None
+
+        from netherbrain.agent_runtime.models.session import ModelUsageSummary
+
+        return UsageSummary(
+            model_usages={model_id: ModelUsageSummary(**counts) for model_id, counts in aggregated.items()}
+        )
 
     # -- Startup recovery ------------------------------------------------------
 

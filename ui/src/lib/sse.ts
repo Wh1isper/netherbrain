@@ -179,6 +179,10 @@ export async function* parseSSEStream(
 
       buffer += decoder.decode(value, { stream: true });
 
+      // Normalize CRLF to LF -- sse_starlette uses \r\n line endings
+      // but the SSE spec allows \r\n, \r, or \n.
+      buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
       // SSE events are delimited by blank lines (\n\n)
       const parts = buffer.split("\n\n");
       // Last part may be incomplete -- keep it in buffer

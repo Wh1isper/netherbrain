@@ -10,6 +10,7 @@ import {
   type ToolCallStartEvent,
   type ToolCallArgsEvent,
   type ToolCallResultEvent,
+  type CustomEventData,
 } from "../lib/sse";
 import {
   runConversation,
@@ -22,6 +23,7 @@ import {
 } from "../api/conversations";
 import type {
   ConversationRunRequest,
+  CustomDisplayEvent,
   InputPart,
   TurnResponse,
   DisplayEvent,
@@ -29,7 +31,38 @@ import type {
   ToolCallChunk,
   ToolCallResultDisplay,
   ReasoningMessageChunk,
+  UsageSummaryResponse,
 } from "../api/types";
+
+// ---------------------------------------------------------------------------
+// Project selection cache (localStorage)
+// ---------------------------------------------------------------------------
+
+const PROJECT_CACHE_KEY = "netherbrain-project-cache";
+
+/** Read cached project selection for a workspace. */
+export function getProjectCache(workspaceId: string): string[] {
+  try {
+    const raw = localStorage.getItem(PROJECT_CACHE_KEY);
+    if (!raw) return [];
+    const cache = JSON.parse(raw) as Record<string, string[]>;
+    return cache[workspaceId] ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Persist project selection for a workspace. */
+export function setProjectCache(workspaceId: string, projectIds: string[]): void {
+  try {
+    const raw = localStorage.getItem(PROJECT_CACHE_KEY);
+    const cache: Record<string, string[]> = raw ? JSON.parse(raw) : {};
+    cache[workspaceId] = projectIds;
+    localStorage.setItem(PROJECT_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // best effort
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -48,6 +81,19 @@ export interface ToolCall {
   args: string;
   result?: string;
   status: "running" | "complete" | "retry" | "cancel";
+}
+
+export interface ModelUsageData {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  requests: number;
+}
+
+export interface UsageData {
+  modelUsages: Record<string, ModelUsageData>;
 }
 
 export interface ChatMessage {
@@ -89,8 +135,19 @@ interface ChatState {
   /** Update project selection. */
   setSelectedProjectIds: (ids: string[]) => void;
 
+  /** Selected preset ID (null = use default). */
+  selectedPresetId: string | null;
+  /** Update selected preset. */
+  setSelectedPresetId: (id: string | null) => void;
+
   /** Mailbox pending message count for the current conversation. */
   mailboxCount: number;
+
+  /** Real-time token usage from the current streaming session. */
+  usage: UsageData | null;
+
+  /** Aggregated usage from all committed sessions (loaded from API). */
+  conversationUsage: UsageData | null;
 
   /** Archive the current conversation. */
   archiveConversation: () => Promise<void>;
@@ -144,8 +201,59 @@ function updateLastAssistant(
   return updated;
 }
 
-/** Convert a turn's display_messages events into a ChatMessage with full detail. */
-function displayEventsToMessage(sessionId: string, events: DisplayEvent[]): ChatMessage {
+/** Convert a turn's display_messages events into ChatMessages, splitting at steering boundaries.
+ *
+ * A single turn may contain steering_received CUSTOM events. Each such event
+ * splits the assistant output into segments: pre-steer and post-steer.
+ * The steer text is reconstructed as a user message between segments.
+ */
+function displayEventsToMessages(sessionId: string, events: DisplayEvent[]): ChatMessage[] {
+  // Split events into segments at steering_received boundaries.
+  const segments: DisplayEvent[][] = [[]];
+  const steerTexts: (string | null)[] = [null];
+
+  for (const evt of events) {
+    if (evt.type === "CUSTOM" && (evt as CustomDisplayEvent).name === "steering_received") {
+      const customEvt = evt as CustomDisplayEvent;
+      steerTexts.push((customEvt.value?.text as string) || "");
+      segments.push([]);
+    } else {
+      segments[segments.length - 1].push(evt);
+    }
+  }
+
+  const result: ChatMessage[] = [];
+
+  for (let i = 0; i < segments.length; i++) {
+    // Add steer user message before non-first segments.
+    const steerText = steerTexts[i];
+    if (steerText !== null) {
+      result.push({
+        id: `${sessionId}-steer-${i}`,
+        role: "user",
+        content: steerText,
+        thinking: "",
+        toolCalls: [],
+        isStreaming: false,
+        attachments: [],
+        sessionId,
+      });
+    }
+
+    // Build assistant message from this segment's events.
+    const msg = buildAssistantFromSegment(sessionId, segments[i], i);
+    if (msg) result.push(msg);
+  }
+
+  return result;
+}
+
+/** Build a single assistant ChatMessage from a segment of display events. */
+function buildAssistantFromSegment(
+  sessionId: string,
+  events: DisplayEvent[],
+  segmentIndex: number,
+): ChatMessage | null {
   let content = "";
   let thinking = "";
   const toolCalls: ToolCall[] = [];
@@ -182,12 +290,15 @@ function displayEventsToMessage(sessionId: string, events: DisplayEvent[]): Chat
         }
         break;
       }
-      // CUSTOM events are ignored for display purposes
     }
   }
 
+  // Skip empty segments (no content at all).
+  if (!content && !thinking && toolCalls.length === 0) return null;
+
+  const suffix = segmentIndex > 0 ? `-s${segmentIndex}` : "";
   return {
-    id: `${sessionId}-assistant`,
+    id: `${sessionId}-assistant${suffix}`,
     role: "assistant",
     content,
     thinking,
@@ -227,7 +338,7 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
 
     // Assistant response: prefer display_messages for full detail
     if (turn.display_messages?.length) {
-      messages.push(displayEventsToMessage(turn.session_id, turn.display_messages));
+      messages.push(...displayEventsToMessages(turn.session_id, turn.display_messages));
     } else if (turn.final_message !== null && turn.final_message !== undefined) {
       messages.push({
         id: `${turn.session_id}-assistant`,
@@ -269,6 +380,46 @@ function makeAssistantPlaceholder(): ChatMessage {
     isStreaming: true,
     attachments: [],
   };
+}
+
+/** Parse API UsageSummaryResponse into frontend UsageData. */
+function parseUsageResponse(resp: UsageSummaryResponse | null): UsageData | null {
+  if (!resp?.model_usages) return null;
+  const modelUsages: Record<string, ModelUsageData> = {};
+  for (const [modelId, u] of Object.entries(resp.model_usages)) {
+    modelUsages[modelId] = {
+      inputTokens: u.input_tokens ?? 0,
+      outputTokens: u.output_tokens ?? 0,
+      totalTokens: u.total_tokens ?? 0,
+      cacheReadTokens: u.cache_read_tokens ?? 0,
+      cacheWriteTokens: u.cache_write_tokens ?? 0,
+      requests: u.requests ?? 0,
+    };
+  }
+  return Object.keys(modelUsages).length > 0 ? { modelUsages } : null;
+}
+
+/** Merge two UsageData objects by summing per-model token counts. */
+export function mergeUsage(a: UsageData | null, b: UsageData | null): UsageData | null {
+  if (!a) return b;
+  if (!b) return a;
+  const merged: Record<string, ModelUsageData> = { ...a.modelUsages };
+  for (const [modelId, u] of Object.entries(b.modelUsages)) {
+    if (merged[modelId]) {
+      const existing = merged[modelId];
+      merged[modelId] = {
+        inputTokens: existing.inputTokens + u.inputTokens,
+        outputTokens: existing.outputTokens + u.outputTokens,
+        totalTokens: existing.totalTokens + u.totalTokens,
+        cacheReadTokens: existing.cacheReadTokens + u.cacheReadTokens,
+        cacheWriteTokens: existing.cacheWriteTokens + u.cacheWriteTokens,
+        requests: existing.requests + u.requests,
+      };
+    } else {
+      merged[modelId] = { ...u };
+    }
+  }
+  return { modelUsages: merged };
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +514,9 @@ function handleEvent(event: AGUIEvent, _get: StoreGet, set: StoreSet): void {
       set((state) => ({
         streamingState: "idle" as const,
         _abortController: null,
+        // Merge session usage into conversation total so it persists.
+        conversationUsage: mergeUsage(state.conversationUsage, state.usage),
+        usage: null,
         messages: updateLastAssistant(state.messages, (msg) => ({
           ...msg,
           isStreaming: false,
@@ -385,7 +539,55 @@ function handleEvent(event: AGUIEvent, _get: StoreGet, set: StoreSet): void {
       break;
     }
 
-    // TEXT_MESSAGE_START/END, REASONING_START/END, TOOL_CALL_END, CUSTOM
+    case EventType.CUSTOM: {
+      const e = event as CustomEventData;
+
+      if (e.name === "steering_received") {
+        // Finalize the current streaming assistant and create a new placeholder
+        // so post-steering content appears below the user's steer message.
+        set((state) => ({
+          messages: [
+            ...updateLastAssistant(state.messages, (msg) => ({
+              ...msg,
+              isStreaming: false,
+            })),
+            makeAssistantPlaceholder(),
+          ],
+        }));
+      } else if (e.name === "usage_snapshot") {
+        // Parse model_usages from the event value and update state.
+        const raw = e.value?.model_usages as
+          | Record<
+              string,
+              {
+                input_tokens?: number;
+                output_tokens?: number;
+                total_tokens?: number;
+                cache_read_tokens?: number;
+                cache_write_tokens?: number;
+                requests?: number;
+              }
+            >
+          | undefined;
+        if (raw) {
+          const modelUsages: Record<string, ModelUsageData> = {};
+          for (const [modelId, u] of Object.entries(raw)) {
+            modelUsages[modelId] = {
+              inputTokens: u.input_tokens ?? 0,
+              outputTokens: u.output_tokens ?? 0,
+              totalTokens: u.total_tokens ?? 0,
+              cacheReadTokens: u.cache_read_tokens ?? 0,
+              cacheWriteTokens: u.cache_write_tokens ?? 0,
+              requests: u.requests ?? 0,
+            };
+          }
+          set({ usage: { modelUsages } });
+        }
+      }
+      break;
+    }
+
+    // TEXT_MESSAGE_START/END, REASONING_START/END, TOOL_CALL_END
     // are structural/lifecycle events -- no state mutation needed.
     default:
       break;
@@ -561,10 +763,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   loadingMore: false,
   selectedProjectIds: [],
   projectSelectionSource: "default",
+  selectedPresetId: null,
   mailboxCount: 0,
+  usage: null,
+  conversationUsage: null,
   _abortController: null,
 
   setSelectedProjectIds: (ids) => set({ selectedProjectIds: ids, projectSelectionSource: "user" }),
+  setSelectedPresetId: (id) => set({ selectedPresetId: id }),
 
   archiveConversation: async () => {
     const { conversationId } = get();
@@ -590,6 +796,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       selectedProjectIds: [],
       projectSelectionSource: "default",
       mailboxCount: 0,
+      usage: null,
+      conversationUsage: null,
       _abortController: null,
     });
 
@@ -604,7 +812,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         hasMoreMessages: turnsData.has_more,
         selectedProjectIds: detail.latest_session?.project_ids ?? [],
         projectSelectionSource: "session",
+        selectedPresetId: detail.default_preset_id ?? detail.latest_session?.preset_id ?? null,
         mailboxCount: detail.mailbox?.pending_count ?? 0,
+        conversationUsage: parseUsageResponse(detail.usage),
       });
 
       // Reattach to active stream session if one exists
@@ -673,11 +883,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       messages: [...state.messages, makeUserMessage(text, attachments), makeAssistantPlaceholder()],
       streamingState: "connecting",
       error: null,
+      usage: null,
       _abortController: abortController,
     }));
 
     try {
-      const { selectedProjectIds } = get();
+      const { selectedProjectIds, selectedPresetId } = get();
       const body: ConversationRunRequest = {
         input: [...(text ? [{ type: "text" as const, text }] : []), ...(attachments ?? [])],
         transport: "stream", // Prefer stream transport for reconnection support
@@ -689,9 +900,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         // New conversation: tag with workspace_id in metadata for sidebar filtering
         body.metadata = { workspace_id: opts.workspaceId };
       }
-      if (opts.presetId) {
-        body.preset_id = opts.presetId;
+      const effectivePresetId = opts.presetId ?? selectedPresetId;
+      if (effectivePresetId) {
+        body.preset_id = effectivePresetId;
       }
+
+      // Persist project selection to cache before sending
+      setProjectCache(opts.workspaceId, selectedProjectIds);
 
       const response = await runConversation(body);
       const signal = abortController.signal;
@@ -817,6 +1032,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       selectedProjectIds: [],
       projectSelectionSource: "default",
       mailboxCount: 0,
+      usage: null,
+      conversationUsage: null,
       _abortController: null,
     });
   },

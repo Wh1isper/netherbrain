@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { useNavigate, useParams, NavLink } from "react-router-dom";
 import {
   SquarePen,
@@ -10,7 +10,9 @@ import {
   ChevronDown,
   Circle,
   LogOut,
+  Pencil,
 } from "lucide-react";
+import { updateConversation } from "@/api/conversations";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -24,6 +26,7 @@ import { useAppStore } from "@/stores/app";
 import { useChatStore } from "@/stores/chat";
 import { ensureDefaultWorkspace } from "@/api/workspaces";
 import { listConversations } from "@/api/conversations";
+import { listPresets } from "@/api/presets";
 import type { ConversationResponse } from "@/api/types";
 
 function formatRelativeTime(iso: string): string {
@@ -40,12 +43,61 @@ function formatRelativeTime(iso: string): string {
 
 function ConversationItem({ conv, active }: { conv: ConversationResponse; active: boolean }) {
   const title = conv.title ?? "New conversation";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const updateInList = useAppStore((s) => s.updateConversationInList);
+
+  const commitRename = async () => {
+    const trimmed = draft.trim();
+    setEditing(false);
+    if (!trimmed || trimmed === (conv.title ?? "New conversation")) return;
+    try {
+      const updated = await updateConversation(conv.conversation_id, { title: trimmed });
+      updateInList(conv.conversation_id, { title: updated.title });
+    } catch (err) {
+      console.error("Failed to rename conversation:", err);
+      setDraft(conv.title ?? "New conversation");
+    }
+  };
+
+  const startEditing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraft(conv.title ?? "");
+    setEditing(true);
+    // Focus after render
+    requestAnimationFrame(() => inputRef.current?.select());
+  };
+
+  if (editing) {
+    return (
+      <div className={["flex items-center rounded-xl px-3 py-1.5", "bg-sidebar-accent"].join(" ")}>
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void commitRename();
+            if (e.key === "Escape") {
+              setDraft(conv.title ?? "New conversation");
+              setEditing(false);
+            }
+          }}
+          onBlur={() => void commitRename()}
+          className="flex-1 min-w-0 bg-transparent text-sm text-sidebar-accent-foreground outline-none placeholder:text-muted-foreground/50"
+          placeholder="Conversation title"
+          autoFocus
+        />
+      </div>
+    );
+  }
 
   return (
     <NavLink
       to={`/c/${conv.conversation_id}`}
       className={[
-        "flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors",
+        "group flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
@@ -53,7 +105,14 @@ function ConversationItem({ conv, active }: { conv: ConversationResponse; active
       ].join(" ")}
     >
       <span className="flex-1 truncate">{title}</span>
-      <span className="shrink-0 text-[11px] text-muted-foreground/50">
+      <button
+        onClick={startEditing}
+        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-sidebar-border"
+        title="Rename"
+      >
+        <Pencil className="h-3 w-3" />
+      </button>
+      <span className="shrink-0 text-[11px] text-muted-foreground/50 group-hover:hidden">
         {formatRelativeTime(conv.updated_at)}
       </span>
     </NavLink>
@@ -74,6 +133,7 @@ export default function Sidebar() {
     setCurrentWorkspace,
     conversations,
     setConversations,
+    setPresets,
     user,
     logout,
   } = useAppStore();
@@ -86,8 +146,12 @@ export default function Sidebar() {
 
   const loadWorkspaces = useCallback(async () => {
     try {
-      const { defaultWs, all } = await ensureDefaultWorkspace();
+      const [{ defaultWs, all }, presets] = await Promise.all([
+        ensureDefaultWorkspace(),
+        listPresets(),
+      ]);
       setWorkspaces(all);
+      setPresets(presets);
       // Auto-select default workspace if none selected or stale ID not in list
       const current = currentWorkspaceIdRef.current;
       if (!current || !all.some((w) => w.workspace_id === current)) {
@@ -96,7 +160,7 @@ export default function Sidebar() {
     } catch (err) {
       console.error("Failed to load workspaces:", err);
     }
-  }, [setWorkspaces, setCurrentWorkspace]);
+  }, [setWorkspaces, setPresets, setCurrentWorkspace]);
 
   const loadConversations = useCallback(async () => {
     if (!currentWorkspaceId) return;

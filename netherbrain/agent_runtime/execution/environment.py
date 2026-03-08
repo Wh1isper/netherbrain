@@ -3,7 +3,13 @@
 Resolves project_ids to real filesystem paths, auto-creates directories,
 and constructs the SDK Environment for the execution pipeline.
 
-Two environment modes are supported:
+Three environment modes are supported:
+
+**Conversation-only mode** (no projects):
+    No project directories.  The agent operates as a pure conversational
+    assistant with only a temporary directory.  Filesystem and shell
+    tools are stripped by the runtime.  Uses ``LocalEnvironment`` with
+    no ``default_path``.
 
 **Local mode** (``EnvironmentMode.LOCAL``):
     Shell and file operations run directly on the host.  The agent sees
@@ -161,8 +167,8 @@ def create_environment(
     Returns ``(environment, project_paths)`` so the caller can access
     path metadata for session commit.
 
-    The environment is NOT entered yet -- the caller must use it as an
-    async context manager (or pass it to ``create_agent(env=...)``).
+    When no projects are configured, returns a ``LocalEnvironment`` with
+    only a temporary directory (no project paths, no CWD access).
 
     Parameters
     ----------
@@ -180,8 +186,9 @@ def create_environment(
     paths = resolve_project_paths(config, settings)
 
     if not paths.has_projects:
-        # Pure conversation mode: no file system access.
-        # Use a minimal environment with no allowed paths.
+        # Pure conversation mode: no project directories.
+        # LocalEnvironment with no default_path relies on the SDK to
+        # handle None gracefully (tmp-dir only, no CWD fallback).
         env = LocalEnvironment(enable_tmp_dir=True)
         return env, paths
 

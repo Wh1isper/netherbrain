@@ -331,3 +331,19 @@ body,
     background: oklch(1 0 0 / 20%);
   }
 }
+
+/* Thinking dots animation -- cycles through ., .., ... */
+@keyframes thinking-dots {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+  33% {
+    clip-path: inset(0 66% 0 0);
+  }
+  66% {
+    clip-path: inset(0 33% 0 0);
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}

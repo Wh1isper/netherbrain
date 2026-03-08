@@ -67,6 +67,10 @@ flowchart TB
     ENTER --> SWITCH["Switch workspace"]
     SWITCH --> LIST
 
+    ENTER --> FILES["Browse project files"]
+    FILES --> PREVIEW["Preview / edit / download"]
+    FILES --> TERMINAL["Interactive shell"]
+
     ENTER --> SETTINGS["Settings"]
     SETTINGS --> PRESETS["Manage presets"]
     SETTINGS --> WORKSPACES["Manage workspaces"]
@@ -104,3 +108,4 @@ flowchart TB
 | 02      | [Chat](02-chat.md)         | Message rendering, streaming, controls |
 | 03      | [Settings](03-settings.md) | Preset, workspace, account management  |
 | 04      | [Auth](04-auth.md)         | Login, logout, JWT session management  |
+| 05      | [Files](05-files.md)       | File browser, editor, terminal         |

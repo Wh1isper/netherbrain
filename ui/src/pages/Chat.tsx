@@ -1,14 +1,16 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useChatStore } from "@/stores/chat";
+import { useChatStore, getProjectCache, mergeUsage } from "@/stores/chat";
 import { useAppStore } from "@/stores/app";
-import { listConversations } from "@/api/conversations";
+import { listConversations, prepareFork } from "@/api/conversations";
 import { updateWorkspace, listWorkspaces } from "@/api/workspaces";
 import type { InputPart } from "@/api/types";
 import MessageList from "@/components/chat/MessageList";
 import ChatInput from "@/components/chat/ChatInput";
 import ConversationHeader from "@/components/chat/ConversationHeader";
 import ProjectSelector from "@/components/chat/ProjectSelector";
+import PresetSelector from "@/components/chat/PresetSelector";
+import UsageIndicator from "@/components/chat/UsageIndicator";
 
 export default function Chat() {
   const { id } = useParams<{ id: string }>();
@@ -28,17 +30,26 @@ export default function Chat() {
   const interrupt = useChatStore((s) => s.interrupt);
   const clearChat = useChatStore((s) => s.clearChat);
   const mailboxCount = useChatStore((s) => s.mailboxCount);
+  const usage = useChatStore((s) => s.usage);
+  const conversationUsage = useChatStore((s) => s.conversationUsage);
   const archiveConversation = useChatStore((s) => s.archiveConversation);
+
+  const selectedPresetId = useChatStore((s) => s.selectedPresetId);
+  const setSelectedPresetId = useChatStore((s) => s.setSelectedPresetId);
 
   const currentWorkspaceId = useAppStore((s) => s.currentWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
   const setWorkspaces = useAppStore((s) => s.setWorkspaces);
+  const presets = useAppStore((s) => s.presets);
   const conversations = useAppStore((s) => s.conversations);
   const setConversations = useAppStore((s) => s.setConversations);
 
   // Available projects from the current workspace
   const currentWorkspace = workspaces.find((w) => w.workspace_id === currentWorkspaceId);
-  const availableProjects = currentWorkspace?.projects ?? [];
+  const availableProjects = useMemo(
+    () => currentWorkspace?.projects ?? [],
+    [currentWorkspace?.projects],
+  );
 
   // Find title from conversation list
   const convMeta = conversations.find((c) => c.conversation_id === (id ?? conversationId));
@@ -53,7 +64,12 @@ export default function Chat() {
 
   useEffect(() => {
     if (id && id !== prevIdRef.current) {
-      void loadConversation(id);
+      // Skip reload if we're already streaming this conversation
+      // (happens when component remounts after new-conversation URL navigation)
+      const state = useChatStore.getState();
+      if (!(state.conversationId === id && state.streamingState !== "idle")) {
+        void loadConversation(id);
+      }
     } else if (!id && prevIdRef.current) {
       // Navigated to "/" from a conversation
       clearChat();
@@ -95,6 +111,23 @@ export default function Chat() {
     // Only trigger when streamingState transitions to idle
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamingState]);
+
+  // -----------------------------------------------------------------------
+  // Seed project selection from cache for new conversations
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    // Only seed for new conversations (no existing conversation loaded)
+    if (id || conversationId) return;
+    if (!currentWorkspaceId) return;
+
+    const cached = getProjectCache(currentWorkspaceId);
+    // Filter to only include projects still available in the workspace
+    const valid = cached.filter((p) => availableProjects.includes(p));
+    if (valid.length > 0) {
+      setSelectedProjectIds(valid);
+    }
+  }, [currentWorkspaceId, id, conversationId, availableProjects, setSelectedProjectIds]);
 
   // -----------------------------------------------------------------------
   // Handlers
@@ -150,6 +183,21 @@ export default function Chat() {
     void refreshConversations();
   }, [id, conversationId, loadConversation, refreshConversations]);
 
+  const handleFork = useCallback(async () => {
+    const cid = id ?? conversationId;
+    if (!cid || !currentWorkspaceId) return;
+    try {
+      const { conversation_id: newId } = await prepareFork(cid, {
+        metadata: { workspace_id: currentWorkspaceId },
+      });
+      clearChat();
+      navigate(`/c/${newId}`);
+      void refreshConversations();
+    } catch (err) {
+      console.error("Failed to fork conversation:", err);
+    }
+  }, [id, conversationId, currentWorkspaceId, clearChat, navigate, refreshConversations]);
+
   const handleArchive = useCallback(async () => {
     await archiveConversation();
     clearChat();
@@ -171,6 +219,7 @@ export default function Chat() {
           projectIds={selectedProjectIds}
           mailboxCount={mailboxCount}
           onTitleChange={handleTitleChange}
+          onFork={handleFork}
           onArchive={handleArchive}
           onFired={handleFired}
         />
@@ -183,9 +232,25 @@ export default function Chat() {
         onLoadMore={loadMoreMessages}
       />
 
+      <UsageIndicator
+        usage={mergeUsage(conversationUsage, usage)}
+        streaming={streamingState === "streaming" || streamingState === "connecting"}
+      />
+
       {error && (
         <div className="px-4 py-2 text-center text-sm text-destructive bg-destructive/5 border-t border-destructive/10">
           {error}
+        </div>
+      )}
+
+      {currentWorkspaceId && (
+        <div className="flex items-center gap-3 px-4 py-1.5 border-t border-border/50">
+          <PresetSelector
+            presets={presets}
+            selected={selectedPresetId}
+            onChange={setSelectedPresetId}
+            disabled={streamingState === "streaming" || streamingState === "connecting"}
+          />
         </div>
       )}
 

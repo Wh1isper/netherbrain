@@ -20,7 +20,6 @@ from netherbrain.agent_runtime.managers.users import (
     update_user,
 )
 from netherbrain.agent_runtime.models.api import (
-    ApiKeyCreateResponse,
     ResetPasswordResponse,
     UserCreate,
     UserCreateResponse,
@@ -34,7 +33,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post("/create", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 async def handle_create_user(body: UserCreate, db: DbSession, admin: AdminUser) -> dict:
     try:
-        user, raw_password, raw_key = await create_user(
+        user, raw_password = await create_user(
             db,
             user_id=body.user_id,
             display_name=body.display_name,
@@ -46,11 +45,6 @@ async def handle_create_user(body: UserCreate, db: DbSession, admin: AdminUser) 
     return {
         "user": UserResponse.model_validate(user),
         "password": raw_password,
-        "api_key": ApiKeyCreateResponse(
-            key_id=raw_key.split("_")[1],  # nb_{key_id}_{secret}
-            key=raw_key,
-            name="initial",
-        ),
     }
 
 

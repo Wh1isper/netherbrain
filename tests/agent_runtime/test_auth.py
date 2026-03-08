@@ -161,7 +161,7 @@ async def test_no_token_configured_skips_auth(noauth_client: AsyncClient) -> Non
 async def test_jwt_auth_valid(auth_client: AsyncClient, db_session: AsyncSession) -> None:
     """A valid JWT token should authenticate successfully."""
     # Create a user in the DB so /api/auth/me can find them.
-    user, _pwd, _key = await create_user(db_session, user_id="jwt-user", display_name="JWT User", role=UserRole.USER)
+    user, _pwd = await create_user(db_session, user_id="jwt-user", display_name="JWT User", role=UserRole.USER)
 
     token = create_jwt(user.user_id, user.role, secret=JWT_SECRET, expiry_days=7)
     resp = await auth_client.get(
@@ -202,7 +202,7 @@ async def test_jwt_auth_wrong_secret(auth_client: AsyncClient) -> None:
 @pytest.mark.integration
 async def test_login_success(auth_client: AsyncClient, db_session: AsyncSession) -> None:
     """POST /api/auth/login with valid credentials returns JWT and user info."""
-    _user, raw_password, _key = await create_user(db_session, user_id="login-user", display_name="Login User")
+    _user, raw_password = await create_user(db_session, user_id="login-user", display_name="Login User")
 
     resp = await auth_client.post(
         "/api/auth/login",
@@ -267,7 +267,7 @@ async def test_login_bypasses_auth_middleware(auth_client: AsyncClient, db_sessi
 @pytest.mark.integration
 async def test_change_password(auth_client: AsyncClient, db_session: AsyncSession) -> None:
     """POST /api/auth/change-password should update the user's password."""
-    _user, raw_password, _key = await create_user(db_session, user_id="chg-pwd-user", display_name="Chg Pwd")
+    _user, raw_password = await create_user(db_session, user_id="chg-pwd-user", display_name="Chg Pwd")
 
     # Login first to get a JWT.
     login_resp = await auth_client.post(
@@ -304,7 +304,7 @@ async def test_change_password(auth_client: AsyncClient, db_session: AsyncSessio
 @pytest.mark.integration
 async def test_change_password_wrong_old(auth_client: AsyncClient, db_session: AsyncSession) -> None:
     """Changing password with wrong old password returns 401."""
-    _user, raw_password, _key = await create_user(db_session, user_id="wrong-old-user", display_name="Wrong Old")
+    _user, raw_password = await create_user(db_session, user_id="wrong-old-user", display_name="Wrong Old")
 
     login_resp = await auth_client.post(
         "/api/auth/login",

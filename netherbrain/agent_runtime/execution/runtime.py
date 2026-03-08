@@ -358,6 +358,12 @@ def create_service_runtime(
     # -- Tools -----------------------------------------------------------------
     tools = resolve_tools(config.toolsets)
 
+    # Pure conversation mode: no projects -> strip filesystem and shell tools
+    # so the agent cannot access the host filesystem or run commands.
+    if not paths.has_projects:
+        _fs_shell_tools = {*filesystem_tools, *shell_tools}
+        tools = [t for t in tools if t not in _fs_shell_tools]
+
     # Always include subagent introspection tools.
     all_tools = [*tools, *subagent_tools]
 

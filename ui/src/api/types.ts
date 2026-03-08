@@ -171,10 +171,26 @@ export interface ConversationResponse {
   updated_at: string;
 }
 
+export interface UsageSummaryResponse {
+  model_usages: Record<
+    string,
+    {
+      input_tokens: number;
+      output_tokens: number;
+      cache_read_tokens: number;
+      cache_write_tokens: number;
+      reasoning_tokens: number;
+      total_tokens: number;
+      requests: number;
+    }
+  >;
+}
+
 export interface ConversationDetailResponse extends ConversationResponse {
   latest_session: LatestSessionInfo | null;
   active_session: ActiveSessionInfo | null;
   mailbox: MailboxSummary | null;
+  usage: UsageSummaryResponse | null;
 }
 
 export interface ConversationUpdate {
@@ -241,13 +257,20 @@ export interface ReasoningMessageChunk {
   delta: string;
 }
 
+export interface CustomDisplayEvent {
+  type: "CUSTOM";
+  name: string;
+  value: Record<string, unknown>;
+}
+
 /** Discriminated union of display event types. */
 export type DisplayEvent =
   | TextMessageChunk
   | ToolCallChunk
   | ToolCallResultDisplay
   | ReasoningMessageChunk
-  | { type: string }; // catch-all for CUSTOM / unknown event types
+  | CustomDisplayEvent
+  | { type: string }; // catch-all for unknown event types
 
 // -- Run request -------------------------------------------------------------
 
@@ -277,6 +300,15 @@ export interface ConversationForkRequest {
   config_override?: Record<string, unknown> | null;
   input?: InputPart[] | null;
   transport?: Transport;
+}
+
+export interface PrepareForkRequest {
+  from_session_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface PrepareForkResponse {
+  conversation_id: string;
 }
 
 export interface ConversationFireRequest {
@@ -366,7 +398,6 @@ export interface UserCreate {
 export interface UserCreateResponse {
   user: UserResponse;
   password: string;
-  api_key: ApiKeyCreateResponse;
 }
 
 export interface UserUpdate {

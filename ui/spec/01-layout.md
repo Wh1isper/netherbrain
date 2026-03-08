@@ -2,7 +2,7 @@
 
 ## Page Structure
 
-Two pages: **Chat** (default, `/`) and **Settings** (`/settings`).
+Three pages: **Chat** (default, `/`), **Files** (`/files/:projectId`), and **Settings** (`/settings`).
 
 ## Shell Layout
 
@@ -103,8 +103,9 @@ flowchart LR
 
 ## Routing
 
-| Path        | Page     | Description              |
-| ----------- | -------- | ------------------------ |
-| `/`         | Chat     | Last conversation or new |
-| `/c/:id`    | Chat     | Specific conversation    |
-| `/settings` | Settings | Presets and workspaces   |
+| Path         | Page     | Description              |
+| ------------ | -------- | ------------------------ |
+| `/`          | Chat     | Last conversation or new |
+| `/c/:id`     | Chat     | Specific conversation    |
+| `/files/:id` | Files    | File browser + terminal  |
+| `/settings`  | Settings | Presets and workspaces   |

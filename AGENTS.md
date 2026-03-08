@@ -50,12 +50,16 @@ netherbrain/
       sessions.py      # SessionManager class (create/commit/get/list, state store)
       mailbox.py       # Mailbox CRUD (post, drain, query, count)
       importer.py      # Config importer (TOML -> upsert presets/workspaces)
+      files.py         # File operations (path resolver, list, read, write, archive)
+      shell.py         # PTY lifecycle, Docker exec bridge
     routers/           # Thin HTTP adapters (parse params, call managers, translate errors)
       presets.py       # /api/presets/* endpoints
       workspaces.py    # /api/workspaces/* endpoints
       conversations.py # /api/conversations/* endpoints
       sessions.py      # /api/sessions/* endpoints
       toolsets.py      # GET /api/toolsets (capability discovery, no DB)
+      files.py         # /api/files/* endpoints (file browsing, read, write, upload, download)
+      shell.py         # /api/shell/* WebSocket endpoint (interactive terminal)
     store/             # State store for session persistence (large blobs)
       base.py          # StateStore async Protocol
       local.py         # Local filesystem implementation (atomic writes)
@@ -91,6 +95,7 @@ ui/                    # Frontend (Vite + React + TypeScript)
   src/
     pages/
       Chat.tsx         # Conversation interface
+      Files.tsx        # File browser, editor, and terminal
       Settings.tsx     # Preset and workspace management
     App.tsx            # Root component with routing
     main.tsx           # Entry point
@@ -262,7 +267,7 @@ Chat-app style web interface served by the agent-runtime at root path (`/`).
 - **Default workspace**: Auto-created on first launch (`webui-default`, no projects, metadata: `{"source": "webui", "default": true}`).
 - **Responsive**: Desktop and mobile are both first-class.
 - **Tech stack**: Tailwind CSS v4 + shadcn/ui + Zustand + react-markdown + Shiki (vitesse themes).
-- **Two pages**: Chat (`/`, `/c/:id`) and Settings (`/settings`).
+- **Three pages**: Chat (`/`, `/c/:id`), Files (`/files/:projectId`), and Settings (`/settings`).
 - **Theme**: Light (warm beige) and dark (warm charcoal) modes. Brand color is earthy green (`~#55644a`). CSS tokens defined in `src/index.css` using oklch color space.
 
 ## Observability

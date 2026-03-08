@@ -6,6 +6,8 @@ import type {
   ConversationRunRequest,
   ConversationForkRequest,
   ConversationFireRequest,
+  PrepareForkRequest,
+  PrepareForkResponse,
   SteerRequest,
   TurnsResponse,
   MailboxMessageResponse,
@@ -91,6 +93,13 @@ export async function interruptConversation(id: string): Promise<void> {
 
 export async function steerConversation(id: string, body: SteerRequest): Promise<void> {
   return api.post<void>(`/api/conversations/${id}/steer`, body);
+}
+
+export async function prepareFork(
+  id: string,
+  body: PrepareForkRequest = {},
+): Promise<PrepareForkResponse> {
+  return api.post<PrepareForkResponse>(`/api/conversations/${id}/prepare-fork`, body);
 }
 
 export async function forkConversation(
