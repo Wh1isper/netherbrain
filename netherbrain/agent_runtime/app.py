@@ -16,6 +16,7 @@ from netherbrain.agent_runtime.db.engine import create_engine, create_session_fa
 from netherbrain.agent_runtime.log import setup_logging
 from netherbrain.agent_runtime.managers.execution import ExecutionManager
 from netherbrain.agent_runtime.managers.sessions import SessionManager
+from netherbrain.agent_runtime.managers.shell import ShellRegistry
 from netherbrain.agent_runtime.middleware import BearerAuthMiddleware
 from netherbrain.agent_runtime.registry import SessionRegistry
 from netherbrain.agent_runtime.settings import NetherSettings, get_settings
@@ -76,6 +77,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _app.state.redis = None
     _app.state.session_manager = None
     _app.state.execution_manager = None
+    _app.state.shell_registry = ShellRegistry()
 
     # -- Database --------------------------------------------------------------
     if settings.database_url:
@@ -136,7 +138,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
     # -- Shutdown --------------------------------------------------------------
-    logger.info("Agent Runtime shutting down (active_sessions={})", registry.active_count)
+    logger.info(
+        "Agent Runtime shutting down (active_sessions={}, active_shells={})",
+        registry.active_count,
+        _app.state.shell_registry.active_count,
+    )
+
+    # 0. Close all interactive shells.
+    await _app.state.shell_registry.shutdown()
 
     # 1. Stop accepting new sessions.
     registry.begin_shutdown()
@@ -213,10 +222,12 @@ async def health(request: Request) -> dict[str, str]:
 # -- CRUD routers ------------------------------------------------------------
 from netherbrain.agent_runtime.routers.auth import router as auth_router  # noqa: E402
 from netherbrain.agent_runtime.routers.conversations import router as conversations_router  # noqa: E402
+from netherbrain.agent_runtime.routers.files import router as files_router  # noqa: E402
 from netherbrain.agent_runtime.routers.keys import router as keys_router  # noqa: E402
 from netherbrain.agent_runtime.routers.model_presets import router as model_presets_router  # noqa: E402
 from netherbrain.agent_runtime.routers.presets import router as presets_router  # noqa: E402
 from netherbrain.agent_runtime.routers.sessions import router as sessions_router  # noqa: E402
+from netherbrain.agent_runtime.routers.shell import router as shell_router  # noqa: E402
 from netherbrain.agent_runtime.routers.toolsets import router as toolsets_router  # noqa: E402
 from netherbrain.agent_runtime.routers.users import router as users_router  # noqa: E402
 from netherbrain.agent_runtime.routers.workspaces import router as workspaces_router  # noqa: E402
@@ -230,6 +241,8 @@ api.include_router(conversations_router)
 api.include_router(sessions_router)
 api.include_router(toolsets_router)
 api.include_router(model_presets_router)
+api.include_router(files_router)
+api.include_router(shell_router)
 
 app.include_router(api)
 

@@ -11,6 +11,7 @@ import {
   Circle,
   LogOut,
   Pencil,
+  FolderOpen,
 } from "lucide-react";
 import { updateConversation } from "@/api/conversations";
 import { Button } from "@/components/ui/button";
@@ -313,6 +314,33 @@ export default function Sidebar() {
           )}
         </div>
       </ScrollArea>
+
+      {/* Files section */}
+      {currentWorkspace?.projects && currentWorkspace.projects.length > 0 && (
+        <div className="px-2 py-2 border-t border-sidebar-border">
+          <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            Files
+          </p>
+          {currentWorkspace.projects.map((pid) => (
+            <NavLink
+              key={pid}
+              to={`/files/${pid}`}
+              className={({ isActive }) =>
+                [
+                  "flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm transition-colors",
+                  "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  isActive
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-muted-foreground",
+                ].join(" ")
+              }
+            >
+              <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
+              <span className="truncate">{pid}</span>
+            </NavLink>
+          ))}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center gap-1 px-3 py-3 border-t border-sidebar-border">

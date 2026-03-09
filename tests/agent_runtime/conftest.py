@@ -73,6 +73,9 @@ async def client(
     app.state.db_engine = None
     app.state.db_session_factory = None
     app.state.redis = None
+    from netherbrain.agent_runtime.managers.shell import ShellRegistry
+
+    app.state.shell_registry = ShellRegistry()
     app.state.session_manager = session_manager
     app.state.execution_manager = ExecutionManager(
         session_manager=session_manager,

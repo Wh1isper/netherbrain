@@ -440,3 +440,46 @@ export interface ListResponse<T> {
   items: T[];
   total: number;
 }
+
+// -- Files ------------------------------------------------------------------
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size: number | null;
+  modified: string | null;
+}
+
+export interface FileListResponse {
+  project_id: string;
+  path: string;
+  entries: FileEntry[];
+}
+
+export interface FileReadResponse {
+  project_id: string;
+  path: string;
+  content: string;
+  size: number;
+  modified: string;
+  truncated: boolean;
+  encoding: string;
+}
+
+export interface FileWriteResponse {
+  project_id: string;
+  path: string;
+  size: number;
+  modified: string;
+}
+
+export interface UploadedFile {
+  path: string;
+  size: number;
+}
+
+export interface UploadResponse {
+  project_id: string;
+  uploaded: UploadedFile[];
+}

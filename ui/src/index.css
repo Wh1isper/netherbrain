@@ -303,6 +303,39 @@ body,
       @apply my-3 rounded-lg max-w-full;
     }
   }
+
+  /* File viewer -- Shiki output with CSS-counter line numbers */
+  .code-viewer .shiki code {
+    counter-reset: line;
+  }
+  .code-viewer .shiki .line::before {
+    counter-increment: line;
+    content: counter(line);
+    display: inline-block;
+    width: 3rem;
+    margin-right: 1rem;
+    text-align: right;
+    color: var(--muted-foreground);
+    opacity: 0.4;
+    font-size: 0.75rem;
+    user-select: none;
+  }
+  /* Plain-text fallback while Shiki loads */
+  .code-viewer pre:not(.shiki) .line::before {
+    counter-increment: line;
+    content: counter(line);
+    display: inline-block;
+    width: 3rem;
+    margin-right: 1rem;
+    text-align: right;
+    color: var(--muted-foreground);
+    opacity: 0.4;
+    font-size: 0.75rem;
+    user-select: none;
+  }
+  .code-viewer pre:not(.shiki) code {
+    counter-reset: line;
+  }
 }
 
 /* =========================================================================

@@ -94,9 +94,11 @@ async def _authenticate(scope: Scope) -> AuthContext | JSONResponse:
     if root_token is None and session_factory is None:
         return AuthContext(user_id=BOOTSTRAP_ADMIN_ID, role=UserRole.ADMIN, key_id=ROOT_KEY_ID)
 
-    # Extract Bearer token.
+    # Extract Bearer token from header, or fall back to ?token= query param
+    # (needed for direct file downloads, img src, and WebSocket connections
+    # where browsers cannot set custom headers).
     headers = scope.get("headers", [])
-    token = _extract_bearer_token(headers)
+    token = _extract_bearer_token(headers) or _extract_query_token(scope)
 
     if token is None:
         return JSONResponse(
@@ -138,6 +140,23 @@ def _extract_bearer_token(headers: list[tuple[bytes, bytes]]) -> str | None:
             if decoded.startswith("Bearer "):
                 return decoded[7:]
             return None
+    return None
+
+
+def _extract_query_token(scope: Scope) -> str | None:
+    """Extract token from the ``?token=`` query parameter.
+
+    Used as a fallback for direct browser requests (file downloads,
+    image previews, WebSocket connections) where the Authorization
+    header cannot be set.
+    """
+    from urllib.parse import parse_qs
+
+    qs = scope.get("query_string", b"").decode("latin-1")
+    params = parse_qs(qs)
+    values = params.get("token")
+    if values and values[0]:
+        return values[0]
     return None
 
 

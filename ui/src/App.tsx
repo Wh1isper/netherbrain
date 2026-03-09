@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import Chat from "@/pages/Chat";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
+import Files from "@/pages/Files";
 import { useAppStore } from "@/stores/app";
 import { changePassword, getMe } from "@/api/auth";
 import { ApiError } from "@/api/client";
@@ -126,6 +128,7 @@ function AppShell() {
           <Route path="/" element={<Chat />} />
           <Route path="/c/:id" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/files/:projectId" element={<Files />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -183,6 +186,7 @@ export default function App() {
 
   return (
     <TooltipProvider>
+      <Toaster theme={theme} position="bottom-right" toastOptions={{ className: "rounded-xl" }} />
       {authToken ? (
         needsPasswordChange ? (
           <ForceChangePassword />

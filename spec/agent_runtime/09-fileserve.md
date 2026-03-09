@@ -290,3 +290,49 @@ Follows the existing three-layer pattern:
 - **Manager** (`managers/shell.py`): PTY lifecycle, Docker exec bridge. Stateless per-connection.
 
 No database involvement for file operations. Shell may read preset config from DB (for environment resolution).
+
+## Shell Implementation Notes
+
+Technical decisions recorded during design review.
+
+### PTY Backend
+
+Use `os.openpty()` + `subprocess.Popen` for real PTY support. `asyncio.create_subprocess_exec` only provides pipes (no TTY), which breaks `isatty()` checks in programs like vim, htop, etc.
+
+Async I/O on the master fd uses `loop.add_reader()` (Linux epoll). This is the same approach used by JupyterLab's terminado. No extra threads, scales to many concurrent sessions with just fd watchers.
+
+Process exit is detected via `os.read(master_fd)` returning `OSError(EIO)` or empty bytes (all slave fd holders exited), followed by `os.waitpid()` for the exit code.
+
+Resize uses `fcntl.ioctl(master_fd, termios.TIOCSWINSZ, struct.pack(...))`. The kernel automatically sends SIGWINCH to the foreground process group.
+
+### Phased Delivery
+
+```mermaid
+flowchart LR
+    P1["Phase 1: Local Mode"]
+    P2["Phase 2: Docker CLI Exec"]
+    P3["Future: Docker API Direct"]
+    P1 --> P2 --> P3
+```
+
+**Phase 1** (local mode): PTY spawns `/bin/bash` (or `$SHELL`) in the project directory. Linux only. Global connection limit (max 10 concurrent shells). Cleanup via app lifespan shutdown hook.
+
+**Phase 2** (Docker CLI exec): Same PTY mechanism, spawn command changes to `docker exec -it {container_id} /bin/sh -c "cd {workdir} && exec $SHELL"`. Requires Docker CLI binary in the Netherbrain image (`COPY --from=docker:27-cli`) and Docker socket mount. No new code paths in the PTY manager -- just a different command.
+
+**Future** (Docker API direct): Replace CLI shelling-out with raw Docker Engine API via Unix socket. Eliminates Docker CLI dependency. Uses HTTP 101 hijack for attach stream (not WebSocket). Only pursued if CLI approach reveals practical issues.
+
+### Manager Interface
+
+The manager exposes a `PtyProcess` class implementing an async context manager:
+
+- `read() -> bytes` via `loop.add_reader()`
+- `write(data: bytes)` via `os.write(master_fd)`
+- `resize(cols, rows)` via ioctl
+- `close() -> exit_code` with SIGHUP -> waitpid -> SIGKILL fallback
+- `__del__` safety net for fd cleanup
+
+A global `ShellRegistry` (similar to `SessionRegistry`) tracks active shells for connection limiting and shutdown cleanup.
+
+### Security
+
+Shell is interactive and not sandboxed beyond the initial working directory. This is by design for the homelab use case where authenticated users are administrators. Mitigations: authentication required (existing middleware), connection count limit, audit logging.
