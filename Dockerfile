@@ -10,6 +10,9 @@ RUN pnpm run build
 FROM python:3.13-slim
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
+RUN apt-get update && apt-get install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY uv.lock /app/uv.lock
@@ -24,5 +27,5 @@ COPY --from=ui-builder /ui/dist /app/ui/dist
 
 RUN uv sync --frozen
 
-ENTRYPOINT ["uv", "run", "netherbrain"]
+ENTRYPOINT ["tini", "--", "/app/entrypoint.sh"]
 CMD ["agent"]
