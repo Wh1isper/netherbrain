@@ -20,17 +20,22 @@ import {
 } from "@/components/ui/dialog";
 import {
   Archive,
+  ArrowLeft,
   Check,
   FolderOpen,
   GitFork,
   Inbox,
+  Menu,
   MoreHorizontal,
   Pencil,
+  Settings2,
   X,
   Zap,
 } from "lucide-react";
 import { updateConversation, getMailbox, fireConversation } from "@/api/conversations";
 import type { MailboxMessageResponse } from "@/api/types";
+import { useNavigate } from "react-router-dom";
+import { useAppStore } from "@/stores/app";
 
 interface ConversationHeaderProps {
   conversationId: string | null;
@@ -42,6 +47,9 @@ interface ConversationHeaderProps {
   onFork?: () => void;
   onArchive?: () => void;
   onFired?: () => void;
+  onChangePreset?: (presetId: string) => void;
+  isMobile?: boolean;
+  onOpenSidebar?: () => void;
 }
 
 function basename(path: string): string {
@@ -141,6 +149,58 @@ function MailboxDialog({
   );
 }
 
+function ChangePresetDialog({
+  open,
+  onOpenChange,
+  currentPresetId,
+  onSelect,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentPresetId: string | null;
+  onSelect: (presetId: string) => void;
+}) {
+  const presets = useAppStore((s) => s.presets);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Change preset</DialogTitle>
+          <DialogDescription>
+            Select a preset for future messages in this conversation.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-60 overflow-y-auto space-y-1">
+          {presets.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No presets available.</p>
+          ) : (
+            presets.map((p) => (
+              <button
+                key={p.preset_id}
+                onClick={() => onSelect(p.preset_id)}
+                className={[
+                  "w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-left transition-colors",
+                  "hover:bg-accent hover:text-accent-foreground",
+                  p.preset_id === currentPresetId ? "bg-accent font-medium" : "",
+                ].join(" ")}
+              >
+                <span className="flex-1 truncate">{p.name}</span>
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                  {p.model.name}
+                </Badge>
+                {p.preset_id === currentPresetId && (
+                  <Check className="h-3.5 w-3.5 text-primary shrink-0" />
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ConversationHeader({
   conversationId,
   title,
@@ -151,10 +211,15 @@ export default function ConversationHeader({
   onFork,
   onArchive,
   onFired,
+  onChangePreset,
+  isMobile,
+  onOpenSidebar,
 }: ConversationHeaderProps) {
+  const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [mailboxOpen, setMailboxOpen] = useState(false);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const displayTitle = title || "New Conversation";
@@ -198,7 +263,18 @@ export default function ConversationHeader({
   );
 
   return (
-    <div className="flex items-center gap-3 border-b border-border/60 px-4 py-2.5 min-h-[49px] bg-background/80 backdrop-blur-sm">
+    <div className="flex items-center gap-2 md:gap-3 border-b border-border/60 px-3 md:px-4 py-2.5 min-h-[49px] bg-background/80 backdrop-blur-sm">
+      {/* Mobile: hamburger + back button */}
+      {isMobile && (
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onOpenSidebar}>
+            <Menu className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate("/")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
       <div className="flex items-center gap-2 flex-1 min-w-0">
         {editing ? (
           <div className="flex items-center gap-1.5 flex-1">
@@ -243,7 +319,8 @@ export default function ConversationHeader({
         )}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        {projectIds && projectIds.length > 0 && (
+        {/* Desktop only: project badges and preset badge */}
+        {!isMobile && projectIds && projectIds.length > 0 && (
           <TooltipProvider delayDuration={300}>
             <div className="flex items-center gap-1">
               <FolderOpen className="h-3 w-3 text-muted-foreground" />
@@ -263,7 +340,7 @@ export default function ConversationHeader({
             </div>
           </TooltipProvider>
         )}
-        {presetName && (
+        {!isMobile && presetName && (
           <Badge variant="secondary" className="shrink-0 text-xs rounded-lg">
             {presetName}
           </Badge>
@@ -315,6 +392,12 @@ export default function ConversationHeader({
                 <GitFork className="h-3.5 w-3.5 mr-2" />
                 Fork conversation
               </DropdownMenuItem>
+              {onChangePreset && (
+                <DropdownMenuItem onClick={() => setPresetDialogOpen(true)}>
+                  <Settings2 className="h-3.5 w-3.5 mr-2" />
+                  Change preset
+                </DropdownMenuItem>
+              )}
               {onArchive && (
                 <DropdownMenuItem
                   onClick={onArchive}
@@ -336,6 +419,19 @@ export default function ConversationHeader({
           onOpenChange={setMailboxOpen}
           conversationId={conversationId}
           onFired={onFired}
+        />
+      )}
+
+      {/* Change preset dialog */}
+      {conversationId && onChangePreset && (
+        <ChangePresetDialog
+          open={presetDialogOpen}
+          onOpenChange={setPresetDialogOpen}
+          currentPresetId={presetName ?? null}
+          onSelect={(id) => {
+            onChangePreset(id);
+            setPresetDialogOpen(false);
+          }}
         />
       )}
     </div>

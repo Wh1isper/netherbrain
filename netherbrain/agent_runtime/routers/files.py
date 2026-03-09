@@ -20,6 +20,8 @@ from netherbrain.agent_runtime.managers.files import (
     ProjectPathResolver,
     UploadResult,
     build_archive,
+    create_directory,
+    delete_path,
     list_directory,
     read_file,
     resolve_download,
@@ -62,6 +64,14 @@ class WriteBody(BaseModel):
 
 class ArchiveBody(BaseModel):
     paths: list[str] = Field(..., min_length=1)
+
+
+class DeleteBody(BaseModel):
+    paths: list[str] = Field(..., min_length=1)
+
+
+class MkdirBody(BaseModel):
+    path: str
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +167,44 @@ async def handle_download(
         filename=filename,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/{project_id}/delete")
+async def handle_delete(
+    project_id: str,
+    body: DeleteBody,
+    user: CurrentUser,
+) -> dict:
+    """Delete one or more files or directories."""
+    errors: list[str] = []
+    deleted = 0
+    for p in body.paths:
+        try:
+            await asyncio.to_thread(delete_path, _resolver(), project_id, p)
+            deleted += 1
+        except ValueError as exc:
+            errors.append(str(exc))
+        except _CATCH:
+            errors.append(f"Not found: {p}")
+    if errors and deleted == 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="; ".join(errors))
+    return {"deleted": deleted, "errors": errors}
+
+
+@router.post("/{project_id}/mkdir")
+async def handle_mkdir(
+    project_id: str,
+    body: MkdirBody,
+    user: CurrentUser,
+) -> dict:
+    """Create a new directory."""
+    try:
+        await asyncio.to_thread(create_directory, _resolver(), project_id, body.path)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    except _CATCH:
+        raise _not_found(project_id) from None
+    return {"path": body.path}
 
 
 @router.post("/{project_id}/download-archive")

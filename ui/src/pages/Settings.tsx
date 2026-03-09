@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Shield,
   User,
+  Menu,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -993,7 +994,13 @@ function PresetsTab() {
   return (
     <div className="flex h-full min-h-0">
       {/* List panel */}
-      <div className="w-60 shrink-0 border-r border-border flex flex-col min-h-0">
+      <div
+        className={[
+          "border-r border-border flex flex-col min-h-0",
+          "w-full md:w-60 md:shrink-0",
+          showEditor ? "hidden md:flex" : "flex",
+        ].join(" ")}
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <span className="text-sm font-semibold">Presets</span>
           <Button variant="ghost" size="sm" onClick={handleNew} className="h-7 text-xs gap-1">
@@ -1046,7 +1053,23 @@ function PresetsTab() {
       </div>
 
       {/* Editor panel */}
-      <div className="flex-1 min-w-0 flex flex-col min-h-0">
+      <div
+        className={[
+          "flex-1 min-w-0 flex flex-col min-h-0",
+          showEditor ? "flex" : "hidden md:flex",
+        ].join(" ")}
+      >
+        {/* Mobile back button */}
+        <button
+          onClick={() => {
+            setSelectedId(null);
+            setMode("view");
+          }}
+          className="md:hidden flex items-center gap-1.5 px-4 py-2 text-sm text-primary border-b border-border"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to list
+        </button>
         {error && <ErrorBanner message={error} />}
         {showEditor ? (
           <PresetEditor
@@ -1357,7 +1380,13 @@ function WorkspacesTab() {
   return (
     <div className="flex h-full min-h-0">
       {/* List panel */}
-      <div className="w-60 shrink-0 border-r border-border flex flex-col min-h-0">
+      <div
+        className={[
+          "border-r border-border flex flex-col min-h-0",
+          "w-full md:w-60 md:shrink-0",
+          showEditor ? "hidden md:flex" : "flex",
+        ].join(" ")}
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <span className="text-sm font-semibold">Workspaces</span>
           <Button
@@ -1426,7 +1455,23 @@ function WorkspacesTab() {
       </div>
 
       {/* Editor panel */}
-      <div className="flex-1 min-w-0 flex flex-col min-h-0">
+      <div
+        className={[
+          "flex-1 min-w-0 flex flex-col min-h-0",
+          showEditor ? "flex" : "hidden md:flex",
+        ].join(" ")}
+      >
+        {/* Mobile back button */}
+        <button
+          onClick={() => {
+            setSelectedId(null);
+            setIsNew(false);
+          }}
+          className="md:hidden flex items-center gap-1.5 px-4 py-2 text-sm text-primary border-b border-border"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to list
+        </button>
         {error && <ErrorBanner message={error} />}
         {showEditor ? (
           <WorkspaceEditor
@@ -2128,11 +2173,21 @@ export default function Settings() {
   const navigate = useNavigate();
   const user = useAppStore((s) => s.user);
   const isAdmin = user?.role === "admin";
+  const setMobileSidebarOpen = useAppStore((s) => s.setMobileSidebarOpen);
 
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-border shrink-0">
+      <div className="flex items-center gap-3 px-4 md:px-6 py-4 border-b border-border shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground md:hidden"
+          onClick={() => setMobileSidebarOpen(true)}
+          title="Menu"
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -2146,8 +2201,8 @@ export default function Settings() {
       </div>
 
       {/* Tabs fill remaining height */}
-      <Tabs defaultValue="presets" className="flex-1 flex flex-col min-h-0 px-6 pt-4 gap-0">
-        <TabsList className="self-start shrink-0">
+      <Tabs defaultValue="presets" className="flex-1 flex flex-col min-h-0 px-4 md:px-6 pt-4 gap-0">
+        <TabsList className="self-start shrink-0 overflow-x-auto max-w-full">
           <TabsTrigger value="presets">Presets</TabsTrigger>
           <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
           <TabsTrigger value="account">Account</TabsTrigger>

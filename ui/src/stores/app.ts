@@ -28,17 +28,25 @@ interface AppState {
 
   // Conversations for the current workspace
   conversations: ConversationResponse[];
-  setConversations: (convs: ConversationResponse[]) => void;
+  conversationsHasMore: boolean;
+  conversationsLoading: boolean;
+  setConversations: (convs: ConversationResponse[], hasMore?: boolean) => void;
+  appendConversations: (convs: ConversationResponse[], hasMore: boolean) => void;
   updateConversationInList: (id: string, patch: Partial<ConversationResponse>) => void;
+  removeConversationFromList: (id: string) => void;
 
   // Presets (global)
   presets: PresetResponse[];
   setPresets: (presets: PresetResponse[]) => void;
 
-  // Sidebar collapse
+  // Sidebar collapse (desktop)
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+
+  // Mobile sidebar sheet
+  mobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -69,12 +77,24 @@ export const useAppStore = create<AppState>()(
 
       // Conversations
       conversations: [],
-      setConversations: (convs) => set({ conversations: convs }),
+      conversationsHasMore: false,
+      conversationsLoading: false,
+      setConversations: (convs, hasMore) =>
+        set({ conversations: convs, conversationsHasMore: hasMore ?? false }),
+      appendConversations: (convs, hasMore) =>
+        set((state) => ({
+          conversations: [...state.conversations, ...convs],
+          conversationsHasMore: hasMore,
+        })),
       updateConversationInList: (id, patch) =>
         set((state) => ({
           conversations: state.conversations.map((c) =>
             c.conversation_id === id ? { ...c, ...patch } : c,
           ),
+        })),
+      removeConversationFromList: (id) =>
+        set((state) => ({
+          conversations: state.conversations.filter((c) => c.conversation_id !== id),
         })),
 
       // Presets
@@ -85,6 +105,10 @@ export const useAppStore = create<AppState>()(
       sidebarOpen: true,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+
+      // Mobile sidebar
+      mobileSidebarOpen: false,
+      setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
     }),
     {
       name: "netherbrain-app",

@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 import { highlightCode } from "@/lib/highlighter";
 import { useAppStore } from "@/stores/app";
+import ImageLightbox from "@/components/ImageLightbox";
 
 // ---------------------------------------------------------------------------
 // Code block with Shiki highlighting and copy button
@@ -90,6 +91,8 @@ interface MarkdownContentProps {
 }
 
 export default memo(function MarkdownContent({ content }: MarkdownContentProps) {
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+
   return (
     <div className="chat-prose max-w-none break-words">
       <ReactMarkdown
@@ -119,10 +122,28 @@ export default memo(function MarkdownContent({ content }: MarkdownContentProps) 
               </a>
             );
           },
+          // Images: clickable for lightbox
+          img({ src, alt, ...props }) {
+            return (
+              <img
+                src={src}
+                alt={alt}
+                {...props}
+                className="cursor-pointer rounded-lg hover:opacity-90 transition-opacity max-h-96"
+                onClick={() => src && setLightboxSrc(src)}
+              />
+            );
+          },
         }}
       >
         {content}
       </ReactMarkdown>
+
+      <ImageLightbox
+        src={lightboxSrc ?? ""}
+        open={!!lightboxSrc}
+        onClose={() => setLightboxSrc(null)}
+      />
     </div>
   );
 });

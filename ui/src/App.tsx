@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -6,14 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Sidebar from "@/components/layout/Sidebar";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import Chat from "@/pages/Chat";
-import Settings from "@/pages/Settings";
+const Settings = lazy(() => import("@/pages/Settings"));
+const Files = lazy(() => import("@/pages/Files"));
 import Login from "@/pages/Login";
-import Files from "@/pages/Files";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useAppStore } from "@/stores/app";
+import { useIsMobile } from "@/lib/hooks";
 import { changePassword, getMe } from "@/api/auth";
 import { ApiError } from "@/api/client";
-import { Bot } from "lucide-react";
+import { Bot, Loader2 } from "lucide-react";
+
+function PageFallback() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
 
 // -- Force change password (first login) ------------------------------------
 
@@ -120,18 +131,55 @@ function ForceChangePassword() {
 // -- App shell (authenticated) -----------------------------------------------
 
 function AppShell() {
-  return (
-    <div className="flex h-full overflow-hidden">
-      <Sidebar />
-      <main className="flex-1 overflow-hidden">
+  const isMobile = useIsMobile();
+  const mobileSidebarOpen = useAppStore((s) => s.mobileSidebarOpen);
+  const setMobileSidebarOpen = useAppStore((s) => s.setMobileSidebarOpen);
+
+  const mainContent = (
+    <main className="flex-1 overflow-hidden">
+      <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Chat />} />
           <Route path="/c/:id" element={<Chat />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/files/:projectId" element={<Files />} />
+          <Route
+            path="/settings"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <Settings />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/files/:projectId"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <Files />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </main>
+      </ErrorBoundary>
+    </main>
+  );
+
+  if (isMobile) {
+    return (
+      <div className="flex h-full overflow-hidden">
+        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+          <SheetContent side="left" className="w-[280px] p-0 gap-0" showCloseButton={false}>
+            <Sidebar onNavigate={() => setMobileSidebarOpen(false)} />
+          </SheetContent>
+        </Sheet>
+        {mainContent}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full overflow-hidden">
+      <Sidebar />
+      {mainContent}
     </div>
   );
 }

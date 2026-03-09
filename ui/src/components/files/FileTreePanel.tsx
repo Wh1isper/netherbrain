@@ -1,14 +1,29 @@
 /**
- * FileTreePanel -- sidebar file explorer with drag-and-drop upload.
- *
- * Follows the same visual language as the main Sidebar:
- * bg-sidebar, sidebar-border, sidebar-accent hover/active states.
+ * FileTreePanel -- sidebar file explorer with drag-and-drop upload,
+ * multi-select, batch operations, and create new file/directory.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ChevronRight, File, Folder, FolderOpen, RefreshCw, Upload } from "lucide-react";
+import {
+  ChevronRight,
+  CheckSquare,
+  Download,
+  File,
+  FilePlus,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  RefreshCw,
+  Square,
+  SquareCheck,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFilesStore } from "@/stores/files";
@@ -24,17 +39,32 @@ interface FileTreeItemProps {
   depth: number;
   projectId: string;
   selectedFile: string | null;
+  selectMode: boolean;
+  selectedPaths: Set<string>;
 }
 
-function FileTreeItem({ entry, depth, projectId, selectedFile }: FileTreeItemProps) {
-  const { treeData, expandedDirs, loadingDirs, toggleDir, selectFile } = useFilesStore();
+function FileTreeItem({
+  entry,
+  depth,
+  projectId,
+  selectedFile,
+  selectMode,
+  selectedPaths,
+}: FileTreeItemProps) {
+  const { treeData, expandedDirs, loadingDirs, toggleDir, selectFile, togglePathSelection } =
+    useFilesStore();
 
   const isExpanded = expandedDirs.has(entry.path);
   const isLoading = loadingDirs.has(entry.path);
   const children = treeData[entry.path];
   const isSelected = selectedFile === entry.path;
+  const isChecked = selectedPaths.has(entry.path);
 
   const handleClick = () => {
+    if (selectMode) {
+      togglePathSelection(entry.path);
+      return;
+    }
     if (entry.type === "directory") {
       void toggleDir(projectId, entry.path);
     } else {
@@ -49,13 +79,21 @@ function FileTreeItem({ entry, depth, projectId, selectedFile }: FileTreeItemPro
         className={[
           "w-full flex items-center gap-1.5 px-2 py-1 text-sm rounded-lg transition-colors text-left",
           "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-          isSelected
+          isSelected && !selectMode
             ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-            : "text-muted-foreground",
+            : isChecked
+              ? "bg-primary/10 text-sidebar-accent-foreground"
+              : "text-muted-foreground",
         ].join(" ")}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
       >
-        {entry.type === "directory" ? (
+        {selectMode ? (
+          isChecked ? (
+            <SquareCheck className="h-4 w-4 shrink-0 text-primary" />
+          ) : (
+            <Square className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+          )
+        ) : entry.type === "directory" ? (
           <>
             <ChevronRight
               className={[
@@ -79,7 +117,7 @@ function FileTreeItem({ entry, depth, projectId, selectedFile }: FileTreeItemPro
       </button>
 
       {/* Children */}
-      {entry.type === "directory" && isExpanded && (
+      {entry.type === "directory" && isExpanded && !selectMode && (
         <div>
           {isLoading ? (
             <div style={{ paddingLeft: `${8 + (depth + 1) * 16}px` }} className="py-1 space-y-1">
@@ -101,11 +139,62 @@ function FileTreeItem({ entry, depth, projectId, selectedFile }: FileTreeItemPro
                 depth={depth + 1}
                 projectId={projectId}
                 selectedFile={selectedFile}
+                selectMode={selectMode}
+                selectedPaths={selectedPaths}
               />
             ))
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Create new dialog (inline input)
+// ---------------------------------------------------------------------------
+
+function InlineCreateInput({
+  type,
+  onSubmit,
+  onCancel,
+}: {
+  type: "file" | "directory";
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleSubmit = () => {
+    const trimmed = value.trim();
+    if (trimmed) onSubmit(trimmed);
+    else onCancel();
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1">
+      {type === "directory" ? (
+        <FolderPlus className="h-4 w-4 shrink-0 text-amber-500" />
+      ) : (
+        <FilePlus className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+      )}
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleSubmit();
+          if (e.key === "Escape") onCancel();
+        }}
+        onBlur={handleSubmit}
+        placeholder={type === "directory" ? "folder name" : "file name"}
+        className="h-6 text-xs rounded px-1.5"
+      />
     </div>
   );
 }
@@ -119,10 +208,26 @@ interface FileTreePanelProps {
 }
 
 export default function FileTreePanel({ projectId }: FileTreePanelProps) {
-  const { treeData, loadingDirs, selectedFile, loadDirectory, refreshDir } = useFilesStore();
+  const {
+    treeData,
+    loadingDirs,
+    selectedFile,
+    selectMode,
+    selectedPaths,
+    loadDirectory,
+    refreshDir,
+    toggleSelectMode,
+    selectAllInDir,
+    clearSelection,
+    deleteSelected,
+    downloadSelected,
+    createNewFile,
+    createNewDir,
+  } = useFilesStore();
 
   const uploadRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [creating, setCreating] = useState<"file" | "directory" | null>(null);
 
   const rootEntries = treeData[""] ?? null;
   const isRootLoading = loadingDirs.has("");
@@ -163,6 +268,39 @@ export default function FileTreePanel({ projectId }: FileTreePanelProps) {
     if (uploadRef.current) uploadRef.current.value = "";
   };
 
+  const handleCreateSubmit = useCallback(
+    async (name: string) => {
+      if (!creating) return;
+      const parentDir = selectedFile
+        ? (() => {
+            const idx = selectedFile.lastIndexOf("/");
+            return idx === -1 ? "" : selectedFile.slice(0, idx);
+          })()
+        : "";
+      const fullPath = parentDir ? `${parentDir}/${name}` : name;
+
+      if (creating === "directory") {
+        await createNewDir(projectId, fullPath);
+      } else {
+        await createNewFile(projectId, fullPath);
+      }
+      setCreating(null);
+    },
+    [creating, selectedFile, projectId, createNewDir, createNewFile],
+  );
+
+  const handleDeleteSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    const ok = window.confirm(`Delete ${selectedPaths.size} item(s)? This cannot be undone.`);
+    if (!ok) return;
+    await deleteSelected(projectId);
+    toast.success("Deleted successfully");
+  }, [selectedPaths.size, deleteSelected, projectId]);
+
+  const handleDownloadSelected = useCallback(async () => {
+    await downloadSelected(projectId);
+  }, [downloadSelected, projectId]);
+
   // -- Drag and drop --------------------------------------------------------
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -199,10 +337,37 @@ export default function FileTreePanel({ projectId }: FileTreePanelProps) {
       onDrop={handleDrop}
     >
       {/* Toolbar */}
-      <div className="flex items-center gap-1 px-2 py-2 border-b border-sidebar-border shrink-0">
+      <div className="flex items-center gap-0.5 px-2 py-2 border-b border-sidebar-border shrink-0">
         <span className="flex-1 text-xs font-medium text-muted-foreground uppercase tracking-wider px-1">
           Explorer
         </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+          onClick={() => setCreating("file")}
+          title="New file"
+        >
+          <FilePlus className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+          onClick={() => setCreating("directory")}
+          title="New folder"
+        >
+          <FolderPlus className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant={selectMode ? "secondary" : "ghost"}
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+          onClick={toggleSelectMode}
+          title={selectMode ? "Exit select mode" : "Select files"}
+        >
+          <CheckSquare className="h-3.5 w-3.5" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -224,11 +389,73 @@ export default function FileTreePanel({ projectId }: FileTreePanelProps) {
         <input ref={uploadRef} type="file" multiple className="hidden" onChange={handleFileInput} />
       </div>
 
+      {/* Multi-select action bar */}
+      {selectMode && (
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-sidebar-border bg-sidebar-accent/50 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs px-2"
+            onClick={() => selectAllInDir("")}
+          >
+            Select all
+          </Button>
+          {selectedPaths.size > 0 && (
+            <>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                {selectedPaths.size}
+              </Badge>
+              <div className="flex-1" />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                onClick={() => void handleDownloadSelected()}
+                title="Download selected"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-destructive hover:text-destructive"
+                onClick={() => void handleDeleteSelected()}
+                title="Delete selected"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              clearSelection();
+              toggleSelectMode();
+            }}
+            title="Cancel"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
       {/* Drag overlay hint */}
       {dragOver && (
         <div className="px-3 py-2 text-xs text-primary font-medium border-b border-primary/20 bg-primary/5 shrink-0">
           Drop files to upload
         </div>
+      )}
+
+      {/* Inline create input */}
+      {creating && (
+        <InlineCreateInput
+          type={creating}
+          onSubmit={(name) => void handleCreateSubmit(name)}
+          onCancel={() => setCreating(null)}
+        />
       )}
 
       {/* Tree */}
@@ -256,6 +483,8 @@ export default function FileTreePanel({ projectId }: FileTreePanelProps) {
                 depth={0}
                 projectId={projectId}
                 selectedFile={selectedFile}
+                selectMode={selectMode}
+                selectedPaths={selectedPaths}
               />
             ))
           )}

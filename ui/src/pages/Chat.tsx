@@ -1,10 +1,14 @@
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { Menu, Bot, Sparkles, MessageSquare } from "lucide-react";
+import { toast } from "sonner";
 import { useChatStore, getProjectCache, mergeUsage } from "@/stores/chat";
 import { useAppStore } from "@/stores/app";
-import { listConversations, prepareFork } from "@/api/conversations";
+import { listConversations, prepareFork, updateConversation } from "@/api/conversations";
 import { updateWorkspace, listWorkspaces } from "@/api/workspaces";
 import type { InputPart } from "@/api/types";
+import { Button } from "@/components/ui/button";
+import { useIsMobile, useGlobalShortcuts } from "@/lib/hooks";
 import MessageList from "@/components/chat/MessageList";
 import ChatInput from "@/components/chat/ChatInput";
 import ConversationHeader from "@/components/chat/ConversationHeader";
@@ -88,7 +92,7 @@ export default function Chat() {
         workspaceId: currentWorkspaceId,
         limit: 50,
       });
-      setConversations(convs);
+      setConversations(convs, convs.length >= 50);
     } catch {
       // Best effort
     }
@@ -195,6 +199,7 @@ export default function Chat() {
       void refreshConversations();
     } catch (err) {
       console.error("Failed to fork conversation:", err);
+      toast.error("Failed to fork conversation");
     }
   }, [id, conversationId, currentWorkspaceId, clearChat, navigate, refreshConversations]);
 
@@ -205,13 +210,72 @@ export default function Chat() {
     void refreshConversations();
   }, [archiveConversation, clearChat, navigate, refreshConversations]);
 
+  const handleChangePreset = useCallback(
+    async (presetId: string) => {
+      const cid = id ?? conversationId;
+      if (!cid) return;
+      try {
+        await updateConversation(cid, { default_preset_id: presetId });
+        setSelectedPresetId(presetId);
+        // Update conversation in sidebar list
+        useAppStore.setState((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.conversation_id === cid ? { ...c, default_preset_id: presetId } : c,
+          ),
+        }));
+      } catch (err) {
+        console.error("Failed to change preset:", err);
+        toast.error("Failed to change preset");
+      }
+    },
+    [id, conversationId, setSelectedPresetId],
+  );
+
+  // -----------------------------------------------------------------------
+  // Mobile helpers
+  // -----------------------------------------------------------------------
+
+  const isMobile = useIsMobile();
+  const setMobileSidebarOpen = useAppStore((s) => s.setMobileSidebarOpen);
+  const hasConversation = !!(id || conversationId);
+
+  // -----------------------------------------------------------------------
+  // Keyboard shortcuts
+  // -----------------------------------------------------------------------
+
+  useGlobalShortcuts({
+    onNewChat: useCallback(() => {
+      clearChat();
+      navigate("/");
+    }, [clearChat, navigate]),
+    onFocusInput: useCallback(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>("textarea[placeholder]");
+      textarea?.focus();
+    }, []),
+  });
+
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
 
   return (
     <div className="flex h-full flex-col">
-      {(id || conversationId) && (
+      {/* Mobile header: hamburger (new chat) or conversation header with back */}
+      {isMobile && !hasConversation && (
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setMobileSidebarOpen(true)}
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+          <span className="text-sm font-semibold text-foreground">Netherbrain</span>
+        </div>
+      )}
+
+      {hasConversation && (
         <ConversationHeader
           conversationId={id ?? conversationId}
           title={title}
@@ -222,15 +286,45 @@ export default function Chat() {
           onFork={handleFork}
           onArchive={handleArchive}
           onFired={handleFired}
+          onChangePreset={handleChangePreset}
+          isMobile={isMobile}
+          onOpenSidebar={() => setMobileSidebarOpen(true)}
         />
       )}
 
-      <MessageList
-        messages={messages}
-        hasMoreMessages={hasMoreMessages}
-        loadingMore={loadingMore}
-        onLoadMore={loadMoreMessages}
-      />
+      {hasConversation ? (
+        <MessageList
+          messages={messages}
+          hasMoreMessages={hasMoreMessages}
+          loadingMore={loadingMore}
+          onLoadMore={loadMoreMessages}
+        />
+      ) : (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="max-w-md text-center space-y-6">
+            <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 mx-auto">
+              <Bot className="h-7 w-7 text-primary" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-foreground">Welcome to Netherbrain</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Start a conversation below. Your messages will be processed by the selected preset's
+                model.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <MessageSquare className="h-3.5 w-3.5" />
+                <span>Chat with AI agents</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Tool use and code execution</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <UsageIndicator
         usage={mergeUsage(conversationUsage, usage)}

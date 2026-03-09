@@ -370,6 +370,64 @@ def resolve_download(
     return target, mime_type
 
 
+def delete_path(
+    resolver: ProjectPathResolver,
+    project_id: str,
+    path: str,
+) -> None:
+    """Delete a file or directory (recursively).
+
+    Raises ``LookupError`` if the path does not exist.
+    Raises ``PermissionError`` if path escapes project directory.
+    Raises ``ValueError`` if attempting to delete the project root.
+    """
+    if not path or path in (".", "/"):
+        msg = "Cannot delete project root"
+        raise ValueError(msg)
+
+    target = resolver.resolve(project_id, path)
+
+    if not target.exists():
+        msg = f"Path not found: {path}"
+        raise LookupError(msg)
+
+    import shutil
+
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+
+
+def create_directory(
+    resolver: ProjectPathResolver,
+    project_id: str,
+    path: str,
+) -> None:
+    """Create a directory (including parents).
+
+    Raises ``PermissionError`` if path escapes project directory.
+    Raises ``ValueError`` if the directory already exists.
+    """
+    if not path or path in (".", "/"):
+        msg = "Cannot create project root"
+        raise ValueError(msg)
+
+    root_real = resolver.project_root(project_id)
+    target = (root_real / path).resolve()
+
+    # Safety: ensure target is within project root
+    if target != root_real and root_real not in target.parents:
+        msg = "Path escapes project directory"
+        raise PermissionError(msg)
+
+    if target.exists():
+        msg = f"Already exists: {path}"
+        raise ValueError(msg)
+
+    target.mkdir(parents=True, exist_ok=False)
+
+
 def build_archive(
     resolver: ProjectPathResolver,
     project_id: str,

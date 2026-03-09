@@ -91,6 +91,19 @@ export function getDownloadUrl(projectId: string, path: string): string {
   return url.toString();
 }
 
+/** Delete one or more files or directories. */
+export async function deletePaths(
+  projectId: string,
+  paths: string[],
+): Promise<{ deleted: number; errors: string[] }> {
+  return api.post<{ deleted: number; errors: string[] }>(`${base(projectId)}/delete`, { paths });
+}
+
+/** Create a new directory. */
+export async function createDirectory(projectId: string, path: string): Promise<{ path: string }> {
+  return api.post<{ path: string }>(`${base(projectId)}/mkdir`, { path });
+}
+
 /** Download multiple paths as a zip archive blob. */
 export async function downloadArchive(projectId: string, paths: string[]): Promise<Blob> {
   const token = getAuthToken();

@@ -12,9 +12,15 @@ import {
   LogOut,
   Pencil,
   FolderOpen,
+  Search,
+  Archive,
+  MoreHorizontal,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { updateConversation } from "@/api/conversations";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
@@ -30,6 +36,16 @@ import { listConversations } from "@/api/conversations";
 import { listPresets } from "@/api/presets";
 import type { ConversationResponse } from "@/api/types";
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const CONVERSATIONS_PAGE_SIZE = 50;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60_000);
@@ -42,7 +58,23 @@ function formatRelativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
-function ConversationItem({ conv, active }: { conv: ConversationResponse; active: boolean }) {
+// ---------------------------------------------------------------------------
+// ConversationItem
+// ---------------------------------------------------------------------------
+
+function ConversationItem({
+  conv,
+  active,
+  isStreaming,
+  onNavigate,
+  onArchive,
+}: {
+  conv: ConversationResponse;
+  active: boolean;
+  isStreaming: boolean;
+  onNavigate?: () => void;
+  onArchive: (id: string) => void;
+}) {
   const title = conv.title ?? "New conversation";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
@@ -58,16 +90,14 @@ function ConversationItem({ conv, active }: { conv: ConversationResponse; active
       updateInList(conv.conversation_id, { title: updated.title });
     } catch (err) {
       console.error("Failed to rename conversation:", err);
+      toast.error("Failed to rename conversation");
       setDraft(conv.title ?? "New conversation");
     }
   };
 
-  const startEditing = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const startEditing = () => {
     setDraft(conv.title ?? "");
     setEditing(true);
-    // Focus after render
     requestAnimationFrame(() => inputRef.current?.select());
   };
 
@@ -97,6 +127,8 @@ function ConversationItem({ conv, active }: { conv: ConversationResponse; active
   return (
     <NavLink
       to={`/c/${conv.conversation_id}`}
+      onClick={onNavigate}
+      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 36px" }}
       className={[
         "group flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -105,14 +137,50 @@ function ConversationItem({ conv, active }: { conv: ConversationResponse; active
           : "text-muted-foreground",
       ].join(" ")}
     >
+      {/* Active session indicator (pulsing dot) */}
+      {isStreaming && (
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+        </span>
+      )}
       <span className="flex-1 truncate">{title}</span>
-      <button
-        onClick={startEditing}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-sidebar-border"
-        title="Rename"
-      >
-        <Pencil className="h-3 w-3" />
-      </button>
+
+      {/* Actions dropdown (visible on hover) */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            onClick={(e) => e.preventDefault()}
+            className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-sidebar-border"
+            title="Actions"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-36">
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.preventDefault();
+              startEditing();
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5 mr-2" />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.preventDefault();
+              onArchive(conv.conversation_id);
+            }}
+            className="text-destructive focus:text-destructive"
+          >
+            <Archive className="h-3.5 w-3.5 mr-2" />
+            Archive
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       <span className="shrink-0 text-[11px] text-muted-foreground/50 group-hover:hidden">
         {formatRelativeTime(conv.updated_at)}
       </span>
@@ -120,7 +188,11 @@ function ConversationItem({ conv, active }: { conv: ConversationResponse; active
   );
 }
 
-export default function Sidebar() {
+// ---------------------------------------------------------------------------
+// Sidebar
+// ---------------------------------------------------------------------------
+
+export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const { id: activeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const {
@@ -133,11 +205,26 @@ export default function Sidebar() {
     currentWorkspaceId,
     setCurrentWorkspace,
     conversations,
+    conversationsHasMore,
     setConversations,
+    appendConversations,
+    removeConversationFromList,
     setPresets,
     user,
     logout,
   } = useAppStore();
+
+  // Streaming state from chat store (for active session indicator)
+  const streamingConversationId = useChatStore((s) =>
+    s.streamingState === "streaming" || s.streamingState === "connecting" ? s.conversationId : null,
+  );
+
+  // Search / filter
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchVisible, setSearchVisible] = useState(false);
+
+  // Load more state
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const currentWorkspace = workspaces.find((w) => w.workspace_id === currentWorkspaceId);
 
@@ -168,9 +255,9 @@ export default function Sidebar() {
     try {
       const convs = await listConversations({
         workspaceId: currentWorkspaceId,
-        limit: 50,
+        limit: CONVERSATIONS_PAGE_SIZE,
       });
-      setConversations(convs);
+      setConversations(convs, convs.length >= CONVERSATIONS_PAGE_SIZE);
     } catch (err) {
       console.error("Failed to load conversations:", err);
     }
@@ -184,9 +271,32 @@ export default function Sidebar() {
     void loadConversations();
   }, [loadConversations]);
 
+  // Reset search when workspace changes
+  useEffect(() => {
+    setSearchQuery("");
+  }, [currentWorkspaceId]);
+
+  const handleLoadMore = useCallback(async () => {
+    if (!currentWorkspaceId || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const convs = await listConversations({
+        workspaceId: currentWorkspaceId,
+        limit: CONVERSATIONS_PAGE_SIZE,
+        offset: conversations.length,
+      });
+      appendConversations(convs, convs.length >= CONVERSATIONS_PAGE_SIZE);
+    } catch (err) {
+      console.error("Failed to load more conversations:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [currentWorkspaceId, conversations.length, loadingMore, appendConversations]);
+
   const handleNewChat = () => {
     useChatStore.getState().clearChat();
     navigate("/");
+    onNavigate?.();
   };
 
   const handleSwitchWorkspace = (id: string) => {
@@ -198,8 +308,34 @@ export default function Sidebar() {
     navigate("/login");
   };
 
+  const handleArchiveConversation = useCallback(
+    async (convId: string) => {
+      try {
+        await updateConversation(convId, { status: "archived" });
+        removeConversationFromList(convId);
+        // If the archived conversation is currently open, navigate away
+        if (convId === activeId) {
+          useChatStore.getState().clearChat();
+          navigate("/");
+        }
+      } catch (err) {
+        console.error("Failed to archive conversation:", err);
+        toast.error("Failed to archive conversation");
+      }
+    },
+    [activeId, navigate, removeConversationFromList],
+  );
+
+  // Filter conversations by search query (client-side)
+  const filteredConversations = searchQuery.trim()
+    ? conversations.filter((c) => {
+        const t = (c.title ?? "New conversation").toLowerCase();
+        return t.includes(searchQuery.trim().toLowerCase());
+      })
+    : conversations;
+
   // -----------------------------------------------------------------------
-  // Collapsed sidebar — slim icon bar
+  // Collapsed sidebar -- slim icon bar
   // -----------------------------------------------------------------------
 
   if (!sidebarOpen) {
@@ -236,6 +372,18 @@ export default function Sidebar() {
         <span className="flex-1 font-semibold text-sm text-sidebar-foreground tracking-tight">
           Netherbrain
         </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            setSearchVisible((v) => !v);
+            if (searchVisible) setSearchQuery("");
+          }}
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+          title="Search conversations"
+        >
+          <Search className="h-4 w-4" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -287,30 +435,80 @@ export default function Sidebar() {
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/settings")}>
+            <DropdownMenuItem
+              onClick={() => {
+                navigate("/settings");
+                onNavigate?.();
+              }}
+            >
               Manage workspaces
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
+      {/* Search input */}
+      {searchVisible && (
+        <div className="px-3 pb-2">
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter conversations..."
+            className="h-8 text-sm rounded-xl"
+            autoFocus
+          />
+        </div>
+      )}
+
       {/* Conversation list */}
       <ScrollArea className="flex-1 px-2">
         <div className="space-y-0.5 py-1">
-          {conversations.length === 0 ? (
+          {filteredConversations.length === 0 ? (
             <p className="px-3 py-6 text-xs text-muted-foreground text-center leading-relaxed">
-              No conversations yet.
-              <br />
-              Start a new chat to begin.
+              {searchQuery.trim() ? (
+                "No matching conversations."
+              ) : (
+                <>
+                  No conversations yet.
+                  <br />
+                  Start a new chat to begin.
+                </>
+              )}
             </p>
           ) : (
-            conversations.map((conv) => (
-              <ConversationItem
-                key={conv.conversation_id}
-                conv={conv}
-                active={conv.conversation_id === activeId}
-              />
-            ))
+            <>
+              {filteredConversations.map((conv) => (
+                <ConversationItem
+                  key={conv.conversation_id}
+                  conv={conv}
+                  active={conv.conversation_id === activeId}
+                  isStreaming={conv.conversation_id === streamingConversationId}
+                  onNavigate={onNavigate}
+                  onArchive={handleArchiveConversation}
+                />
+              ))}
+              {/* Load more button */}
+              {conversationsHasMore && !searchQuery.trim() && (
+                <div className="px-3 py-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full h-7 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => void handleLoadMore()}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      "Load more"
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </ScrollArea>
@@ -325,6 +523,7 @@ export default function Sidebar() {
             <NavLink
               key={pid}
               to={`/files/${pid}`}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 [
                   "flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm transition-colors",
@@ -360,7 +559,10 @@ export default function Sidebar() {
           variant="ghost"
           size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
-          onClick={() => navigate("/settings")}
+          onClick={() => {
+            navigate("/settings");
+            onNavigate?.();
+          }}
           title="Settings"
         >
           <Settings className="h-4 w-4" />

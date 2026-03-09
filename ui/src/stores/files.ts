@@ -5,7 +5,14 @@
 
 import { create } from "zustand";
 import type { FileEntry, FileReadResponse } from "../api/types";
-import { listFiles, readFile, writeFile } from "../api/files";
+import {
+  listFiles,
+  readFile,
+  writeFile,
+  deletePaths,
+  createDirectory,
+  downloadArchive,
+} from "../api/files";
 import { shouldReadContent } from "../components/files/file-utils";
 
 interface FilesState {
@@ -27,6 +34,10 @@ interface FilesState {
   dirty: boolean; // unsaved changes
   saving: boolean;
 
+  // Multi-select
+  selectMode: boolean;
+  selectedPaths: Set<string>;
+
   // Error state
   error: string | null;
 
@@ -39,7 +50,16 @@ interface FilesState {
   setEditorContent: (content: string) => void;
   saveFile: (projectId: string) => Promise<void>;
   discardChanges: () => void;
+  // Multi-select actions
+  toggleSelectMode: () => void;
+  togglePathSelection: (path: string) => void;
+  selectAllInDir: (dirPath: string) => void;
   clearSelection: () => void;
+  deleteSelected: (projectId: string) => Promise<void>;
+  downloadSelected: (projectId: string) => Promise<void>;
+  createNewFile: (projectId: string, path: string) => Promise<void>;
+  createNewDir: (projectId: string, path: string) => Promise<void>;
+  clearFileSelection: () => void;
   reset: () => void;
 }
 
@@ -54,6 +74,8 @@ const initialState = {
   editorContent: "",
   dirty: false,
   saving: false,
+  selectMode: false,
+  selectedPaths: new Set<string>(),
   error: null as string | null,
 };
 
@@ -208,7 +230,7 @@ export const useFilesStore = create<FilesState>()((set, get) => ({
     });
   },
 
-  clearSelection: () => {
+  clearFileSelection: () => {
     const { dirty } = get();
     if (dirty) {
       const ok = window.confirm("You have unsaved changes. Discard?");
@@ -224,12 +246,109 @@ export const useFilesStore = create<FilesState>()((set, get) => ({
     });
   },
 
+  // Multi-select
+  toggleSelectMode: () =>
+    set((s) => ({
+      selectMode: !s.selectMode,
+      selectedPaths: new Set<string>(),
+    })),
+
+  togglePathSelection: (path) =>
+    set((s) => {
+      const next = new Set(s.selectedPaths);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return { selectedPaths: next };
+    }),
+
+  selectAllInDir: (dirPath) =>
+    set((s) => {
+      const entries = s.treeData[dirPath];
+      if (!entries) return s;
+      const next = new Set(s.selectedPaths);
+      const allSelected = entries.every((e) => next.has(e.path));
+      for (const e of entries) {
+        if (allSelected) next.delete(e.path);
+        else next.add(e.path);
+      }
+      return { selectedPaths: next };
+    }),
+
+  clearSelection: () => set({ selectedPaths: new Set<string>() }),
+
+  deleteSelected: async (projectId) => {
+    const { selectedPaths, refreshDir } = get();
+    if (selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    try {
+      await deletePaths(projectId, paths);
+      set({ selectedPaths: new Set<string>(), selectMode: false });
+      // Refresh affected parent directories
+      const parentDirs = new Set(
+        paths.map((p) => {
+          const idx = p.lastIndexOf("/");
+          return idx === -1 ? "" : p.slice(0, idx);
+        }),
+      );
+      for (const d of parentDirs) {
+        await refreshDir(projectId, d);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      set({ error: msg });
+    }
+  },
+
+  downloadSelected: async (projectId) => {
+    const { selectedPaths } = get();
+    if (selectedPaths.size === 0) return;
+    try {
+      const blob = await downloadArchive(projectId, Array.from(selectedPaths));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${projectId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      set({ error: msg });
+    }
+  },
+
+  createNewFile: async (projectId, path) => {
+    const { refreshDir } = get();
+    try {
+      await writeFile(projectId, path, "");
+      const parentDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      await refreshDir(projectId, parentDir);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      set({ error: msg });
+    }
+  },
+
+  createNewDir: async (projectId, path) => {
+    const { refreshDir } = get();
+    try {
+      await createDirectory(projectId, path);
+      const parentDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      await refreshDir(projectId, parentDir);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      set({ error: msg });
+    }
+  },
+
   reset: () => {
     set({
       ...initialState,
       treeData: {},
       expandedDirs: new Set(),
       loadingDirs: new Set(),
+      selectedPaths: new Set(),
     });
   },
 }));

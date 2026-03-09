@@ -120,7 +120,7 @@ export default function PreviewPanel({ projectId }: PreviewPanelProps) {
     setEditorContent,
     saveFile,
     discardChanges,
-    clearSelection,
+    clearFileSelection,
   } = useFilesStore();
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -285,7 +285,7 @@ export default function PreviewPanel({ projectId }: PreviewPanelProps) {
           variant="ghost"
           size="icon"
           className="h-7 w-7 md:hidden rounded-lg text-muted-foreground hover:text-foreground"
-          onClick={clearSelection}
+          onClick={clearFileSelection}
           title="Back to file tree"
         >
           <ArrowLeft className="h-4 w-4" />
