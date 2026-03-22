@@ -40,13 +40,21 @@ from netherbrain.agent_runtime.execution.events import (
     PipelineStarted,
     PipelineUsage,
 )
+from netherbrain.agent_runtime.execution.external_tools import create_external_meta_tool
 from netherbrain.agent_runtime.execution.hooks import UsageSnapshotEmitter
 from netherbrain.agent_runtime.execution.input import map_input_to_prompt
 from netherbrain.agent_runtime.execution.runtime import create_service_runtime
-from netherbrain.agent_runtime.managers.mailbox import post_message
+from netherbrain.agent_runtime.managers.mailbox import count_pending, post_message
 from netherbrain.agent_runtime.models.enums import MailboxSourceType, SessionStatus, SessionType, Transport
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 from netherbrain.agent_runtime.models.session import ModelUsageSummary, RunSummary, SessionState, UsageSummary
+from netherbrain.agent_runtime.notifications import (
+    MailboxUpdated,
+    SessionCompleted,
+    SessionFailed,
+    SessionStarted,
+)
+from netherbrain.agent_runtime.notifications.publish import publish_notification
 from netherbrain.agent_runtime.streaming.compress import compress_display_messages
 from netherbrain.agent_runtime.streaming.protocols.agui import AGUIProtocol
 from netherbrain.agent_runtime.streaming.protocols.base import ProtocolAdapter
@@ -60,6 +68,7 @@ if TYPE_CHECKING:
     from ya_agent_sdk.agents.main import AgentRuntime, AgentStreamer
 
     from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
+    from netherbrain.agent_runtime.managers.execution import ExecutionManager
     from netherbrain.agent_runtime.managers.sessions import SessionManager
     from netherbrain.agent_runtime.models.api import ExternalToolSpec
     from netherbrain.agent_runtime.registry import SessionRegistry
@@ -439,10 +448,12 @@ async def _post_mailbox_if_subagent(
     session_id: str,
     conversation_id: str,
     status: SessionStatus,
+    redis: aioredis.Redis | None = None,
 ) -> None:
     """Post a mailbox message if this session is an async subagent.
 
     Called after commit / fail / interrupt to notify the parent conversation.
+    Also publishes a ``mailbox_updated`` notification via Redis Pub/Sub.
     """
     if subagent_name is None:
         return
@@ -454,18 +465,31 @@ async def _post_mailbox_if_subagent(
     )
 
     try:
-        await post_message(
+        row = await post_message(
             db,
             conversation_id=conversation_id,
             source_session_id=session_id,
             source_type=source_type,
             subagent_name=subagent_name,
         )
+        pending = await count_pending(db, conversation_id=conversation_id)
         logger.info(
             "Mailbox posted: subagent=%s, session=%s, type=%s",
             subagent_name,
             session_id,
             source_type,
+        )
+
+        await publish_notification(
+            redis,
+            MailboxUpdated(
+                conversation_id=conversation_id,
+                message_id=row.message_id,
+                source_session_id=session_id,
+                source_type=source_type.value,
+                subagent_name=subagent_name,
+                pending_count=pending,
+            ),
         )
     except Exception:
         logger.exception(
@@ -502,6 +526,8 @@ async def execute_session(  # noqa: C901
     redis: aioredis.Redis | None = None,
     external_tools: Sequence[ExternalToolSpec] | None = None,
     runtime_session: RuntimeSession | None = None,
+    execution_manager: ExecutionManager | None = None,
+    user_id: str | None = None,
 ) -> ExecutionResult:
     """Execute an agent session to completion.
 
@@ -585,19 +611,20 @@ async def execute_session(  # noqa: C901
             conversation_id=conversation_id,
             subagent_refs=config.subagents.refs,
             async_subagent_registry=async_subagent_registry,
-            session_manager=session_manager,
-            registry=registry,
-            settings=settings,
+            execution_manager=execution_manager,
             session_factory=session_factory,
-            redis=redis,
+            subagent_transport=Transport.STREAM if redis else Transport.SSE,
+            parent_project_ids=config.project_ids,
+            parent_environment_mode=config.environment_mode,
+            parent_container_id=config.container_id,
+            parent_container_workdir=config.container_workdir,
+            user_id=user_id,
         )
         delegate_tool = create_spawn_delegate_tool(delegate_ctx)
         extra_agent_tools = [delegate_tool]
 
     # Build external meta tool if caller injected external tools.
     if external_tools:
-        from netherbrain.agent_runtime.execution.external_tools import create_external_meta_tool
-
         meta_tool = create_external_meta_tool(external_tools)
         if extra_agent_tools is None:
             extra_agent_tools = [meta_tool]
@@ -610,6 +637,8 @@ async def execute_session(  # noqa: C901
         state=resumable_state,
         resource_state=resource_state,
         extra_agent_tools=extra_agent_tools,
+        conversation_id=conversation_id if subagent_name is None else None,
+        user_id=user_id,
     )
 
     # -- Map input -------------------------------------------------------------
@@ -663,6 +692,7 @@ async def execute_session(  # noqa: C901
     exported_summary: RunSummary | None = None
     exported_pipeline_usage: PipelineUsage | None = None
     is_deferred = False
+    _session_type_str = "async_subagent" if subagent_name else "agent"
 
     try:
         # -- Emit PipelineStarted (flows through adapter.on_event) -------------
@@ -675,6 +705,17 @@ async def execute_session(  # noqa: C901
                 )
             )
             await _deliver(adapter.on_event(started), event_transport)
+
+        # -- Publish session_started notification ------------------------------
+        await publish_notification(
+            redis,
+            SessionStarted(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                session_type=_session_type_str,
+                transport=transport.value,
+            ),
+        )
 
         async with stream_agent(
             runtime,
@@ -734,6 +775,18 @@ async def execute_session(  # noqa: C901
             session_id=session_id,
             conversation_id=conversation_id,
             status=status,
+            redis=redis,
+        )
+
+        # -- Publish session_completed notification ----------------------------
+        await publish_notification(
+            redis,
+            SessionCompleted(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                session_type=_session_type_str,
+                final_message_preview=exported_final[:200] if exported_final else None,
+            ),
         )
 
         # -- Emit PipelineCompleted (flows through adapter.on_event) -----------
@@ -793,6 +846,25 @@ async def execute_session(  # noqa: C901
             session_id=session_id,
             conversation_id=conversation_id,
             status=result.status,
+            redis=redis,
+        )
+
+        # -- Publish session notification (interrupted) ------------------------
+        await publish_notification(
+            redis,
+            SessionCompleted(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                session_type=_session_type_str,
+                final_message_preview=exported_final[:200] if exported_final else None,
+            )
+            if result.status == SessionStatus.COMMITTED
+            else SessionFailed(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                session_type=_session_type_str,
+                error="Session interrupted",
+            ),
         )
 
         return result
@@ -809,6 +881,18 @@ async def execute_session(  # noqa: C901
             session_id=session_id,
             conversation_id=conversation_id,
             status=SessionStatus.FAILED,
+            redis=redis,
+        )
+
+        # -- Publish session_failed notification -------------------------------
+        await publish_notification(
+            redis,
+            SessionFailed(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                session_type="async_subagent" if subagent_name else "agent",
+                error="Session execution failed",
+            ),
         )
 
         # -- Emit run_error (failure) ------------------------------------------

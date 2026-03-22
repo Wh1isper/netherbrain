@@ -181,9 +181,11 @@ Async subagent results:
 Error: {error_2}
 ```
 
-## Spawn Delegate Tool
+## Delegate Tools
 
-Available when the agent preset enables async subagents.
+Available when the agent preset enables async subagents. Two tools are injected:
+
+### spawn_delegate
 
 1. Read `async_subagent_registry` from AgentContext to check for existing subagent
 2. Self-call: execute subagent session (subagent preset, `transport=stream`, same `conversation_id`)
@@ -191,6 +193,26 @@ Available when the agent preset enables async subagents.
 4. Return: "Task dispatched to '{name}' (session: {session_id})"
 
 Resume: if registry has an existing session for the subagent name, the new execution continues from that session (`parent_session_id = previous`).
+
+### steer_agent
+
+Send guidance to a running agent session via the REST API (`POST /sessions/{session_id}/steer`). Follows the same HTTP-based pattern as history tools (httpx + root auth token).
+
+1. Agent calls `steer_agent(session_id, message)`
+2. Tool sends `POST /sessions/{session_id}/steer` with the message
+3. The target session's SDK MessageBus receives the steering input
+4. Return: "Guidance sent to session '{session_id}'"
+
+The tool is a `BaseTool` registered alongside history tools (available for main agent sessions only). It accepts any `session_id`, decoupled from the subagent registry.
+
+### Environment Inheritance
+
+Async subagents inherit the parent agent's execution environment when their own preset does not explicitly configure it. Resolution priority for environment fields (`project_ids`, `environment_mode`, `container_id`, `container_workdir`):
+
+1. Override (per-request)
+2. Subagent preset (if explicitly set in the stored JSONB)
+3. Parent agent (fallback)
+4. Default (LOCAL mode, no container)
 
 ## Fan-out / Fan-in
 

@@ -116,6 +116,7 @@ class Conversation(Base):
         nullable=False,
     )
     title: Mapped[str | None]
+    summary: Mapped[str | None] = mapped_column(Text)
     default_preset_id: Mapped[str | None]
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
     status: Mapped[str] = mapped_column(server_default="active")

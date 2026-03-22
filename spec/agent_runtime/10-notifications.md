@@ -16,24 +16,28 @@ Without a push channel, the frontend must poll. A single WebSocket per client re
 
 ```mermaid
 flowchart TB
-    subgraph Sources["Event Sources"]
-        CO["Coordinator<br/>(session lifecycle)"]
-        MB["Mailbox Manager<br/>(message posted)"]
-        CV["Conversation Manager<br/>(metadata update)"]
+    subgraph Instance1["Instance 1"]
+        CO1["Coordinator"]
+        MB1["Mailbox Manager"]
+        WS1["WS Client A"]
     end
 
-    subgraph Bus["Notification Bus (in-process)"]
-        NB["NotificationBus<br/>(asyncio broadcast)"]
+    subgraph Instance2["Instance 2"]
+        CO2["Coordinator"]
+        WS2["WS Client B"]
+        WS3["WS Client C"]
     end
 
-    subgraph Delivery["WebSocket Delivery"]
-        WS1["WS Client 1"]
-        WS2["WS Client 2"]
+    subgraph Redis["Redis Pub/Sub"]
+        CH["nether:notifications"]
     end
 
-    CO & MB & CV -->|publish| NB
-    NB -->|broadcast| WS1 & WS2
+    CO1 & MB1 -->|PUBLISH| CH
+    CO2 -->|PUBLISH| CH
+    CH -->|SUBSCRIBE| WS1 & WS2 & WS3
 ```
+
+Notifications flow through Redis Pub/Sub, making the system multi-instance safe. Any instance can publish; all WebSocket handlers on all instances receive the notification. Redis Pub/Sub is fire-and-forget -- no persistence, no replay -- which matches notification semantics (transient signals, not durable state).
 
 ### Separation from AG-UI Streaming
 
@@ -42,9 +46,14 @@ flowchart TB
 | Scope       | Single session                 | All conversations                 |
 | Content     | Token deltas, tool args, usage | State change summaries            |
 | Granularity | Fine (per-token)               | Coarse (per-event)                |
-| Transport   | SSE or Redis Stream            | WebSocket                         |
+| Transport   | SSE or Redis Stream            | WebSocket via Redis Pub/Sub       |
 | Lifecycle   | Tied to session execution      | Tied to client connection         |
+| Persistence | Stream (short TTL)             | None (fire-and-forget)            |
 | Purpose     | Render streaming output        | Trigger UI updates (list, badges) |
+
+### Relationship to Redis Streams
+
+Redis Streams (`nether:stream:{session_id}`) deliver ordered, replayable AG-UI events for a single session. Redis Pub/Sub (`nether:notifications`) broadcasts ephemeral notifications across all instances. Different Redis primitives for different purposes -- no overlap.
 
 ## Endpoint
 
@@ -180,9 +189,9 @@ Protocol-level error. Non-fatal -- the connection stays open.
 }
 ```
 
-## Notification Bus
+## Notification Bus (Redis Pub/Sub)
 
-In-process asyncio broadcast. No external dependencies required for the single-instance architecture. Redis Pub/Sub can be added later for multi-instance scaling.
+All notifications flow through a single Redis Pub/Sub channel: `nether:notifications`.
 
 ```mermaid
 flowchart LR
@@ -192,28 +201,28 @@ flowchart LR
         P3["Conversation Manager"]
     end
 
-    subgraph Bus["NotificationBus"]
-        Q["broadcast()<br/>to all subscribers"]
+    subgraph Redis
+        CH["PUBLISH<br/>nether:notifications"]
     end
 
-    subgraph Subscribers
-        S1["WS Handler 1"]
-        S2["WS Handler 2"]
+    subgraph Subscribers["WebSocket Handlers"]
+        S1["Handler 1<br/>(Instance A)"]
+        S2["Handler 2<br/>(Instance B)"]
     end
 
-    P1 & P2 & P3 -->|"publish(event)"| Q
-    Q -->|"per-subscriber queue"| S1 & S2
+    P1 & P2 & P3 -->|"publish(JSON)"| CH
+    CH -->|"SUBSCRIBE message"| S1 & S2
 ```
 
-### Interface
+### Publish
 
-| Method      | Description                                                |
-| ----------- | ---------------------------------------------------------- |
-| subscribe   | Register a subscriber, returns an async iterator of events |
-| unsubscribe | Remove a subscriber                                        |
-| publish     | Broadcast a notification to all subscribers                |
+Publishers serialize the notification event as JSON and call `PUBLISH nether:notifications {json}`. This is a single async Redis call -- no waiting for subscribers, no delivery guarantees. If no one is listening, the message is silently dropped.
 
-Each subscriber gets its own bounded `asyncio.Queue`. On publish, the bus puts the event into every subscriber queue. If a queue is full (slow consumer), the oldest event is dropped with a warning.
+All Redis keys use the `nether:` application prefix, consistent with stream keys (`nether:stream:{session_id}`).
+
+### Subscribe
+
+Each WebSocket handler creates a dedicated Redis Pub/Sub subscription on connect and tears it down on disconnect. The handler reads messages from the subscription in a loop and forwards them to the WebSocket client.
 
 ### Integration Points
 
@@ -225,7 +234,7 @@ Each subscriber gets its own bounded `asyncio.Queue`. On publish, the bus puts t
 | Mailbox Manager      | mailbox_updated      | After `post_message` inserts a row          |
 | Conversation Manager | conversation_updated | After `update_conversation` modifies fields |
 
-Publishers import the bus via FastAPI dependency injection (same pattern as SessionRegistry). The bus is initialized in `app.py` lifespan and stored on `app.state`.
+Publishers use the shared Redis client from FastAPI dependency injection (same `redis.asyncio` client used elsewhere). No new singleton needed -- just a `publish_notification(redis, event)` helper function.
 
 ## WebSocket Handler
 
@@ -233,55 +242,58 @@ Publishers import the bus via FastAPI dependency injection (same pattern as Sess
 sequenceDiagram
     participant C as Client
     participant WS as WS Handler
-    participant Bus as NotificationBus
+    participant R as Redis Pub/Sub
 
     C->>WS: Connect (auth token)
     WS->>WS: Validate auth
-    WS->>Bus: subscribe()
+    WS->>R: SUBSCRIBE nether:notifications
 
     par Read client frames
         C->>WS: {"type": "ping"}
         WS->>C: {"type": "pong", ...}
     and Forward notifications
-        Bus->>WS: session_completed event
+        R->>WS: message on channel
         WS->>C: {"type": "session_completed", ...}
     end
 
     C->>WS: Close
-    WS->>Bus: unsubscribe()
+    WS->>R: UNSUBSCRIBE
 ```
 
 The handler maintains two concurrent tasks:
 
-1. **Reader**: Receives client frames (ping, future commands). Responds to ping with pong.
-2. **Writer**: Reads from the bus subscription queue, serializes events as JSON, sends to client.
+1. **Reader**: Receives client frames (ping). Responds to ping with pong.
+2. **Writer**: Reads from the Redis Pub/Sub subscription, forwards messages as WebSocket text frames.
+
+### Redis Pub/Sub Connection
+
+Each WebSocket handler needs its own Redis Pub/Sub connection because `redis-py`'s Pub/Sub operates in a dedicated mode -- a connection in subscribe mode cannot execute other commands. The handler creates a new `redis.asyncio.client.PubSub` instance from the shared Redis client pool on connect and closes it on disconnect.
 
 ### Connection Lifecycle
 
 - Connection rejected immediately on auth failure (403).
-- On disconnect, the handler unsubscribes from the bus and cleans up.
+- On disconnect, the handler unsubscribes and closes the Pub/Sub connection.
 - Server tolerates unknown command types (ignores with warning log).
 - No automatic reconnection logic server-side; the client handles reconnection.
 
 ## Failure Handling
 
-| Scenario           | Behavior                                         |
-| ------------------ | ------------------------------------------------ |
-| Client disconnects | Handler unsubscribes, resources freed            |
-| Slow consumer      | Oldest events dropped from per-subscriber queue  |
-| No subscribers     | Publish is a no-op                               |
-| Auth token revoked | Next ping triggers close with 4401 code          |
-| Server shutdown    | All WS connections closed with 1001 (going away) |
+| Scenario             | Behavior                                         |
+| -------------------- | ------------------------------------------------ |
+| Client disconnects   | Handler unsubscribes, Pub/Sub connection closed  |
+| Redis unavailable    | Publish is best-effort (log warning, continue)   |
+| Redis reconnects     | Pub/Sub auto-resubscribes (redis-py built-in)    |
+| No WebSocket clients | Publish is a no-op (Redis drops unheard msgs)    |
+| Server shutdown      | All WS connections closed with 1001 (going away) |
 
 ## Project Structure
 
 ```
 agent_runtime/
   notifications/
-    bus.py          # NotificationBus (asyncio broadcast, subscribe/publish)
-    events.py       # Notification event dataclasses
+    events.py       # Notification event dataclasses + JSON serialization
+    publish.py      # publish_notification(redis, event) helper
     handler.py      # WebSocket connection handler (reader + writer tasks)
   routers/
     notifications.py  # WebSocket endpoint mount
-  deps.py           # Add NotificationBus dependency
 ```

@@ -11,6 +11,7 @@ import type {
   SteerRequest,
   TurnsResponse,
   MailboxMessageResponse,
+  SearchResponse,
 } from "./types";
 
 export async function listConversations(opts?: {
@@ -147,4 +148,19 @@ export async function getMailbox(
   if (opts?.limit) params["limit"] = opts.limit;
   if (opts?.offset) params["offset"] = opts.offset;
   return api.get<MailboxMessageResponse[]>(`/api/conversations/${id}/mailbox`, params);
+}
+
+export async function searchConversations(opts: {
+  q: string;
+  limit?: number;
+  offset?: number;
+}): Promise<SearchResponse> {
+  const params: Record<string, string | number> = { q: opts.q };
+  if (opts.limit) params["limit"] = opts.limit;
+  if (opts.offset) params["offset"] = opts.offset;
+  return api.get<SearchResponse>("/api/conversations/search", params);
+}
+
+export async function summarizeConversation(id: string): Promise<ConversationResponse> {
+  return api.post<ConversationResponse>(`/api/conversations/${id}/summarize`);
 }

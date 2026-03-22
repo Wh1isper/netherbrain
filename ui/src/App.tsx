@@ -14,6 +14,7 @@ import Login from "@/pages/Login";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useAppStore } from "@/stores/app";
 import { useIsMobile } from "@/lib/hooks";
+import { useNotifications } from "@/lib/useNotifications";
 import { changePassword, getMe } from "@/api/auth";
 import { ApiError } from "@/api/client";
 import { Bot, Loader2 } from "lucide-react";
@@ -134,6 +135,9 @@ function AppShell() {
   const isMobile = useIsMobile();
   const mobileSidebarOpen = useAppStore((s) => s.mobileSidebarOpen);
   const setMobileSidebarOpen = useAppStore((s) => s.setMobileSidebarOpen);
+
+  // Connect to WebSocket notification channel for real-time updates
+  useNotifications();
 
   const mainContent = (
     <main className="flex-1 overflow-hidden">

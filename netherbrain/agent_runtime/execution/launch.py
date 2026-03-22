@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
+    from netherbrain.agent_runtime.managers.execution import ExecutionManager
     from netherbrain.agent_runtime.managers.sessions import SessionManager
     from netherbrain.agent_runtime.models.api import ExternalToolSpec
     from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
@@ -85,6 +86,7 @@ async def launch_session(
     spawned_by: str | None = None,
     subagent_name: str | None = None,
     external_tools: Sequence[ExternalToolSpec] | None = None,
+    execution_manager: ExecutionManager | None = None,
 ) -> LaunchResult:
     """Create a session, set up transport, and launch execution in background.
 
@@ -210,6 +212,8 @@ async def launch_session(
             subagent_name=subagent_name,
             external_tools=list(external_tools) if external_tools else None,
             runtime_session=runtime_session,
+            execution_manager=execution_manager,
+            user_id=user_id,
         ),
         name=f"execute-{session_id}",
     )
@@ -250,6 +254,8 @@ async def _run_execution(
     subagent_name: str | None = None,
     external_tools: list[ExternalToolSpec] | None = None,
     runtime_session: RuntimeSession | None = None,
+    execution_manager: ExecutionManager | None = None,
+    user_id: str | None = None,
 ) -> None:
     """Background task wrapper for execute_session.
 
@@ -278,6 +284,8 @@ async def _run_execution(
                 redis=redis,
                 external_tools=external_tools,
                 runtime_session=runtime_session,
+                execution_manager=execution_manager,
+                user_id=user_id,
             )
             logger.info(
                 "Execution completed: session=%s status=%s",

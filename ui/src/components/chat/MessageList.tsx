@@ -1,8 +1,9 @@
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bot, Loader2 } from "lucide-react";
 import type { ChatMessage } from "@/stores/chat";
 import MessageBubble from "./MessageBubble";
+import { AsyncResultPanel } from "./AsyncAgentPanel";
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -102,11 +103,65 @@ export default function MessageList({
           </div>
         )}
 
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
+        <MessageRenderer messages={messages} />
         <div ref={bottomRef} />
       </div>
     </ScrollArea>
   );
+}
+
+// ---------------------------------------------------------------------------
+// MessageRenderer -- groups fire-continuation messages into panels
+// ---------------------------------------------------------------------------
+
+function MessageRenderer({ messages }: { messages: ChatMessage[] }) {
+  const elements = useMemo(() => {
+    const result: React.ReactNode[] = [];
+    let i = 0;
+
+    while (i < messages.length) {
+      const msg = messages[i];
+
+      // Group fire-continuation user + assistant into a single panel
+      if (msg.isFireContinuation && msg.role === "user") {
+        const userMsg = msg;
+        // Look ahead for the following fire-continuation assistant message
+        const nextMsg = i + 1 < messages.length ? messages[i + 1] : undefined;
+        const assistantMsg =
+          nextMsg?.isFireContinuation && nextMsg.role === "assistant" ? nextMsg : undefined;
+
+        result.push(
+          <AsyncResultPanel
+            key={userMsg.id}
+            userMessage={userMsg}
+            assistantMessage={assistantMsg}
+          />,
+        );
+        i += assistantMsg ? 2 : 1;
+        continue;
+      }
+
+      // Skip orphaned fire-continuation assistant messages (already grouped)
+      if (msg.isFireContinuation && msg.role === "assistant") {
+        // Render as standalone panel with empty user message
+        result.push(
+          <AsyncResultPanel
+            key={msg.id}
+            userMessage={{ ...msg, role: "user", content: "", fireInputText: "" }}
+            assistantMessage={msg}
+          />,
+        );
+        i++;
+        continue;
+      }
+
+      // Normal message
+      result.push(<MessageBubble key={msg.id} message={msg} />);
+      i++;
+    }
+
+    return result;
+  }, [messages]);
+
+  return <>{elements}</>;
 }

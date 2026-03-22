@@ -41,6 +41,8 @@ from netherbrain.agent_runtime.models.preset import (
     ToolsetSpec,
 )
 from netherbrain.agent_runtime.settings import NetherSettings
+from netherbrain.agent_runtime.toolsets.control import tools as control_tools
+from netherbrain.agent_runtime.toolsets.history import tools as history_tools
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -66,6 +68,8 @@ TOOLSET_REGISTRY: dict[str, list[type[BaseTool]]] = {
     "multimodal": multimodal_tools,
     "shell": shell_tools,
     "web": web_tools,
+    "history": history_tools,
+    "control": control_tools,
     # "subagent" is handled separately via SubagentSpec
 }
 
@@ -168,11 +172,19 @@ def resolve_model_config(model: ModelPreset) -> ModelConfig:
 # ---------------------------------------------------------------------------
 
 
-def resolve_tool_config(spec: ToolConfigSpec) -> ToolConfig:
+def resolve_tool_config(
+    spec: ToolConfigSpec,
+    **extras: Any,
+) -> ToolConfig:
     """Map ``ToolConfigSpec`` to SDK ``ToolConfig``.
 
     Non-secret settings come from the preset.  API keys are auto-loaded
     from environment variables by the SDK's ``ToolConfig`` defaults.
+
+    Extra keyword arguments are passed through to ``ToolConfig`` as extra
+    fields (requires ``extra="allow"`` on ToolConfig).  Used by
+    ``create_service_runtime`` to inject Netherbrain-specific config
+    (e.g. ``nether_api_base_url``, ``nether_auth_token``).
     """
     kwargs: dict[str, Any] = {
         "skip_url_verification": spec.skip_url_verification,
@@ -186,6 +198,7 @@ def resolve_tool_config(spec: ToolConfigSpec) -> ToolConfig:
         kwargs["video_understanding_model"] = spec.video_understanding_model
     if spec.video_understanding_model_settings is not None:
         kwargs["video_understanding_model_settings"] = ModelSettings(**spec.video_understanding_model_settings)
+    kwargs.update(extras)
     return ToolConfig(**kwargs)
 
 
@@ -210,6 +223,37 @@ def resolve_subagent_configs(
 
 
 # ---------------------------------------------------------------------------
+# Session-scoped token
+# ---------------------------------------------------------------------------
+
+# Validity period for session-scoped JWTs used by internal tools.
+_SESSION_TOKEN_EXPIRY_DAYS = 1
+
+
+def _mint_session_token(user_id: str | None, settings: NetherSettings) -> str:
+    """Create a session-scoped auth token for internal tool API calls.
+
+    When ``user_id`` is available, mints a short-lived JWT carrying the
+    user's identity so that tool calls (``search_conversations``,
+    ``steer_agent``, etc.) are scoped to that user.
+
+    Falls back to the root auth token when no user context is available
+    (e.g. in test harnesses).
+    """
+    if user_id is None:
+        return settings.auth_token
+
+    from netherbrain.agent_runtime.managers.users import create_jwt
+
+    return create_jwt(
+        user_id,
+        "user",
+        secret=settings.jwt_secret,
+        expiry_days=_SESSION_TOKEN_EXPIRY_DAYS,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Runtime factory
 # ---------------------------------------------------------------------------
 
@@ -222,6 +266,8 @@ def create_service_runtime(
     message_history: Sequence[ModelMessage] | None = None,
     resource_state: ResourceRegistryState | None = None,
     extra_agent_tools: Sequence[Any] | None = None,
+    conversation_id: str | None = None,
+    user_id: str | None = None,
 ) -> tuple[AgentRuntime[AgentContext, str | DeferredToolRequests, Any], ProjectPaths]:
     """Create an SDK ``AgentRuntime`` from a fully resolved config.
 
@@ -249,6 +295,11 @@ def create_service_runtime(
         Optional resource registry state to restore in the environment.
     extra_agent_tools:
         Optional pydantic-ai Tool instances to inject (e.g. spawn_delegate).
+    conversation_id:
+        Current conversation ID.  When provided, history tools are
+        auto-included and Netherbrain-specific extras (API base URL,
+        auth token, conversation ID) are injected into ``ToolConfig``.
+        Pass ``None`` for subagent sessions to exclude history tools.
 
     Returns
     -------
@@ -270,6 +321,12 @@ def create_service_runtime(
     # Always include subagent introspection tools.
     all_tools = [*tools, *subagent_tools]
 
+    # Include history and control tools for main agent sessions (conversation_id set).
+    # These tools are NOT included for subagent sessions.
+    if conversation_id is not None:
+        all_tools.extend(history_tools)
+        all_tools.extend(control_tools)
+
     # -- System prompt ---------------------------------------------------------
     system_prompt = render_system_prompt(config)
 
@@ -281,7 +338,14 @@ def create_service_runtime(
     subagent_configs = resolve_subagent_configs(config.subagents)
 
     # -- Tool config -----------------------------------------------------------
-    tool_config = resolve_tool_config(config.tool_config)
+    nether_extras: dict[str, Any] = {}
+    if conversation_id is not None:
+        nether_extras = {
+            "nether_api_base_url": settings.api_base_url or f"http://127.0.0.1:{settings.port}",
+            "nether_auth_token": _mint_session_token(user_id, settings),
+            "nether_conversation_id": conversation_id,
+        }
+    tool_config = resolve_tool_config(config.tool_config, **nether_extras)
 
     # -- MCP servers -----------------------------------------------------------
     # ToolProxyToolset exposes a fixed pair of tools (search_tools/call_tool),

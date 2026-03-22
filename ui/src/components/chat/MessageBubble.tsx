@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { User, Bot, FileText, Link, FolderOpen } from "lucide-react";
+import { useState, Fragment } from "react";
+import { User, Bot, FileText, Link, FolderOpen, ChevronRight, Zap } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { ChatMessage } from "@/stores/chat";
 import type { InputPart } from "@/api/types";
@@ -13,6 +13,9 @@ interface MessageBubbleProps {
 }
 
 export default function MessageBubble({ message }: MessageBubbleProps) {
+  if (message.isFireContinuation) {
+    return <FireContinuationMessage message={message} />;
+  }
   if (message.role === "user") {
     return <UserMessage message={message} />;
   }
@@ -146,6 +149,7 @@ function ImageThumbnail({ data, mime }: { data: string; mime: string }) {
 // ---------------------------------------------------------------------------
 
 function AssistantMessage({ message }: { message: ChatMessage }) {
+  const hasBlocks = message.blocks.length > 0;
   const hasContent = message.content.length > 0;
   const hasThinking = message.thinkingBlocks.length > 0;
   const hasToolCalls = message.toolCalls.length > 0;
@@ -157,29 +161,63 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         <Bot className="h-3.5 w-3.5 text-primary" />
       </div>
       <div className="min-w-0 flex-1 max-w-[90%]">
-        {/* Thinking section (collapsed by default) */}
-        {(hasThinking || message.isStreaming) && (
-          <ThinkingBlock
-            blocks={message.thinkingBlocks}
-            isStreaming={message.isStreaming && !hasContent}
-          />
-        )}
+        {hasBlocks ? (
+          <>
+            {message.blocks.map((block, i) => {
+              const isLastBlock = i === message.blocks.length - 1;
+              const isActive = message.isStreaming && isLastBlock;
 
-        {/* Tool calls */}
-        {hasToolCalls && (
-          <div className="mb-2">
-            {message.toolCalls.map((tc) => (
-              <ToolCallCard key={tc.id} toolCall={tc} />
-            ))}
-          </div>
-        )}
+              switch (block.type) {
+                case "thinking":
+                  return (
+                    <ThinkingBlock
+                      key={`t-${block.index}`}
+                      blocks={[message.thinkingBlocks[block.index]]}
+                      isStreaming={isActive}
+                    />
+                  );
+                case "text": {
+                  const text = message.textBlocks[block.index];
+                  return (
+                    <Fragment key={`x-${block.index}`}>
+                      {text && <MarkdownContent content={text} />}
+                      {isActive && text && (
+                        <span className="inline-block w-1.5 h-4 bg-primary/60 animate-pulse ml-0.5 align-text-bottom rounded-sm" />
+                      )}
+                    </Fragment>
+                  );
+                }
+                case "tool_call": {
+                  const tc = message.toolCalls.find((t) => t.id === block.id);
+                  return tc ? <ToolCallCard key={tc.id} toolCall={tc} /> : null;
+                }
+              }
+            })}
+          </>
+        ) : (
+          /* Fallback for messages without blocks (backward compat) */
+          <>
+            {(hasThinking || message.isStreaming) && (
+              <ThinkingBlock
+                blocks={message.thinkingBlocks}
+                isStreaming={message.isStreaming && !hasContent}
+              />
+            )}
 
-        {/* Text content */}
-        {hasContent && <MarkdownContent content={message.content} />}
+            {hasToolCalls && (
+              <div className="mb-2">
+                {message.toolCalls.map((tc) => (
+                  <ToolCallCard key={tc.id} toolCall={tc} />
+                ))}
+              </div>
+            )}
 
-        {/* Streaming cursor */}
-        {message.isStreaming && hasContent && (
-          <span className="inline-block w-1.5 h-4 bg-primary/60 animate-pulse ml-0.5 align-text-bottom rounded-sm" />
+            {hasContent && <MarkdownContent content={message.content} />}
+
+            {message.isStreaming && hasContent && (
+              <span className="inline-block w-1.5 h-4 bg-primary/60 animate-pulse ml-0.5 align-text-bottom rounded-sm" />
+            )}
+          </>
         )}
 
         {/* Empty streaming state */}
@@ -189,6 +227,82 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Fire-continuation message -- collapsed async subagent result
+// ---------------------------------------------------------------------------
+
+function FireContinuationMessage({ message }: { message: ChatMessage }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasContent = message.content.length > 0;
+
+  // Skip user messages from fire-continuation (they have no meaningful text)
+  if (message.role === "user") return null;
+
+  if (!hasContent && message.toolCalls.length === 0) return null;
+
+  return (
+    <div className="px-4 py-1.5">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-md px-2 py-1 -ml-2 hover:bg-muted/60"
+      >
+        <ChevronRight
+          className={`h-3 w-3 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
+        />
+        <Zap className="h-3 w-3 text-primary/60" />
+        <span>Async agent result</span>
+      </button>
+      {expanded && (
+        <div className="mt-2 ml-5 pl-3 border-l-2 border-primary/20">
+          <div className="flex gap-3">
+            <div className="min-w-0 flex-1 max-w-[90%]">
+              {message.blocks.length > 0 ? (
+                message.blocks.map((block) => {
+                  switch (block.type) {
+                    case "thinking":
+                      return (
+                        <ThinkingBlock
+                          key={`t-${block.index}`}
+                          blocks={[message.thinkingBlocks[block.index]]}
+                          isStreaming={false}
+                        />
+                      );
+                    case "text": {
+                      const text = message.textBlocks[block.index];
+                      return text ? (
+                        <MarkdownContent key={`x-${block.index}`} content={text} />
+                      ) : null;
+                    }
+                    case "tool_call": {
+                      const tc = message.toolCalls.find((t) => t.id === block.id);
+                      return tc ? <ToolCallCard key={tc.id} toolCall={tc} /> : null;
+                    }
+                  }
+                })
+              ) : (
+                /* Fallback for messages without blocks */
+                <>
+                  {message.thinkingBlocks.length > 0 && (
+                    <ThinkingBlock blocks={message.thinkingBlocks} isStreaming={false} />
+                  )}
+                  {message.toolCalls.length > 0 && (
+                    <div className="mb-2">
+                      {message.toolCalls.map((tc) => (
+                        <ToolCallCard key={tc.id} toolCall={tc} />
+                      ))}
+                    </div>
+                  )}
+                  {hasContent && <MarkdownContent content={message.content} />}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

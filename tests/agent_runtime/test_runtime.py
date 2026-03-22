@@ -128,7 +128,7 @@ def test_resolve_model_settings_preset_only() -> None:
     settings = resolve_model_settings(model)
 
     assert settings.get("anthropic_thinking") is not None
-    assert settings.get("max_tokens") == 21 * 1024
+    assert settings.get("max_tokens") == 32768
 
 
 def test_resolve_model_settings_override_only() -> None:

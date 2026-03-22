@@ -123,6 +123,9 @@ async def resolve_config(
     workspace_id: str | None = None,
     project_ids: list[str] | None = None,
     parent_project_ids: list[str] | None = None,
+    parent_environment_mode: EnvironmentMode | None = None,
+    parent_container_id: str | None = None,
+    parent_container_workdir: str | None = None,
 ) -> ResolvedConfig:
     """Resolve a complete execution config from preset + override + workspace.
 
@@ -142,6 +145,13 @@ async def resolve_config(
         Mutually exclusive with ``workspace_id``.
     parent_project_ids:
         Fallback project list from the parent session (continue / fork).
+    parent_environment_mode:
+        Fallback environment mode from the parent session.  Used when
+        the preset does not explicitly set ``mode`` (async subagents).
+    parent_container_id:
+        Fallback container ID from the parent session.
+    parent_container_workdir:
+        Fallback container workdir from the parent session.
 
     Raises
     ------
@@ -176,15 +186,37 @@ async def resolve_config(
         ToolConfigSpec(**preset.tool_config),
     )
 
-    # Environment: merge mode/container settings from override or preset.
+    # Environment: merge mode/container settings from override, preset, or parent.
+    # The raw preset dict is checked so we can distinguish "explicitly set to LOCAL"
+    # from "not specified (default)".  Unspecified fields fall back to parent values
+    # (important for async subagents inheriting the spawner's environment).
     env_override = override.environment if override else None
-    env_preset = EnvironmentSpec(**preset.environment)
+    preset_env_dict = preset.environment  # raw JSONB dict
+    env_preset = EnvironmentSpec(**preset_env_dict)
 
-    environment_mode = _first(env_override and env_override.mode, env_preset.mode)
-    container_id = _first(env_override and env_override.container_id, env_preset.container_id)
-    container_workdir = _first(
+    environment_mode = _resolve_env_field(
+        env_override and env_override.mode,
+        preset_env_dict,
+        "mode",
+        env_preset.mode,
+        parent_environment_mode,
+        EnvironmentMode.LOCAL,
+    )
+    container_id = _resolve_env_field(
+        env_override and env_override.container_id,
+        preset_env_dict,
+        "container_id",
+        env_preset.container_id,
+        parent_container_id,
+        None,
+    )
+    container_workdir = _resolve_env_field(
         env_override and env_override.container_workdir,
+        preset_env_dict,
+        "container_workdir",
         env_preset.container_workdir,
+        parent_container_workdir,
+        None,
     )
 
     # -- 3. Resolve project_ids ------------------------------------------------
@@ -324,3 +356,26 @@ async def _resolve_env_projects(
 def _first[T](override: T | None, default: T) -> T:
     """Return the override if not None, otherwise the default."""
     return override if override is not None else default
+
+
+def _resolve_env_field[T](
+    override_val: T | None,
+    preset_dict: dict,
+    preset_key: str,
+    preset_val: T,
+    parent_val: T | None,
+    default: T,
+) -> T:
+    """Resolve an environment field with parent fallback.
+
+    Priority: override -> preset (if explicitly set) -> parent -> default.
+    Checks the raw preset dict for key presence to distinguish
+    'explicitly set' from 'using Pydantic default'.
+    """
+    if override_val is not None:
+        return override_val
+    if preset_key in preset_dict:
+        return preset_val  # type: ignore[return-value]
+    if parent_val is not None:
+        return parent_val
+    return default

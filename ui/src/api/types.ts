@@ -165,11 +165,22 @@ export interface MailboxSummary {
 export interface ConversationResponse {
   conversation_id: string;
   title: string | null;
+  summary?: string | null;
   default_preset_id: string | null;
   metadata: Record<string, unknown> | null;
   status: ConversationStatus;
   created_at: string;
   updated_at: string;
+}
+
+export interface SearchConversationResult extends ConversationResponse {
+  match_source: string;
+}
+
+export interface SearchResponse {
+  conversations: SearchConversationResult[];
+  total: number;
+  has_more: boolean;
 }
 
 export interface UsageSummaryResponse {

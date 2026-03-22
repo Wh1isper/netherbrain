@@ -20,6 +20,7 @@ from netherbrain.agent_runtime.managers.conversations import (
     ConversationNotFoundError,
     get_conversation,
     list_conversations,
+    search_conversations,
     update_conversation,
 )
 from netherbrain.agent_runtime.managers.execution import (
@@ -34,6 +35,11 @@ from netherbrain.agent_runtime.managers.execution import (
     SteeringTextRequiredError,
 )
 from netherbrain.agent_runtime.managers.mailbox import count_pending, query_mailbox
+from netherbrain.agent_runtime.managers.summary import (
+    EmptyConversationError,
+    NoSummaryModelError,
+    summarize_conversation,
+)
 from netherbrain.agent_runtime.models.api import (
     ActiveSessionInfo,
     ConversationBusyResponse,
@@ -49,12 +55,18 @@ from netherbrain.agent_runtime.models.api import (
     MailboxSummary,
     PrepareForkRequest,
     PrepareForkResponse,
+    SearchConversationResult,
+    SearchResponse,
     SessionResponse,
     SteerRequest,
+    SummarizeRequest,
     TurnResponse,
     TurnsPageResponse,
 )
 from netherbrain.agent_runtime.models.enums import SessionStatus, SessionType, Transport
+from netherbrain.agent_runtime.notifications import ConversationUpdated
+from netherbrain.agent_runtime.notifications.publish import publish_notification
+from netherbrain.agent_runtime.settings import get_settings
 from netherbrain.agent_runtime.transport.bridge import StreamGoneError, bridge_stream_to_sse
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -328,6 +340,37 @@ async def handle_list_conversations(
 
 
 # ---------------------------------------------------------------------------
+# GET /conversations/search
+# ---------------------------------------------------------------------------
+
+
+@router.get("/search", response_model=SearchResponse)
+async def handle_search(
+    db: DbSession,
+    auth: CurrentUser,
+    q: str = Query(..., min_length=1, description="Search query (keywords)"),
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> SearchResponse:
+    """Search conversations by keyword across title, summary, and session content."""
+    user_id = None if auth.is_admin else auth.user_id
+    results, total = await search_conversations(db, q, user_id=user_id, limit=limit, offset=offset)
+
+    conversations = [
+        SearchConversationResult(
+            **ConversationResponse.model_validate(conv).model_dump(),
+            match_source=match_source,
+        )
+        for conv, match_source in results
+    ]
+    return SearchResponse(
+        conversations=conversations,
+        total=total,
+        has_more=(offset + limit) < total,
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /conversations/{conversation_id}/get
 # ---------------------------------------------------------------------------
 
@@ -389,14 +432,64 @@ async def handle_get_conversation(
 
 @router.post("/{conversation_id}/update", response_model=ConversationResponse)
 async def handle_update_conversation(
-    conversation_id: str, body: ConversationUpdate, db: DbSession, auth: CurrentUser
+    conversation_id: str, body: ConversationUpdate, db: DbSession, auth: CurrentUser, request: Request
 ) -> object:
     try:
         # Verify ownership first.
         await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
-        return await update_conversation(db, conversation_id, body)
+        result = await update_conversation(db, conversation_id, body)
+
+        # Publish notification for changed fields.
+        changes = list(body.model_dump(exclude_unset=True).keys())
+        if changes:
+            redis = request.app.state.redis
+            await publish_notification(
+                redis,
+                ConversationUpdated(conversation_id=conversation_id, changes=changes),
+            )
     except ConversationNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
+    else:
+        return result
+
+
+# ---------------------------------------------------------------------------
+# POST /conversations/{conversation_id}/summarize
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{conversation_id}/summarize", response_model=ConversationResponse)
+async def handle_summarize(
+    conversation_id: str, db: DbSession, auth: CurrentUser, body: SummarizeRequest | None = None
+) -> object:
+    """Generate or regenerate an LLM summary for this conversation."""
+    try:
+        await get_conversation(db, conversation_id, user_id=auth.user_id, is_admin=auth.is_admin)
+    except ConversationNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Conversation '{conversation_id}' not found.") from None
+
+    settings = get_settings()
+    req_model = body.model if body else None
+    req_settings = body.model_settings if body else None
+
+    try:
+        conv = await summarize_conversation(
+            db,
+            conversation_id,
+            model=req_model,
+            model_settings_dict=req_settings,
+            settings_model=settings.summary_model,
+            settings_model_settings_json=settings.summary_model_settings,
+        )
+    except NoSummaryModelError:
+        raise HTTPException(
+            status.HTTP_501_NOT_IMPLEMENTED,
+            detail="No summary model configured. Set NETHER_SUMMARY_MODEL or provide model in request body.",
+        ) from None
+    except EmptyConversationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
+
+    return conv
 
 
 # ---------------------------------------------------------------------------

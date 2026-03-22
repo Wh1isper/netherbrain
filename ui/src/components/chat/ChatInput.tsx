@@ -1,9 +1,10 @@
 import { useRef, useState, useEffect, useCallback } from "react";
-import { ArrowUp, Square, Paperclip, X, FileText } from "lucide-react";
+import { ArrowUp, Square, Paperclip, X, FileText, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatFileSize, isImageMime, fileToBase64 } from "@/lib/utils";
 import type { InputPart } from "@/api/types";
 import type { StreamingState } from "@/stores/chat";
+import { useAppStore } from "@/stores/app";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -32,6 +33,7 @@ interface ChatInputProps {
   onInterrupt: () => void;
   streamingState: StreamingState;
   disabled?: boolean;
+  mailboxCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,6 +45,7 @@ export default function ChatInput({
   onInterrupt,
   streamingState,
   disabled,
+  mailboxCount = 0,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +53,8 @@ export default function ChatInput({
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isStreaming = streamingState === "streaming" || streamingState === "connecting";
+  const autoFire = useAppStore((s) => s.autoFire);
+  const setAutoFire = useAppStore((s) => s.setAutoFire);
 
   // Auto-resize textarea to content
   const adjustHeight = useCallback(() => {
@@ -360,6 +365,22 @@ export default function ChatInput({
               </Button>
             )}
           </div>
+        </div>
+
+        {/* Footer row: auto-fire toggle */}
+        <div className="flex items-center justify-between pt-0.5 px-0.5">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors">
+            <input
+              type="checkbox"
+              checked={autoFire}
+              onChange={(e) => setAutoFire(e.target.checked)}
+              className="h-3 w-3 rounded accent-primary cursor-pointer"
+            />
+            <Zap className="h-2.5 w-2.5" />
+            <span>Auto-fire</span>
+            {mailboxCount > 0 && <span className="text-primary font-medium">({mailboxCount})</span>}
+          </label>
+          <span className="text-[11px] text-muted-foreground/60">Shift+Enter for new line</span>
         </div>
 
         {/* Error toast */}

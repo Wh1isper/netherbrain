@@ -7,6 +7,11 @@ is True.
 Dependency injection strategy: infrastructure references are bundled in
 ``DelegateContext`` and stored in ``AgentContext.metadata['delegate_ctx']``.
 The tool function reads this context at invocation time.
+
+Subagent sessions are launched through ``ExecutionManager.execute_session()``
+-- the same code path used by the REST API -- rather than calling
+``launch_session()`` directly.  This ensures consistent validation,
+config resolution, and session lifecycle management.
 """
 
 from __future__ import annotations
@@ -17,19 +22,14 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import RunContext, Tool
 
-from netherbrain.agent_runtime.execution.launch import launch_session
-from netherbrain.agent_runtime.execution.resolver import resolve_config
-from netherbrain.agent_runtime.models.enums import InputPartType, SessionType, Transport
+from netherbrain.agent_runtime.models.enums import EnvironmentMode, InputPartType, SessionType, Transport
 from netherbrain.agent_runtime.models.input import InputPart
 from netherbrain.agent_runtime.models.preset import SubagentRef
 
 if TYPE_CHECKING:
-    import redis.asyncio as aioredis
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from netherbrain.agent_runtime.managers.sessions import SessionManager
-    from netherbrain.agent_runtime.registry import SessionRegistry
-    from netherbrain.agent_runtime.settings import NetherSettings
+    from netherbrain.agent_runtime.managers.execution import ExecutionManager
 
 logger = logging.getLogger(__name__)
 
@@ -50,15 +50,20 @@ class DelegateContext:
     conversation_id: str
     subagent_refs: list[SubagentRef]
     async_subagent_registry: dict[str, str]
-    session_manager: SessionManager
-    registry: SessionRegistry
-    settings: NetherSettings
-    session_factory: async_sessionmaker
-    redis: aioredis.Redis | None = None
 
-    # Resolved configs are cached to avoid repeated DB lookups for the
-    # same subagent preset within a single parent execution.
-    _config_cache: dict[str, Any] = field(default_factory=dict, repr=False)
+    # ExecutionManager handles config resolution, session creation, and launch.
+    execution_manager: ExecutionManager | None
+    session_factory: async_sessionmaker
+
+    # Transport for subagent sessions (determined by Redis availability).
+    subagent_transport: Transport = Transport.SSE
+
+    # Environment inheritance from parent config.
+    parent_project_ids: list[str] = field(default_factory=list)
+    parent_environment_mode: EnvironmentMode | None = None
+    parent_container_id: str | None = None
+    parent_container_workdir: str | None = None
+    user_id: str | None = None
 
 
 def _find_ref(refs: list[SubagentRef], name: str) -> SubagentRef | None:
@@ -67,29 +72,6 @@ def _find_ref(refs: list[SubagentRef], name: str) -> SubagentRef | None:
         if ref.name == name:
             return ref
     return None
-
-
-async def _load_parent_state(dc: DelegateContext, name: str) -> tuple[str | None, Any]:
-    """Load parent state for a subagent from its previous session.
-
-    Returns (parent_session_id, parent_state).  Falls back to (None, None)
-    if the parent session cannot be loaded.
-    """
-    parent_session_id = dc.async_subagent_registry.get(name)
-    if not parent_session_id:
-        return None, None
-
-    try:
-        async with dc.session_factory() as db:
-            parent_data = await dc.session_manager.get_session(db, parent_session_id, include_state=True)
-            return parent_session_id, parent_data.state
-    except Exception:
-        logger.warning(
-            "Could not load parent state for subagent '%s' (session %s), starting fresh",
-            name,
-            parent_session_id,
-        )
-        return None, None
 
 
 def create_spawn_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
@@ -101,8 +83,8 @@ def create_spawn_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
     Parameters
     ----------
     delegate_ctx:
-        Infrastructure context providing access to session management,
-        registry, and subagent definitions.
+        Infrastructure context providing access to execution management
+        and subagent definitions.
 
     Returns
     -------
@@ -125,25 +107,13 @@ def create_spawn_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
         """
         dc = delegate_ctx
 
+        if dc.execution_manager is None:
+            return "Error: execution manager not available"
+
         # Validate subagent name.
         ref = _find_ref(dc.subagent_refs, name)
         if ref is None:
             return f"Error: unknown subagent '{name}'. Available: {names_doc}"
-
-        # Resolve config for the subagent's preset.
-        try:
-            if ref.preset_id in dc._config_cache:
-                config = dc._config_cache[ref.preset_id]
-            else:
-                async with dc.session_factory() as db:
-                    config = await resolve_config(db, preset_id=ref.preset_id)
-                dc._config_cache[ref.preset_id] = config
-        except Exception as exc:
-            logger.exception("Failed to resolve config for subagent '%s'", name)
-            return f"Error: failed to resolve subagent config: {exc}"
-
-        # Determine parent session for resume (if subagent was previously dispatched).
-        parent_session_id, parent_state = await _load_parent_state(dc, name)
 
         # Build input from instruction (+ optional subagent-ref instruction prefix).
         text = instruction
@@ -152,25 +122,25 @@ def create_spawn_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
 
         input_parts = [InputPart(type=InputPartType.TEXT, text=text)]
 
-        # Launch the subagent session in background.
+        # Determine parent session for resume (if subagent was previously dispatched).
+        parent_session_id = dc.async_subagent_registry.get(name)
+
+        # Launch the subagent session via ExecutionManager (same path as REST API).
         try:
             async with dc.session_factory() as db:
-                result = await launch_session(
-                    db=db,
-                    session_factory=dc.session_factory,
-                    session_manager=dc.session_manager,
-                    registry=dc.registry,
-                    settings=dc.settings,
-                    redis=dc.redis,
-                    config=config,
+                result = await dc.execution_manager.execute_session(
+                    db,
+                    preset_id=ref.preset_id,
                     input_parts=input_parts,
-                    transport=Transport.STREAM if dc.redis else Transport.SSE,
                     parent_session_id=parent_session_id,
-                    parent_state=parent_state,
-                    conversation_id=dc.conversation_id,
+                    transport=dc.subagent_transport,
                     session_type=SessionType.ASYNC_SUBAGENT,
                     spawned_by=dc.session_id,
                     subagent_name=name,
+                    parent_environment_mode=dc.parent_environment_mode,
+                    parent_container_id=dc.parent_container_id,
+                    parent_container_workdir=dc.parent_container_workdir,
+                    user_id=dc.user_id,
                 )
         except Exception as exc:
             logger.exception("Failed to launch subagent '%s'", name)

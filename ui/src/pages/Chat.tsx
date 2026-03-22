@@ -4,7 +4,12 @@ import { Menu, Bot, Sparkles, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useChatStore, getProjectCache, mergeUsage } from "@/stores/chat";
 import { useAppStore } from "@/stores/app";
-import { listConversations, prepareFork, updateConversation } from "@/api/conversations";
+import {
+  prepareFork,
+  updateConversation,
+  getConversation,
+  fireConversation,
+} from "@/api/conversations";
 import { updateWorkspace, listWorkspaces } from "@/api/workspaces";
 import type { InputPart } from "@/api/types";
 import { Button } from "@/components/ui/button";
@@ -15,6 +20,7 @@ import ConversationHeader from "@/components/chat/ConversationHeader";
 import ProjectSelector from "@/components/chat/ProjectSelector";
 import PresetSelector from "@/components/chat/PresetSelector";
 import UsageIndicator from "@/components/chat/UsageIndicator";
+import { StreamingSubagentPanel } from "@/components/chat/AsyncAgentPanel";
 
 export default function Chat() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +40,7 @@ export default function Chat() {
   const interrupt = useChatStore((s) => s.interrupt);
   const clearChat = useChatStore((s) => s.clearChat);
   const mailboxCount = useChatStore((s) => s.mailboxCount);
+  const subagents = useChatStore((s) => s.subagents);
   const usage = useChatStore((s) => s.usage);
   const conversationUsage = useChatStore((s) => s.conversationUsage);
   const archiveConversation = useChatStore((s) => s.archiveConversation);
@@ -46,7 +53,7 @@ export default function Chat() {
   const setWorkspaces = useAppStore((s) => s.setWorkspaces);
   const presets = useAppStore((s) => s.presets);
   const conversations = useAppStore((s) => s.conversations);
-  const setConversations = useAppStore((s) => s.setConversations);
+  const autoFire = useAppStore((s) => s.autoFire);
 
   // Available projects from the current workspace
   const currentWorkspace = workspaces.find((w) => w.workspace_id === currentWorkspaceId);
@@ -58,6 +65,7 @@ export default function Chat() {
   // Find title from conversation list
   const convMeta = conversations.find((c) => c.conversation_id === (id ?? conversationId));
   const title = convMeta?.title ?? null;
+  const summary = convMeta?.summary ?? null;
 
   // Track URL id to detect changes
   const prevIdRef = useRef<string | undefined>(undefined);
@@ -85,36 +93,62 @@ export default function Chat() {
   // Navigate to URL when new conversation is created via streaming
   // -----------------------------------------------------------------------
 
-  const refreshConversations = useCallback(async () => {
-    if (!currentWorkspaceId) return;
-    try {
-      const convs = await listConversations({
-        workspaceId: currentWorkspaceId,
-        limit: 50,
-      });
-      setConversations(convs, convs.length >= 50);
-    } catch {
-      // Best effort
-    }
-  }, [currentWorkspaceId, setConversations]);
-
   useEffect(() => {
-    // New conversation created during streaming -- navigate to its URL
+    // New conversation created during streaming -- navigate to its URL.
+    // Sidebar update is handled by WS session_started/session_completed notifications.
     if (conversationId && !id) {
       navigate(`/c/${conversationId}`, { replace: true });
       prevIdRef.current = conversationId;
-      void refreshConversations();
     }
-  }, [conversationId, id, navigate, refreshConversations]);
+  }, [conversationId, id, navigate]);
 
-  // Refresh conversation list when streaming finishes (updates timestamp/title)
+  // -----------------------------------------------------------------------
+  // Auto-fire: react to mailboxCount changes (kept up-to-date by WS
+  // notifications) instead of polling the API after streaming ends.
+  // -----------------------------------------------------------------------
+
+  const autoFireInFlightRef = useRef(false);
+
   useEffect(() => {
-    if (streamingState === "idle" && conversationId) {
-      void refreshConversations();
-    }
-    // Only trigger when streamingState transitions to idle
+    const cid = id ?? conversationId;
+    if (
+      streamingState !== "idle" ||
+      !cid ||
+      !autoFire ||
+      mailboxCount === 0 ||
+      autoFireInFlightRef.current
+    )
+      return;
+
+    let cancelled = false;
+    autoFireInFlightRef.current = true;
+
+    // Small delay to let the session finalize on the backend
+    const timer = setTimeout(() => {
+      if (cancelled) {
+        autoFireInFlightRef.current = false;
+        return;
+      }
+      fireConversation(cid, { transport: "stream" })
+        .then((response) => {
+          if (response.ok && !cancelled) {
+            void loadConversation(cid);
+          }
+        })
+        .catch(() => {
+          // Best effort
+        })
+        .finally(() => {
+          autoFireInFlightRef.current = false;
+        });
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamingState]);
+  }, [streamingState, autoFire, mailboxCount]);
 
   // -----------------------------------------------------------------------
   // Seed project selection from cache for new conversations
@@ -161,6 +195,17 @@ export default function Chat() {
     [conversationId],
   );
 
+  const handleSummaryChange = useCallback(
+    (newSummary: string) => {
+      useAppStore.setState((state) => ({
+        conversations: state.conversations.map((c) =>
+          c.conversation_id === conversationId ? { ...c, summary: newSummary } : c,
+        ),
+      }));
+    },
+    [conversationId],
+  );
+
   const handleCreateProject = useCallback(
     async (name: string) => {
       if (!currentWorkspaceId || !currentWorkspace) return;
@@ -184,8 +229,8 @@ export default function Chat() {
   const handleFired = useCallback(() => {
     const cid = id ?? conversationId;
     if (cid) void loadConversation(cid);
-    void refreshConversations();
-  }, [id, conversationId, loadConversation, refreshConversations]);
+    // Sidebar will be updated by WS session_started/session_completed notifications
+  }, [id, conversationId, loadConversation]);
 
   const handleFork = useCallback(async () => {
     const cid = id ?? conversationId;
@@ -196,19 +241,40 @@ export default function Chat() {
       });
       clearChat();
       navigate(`/c/${newId}`);
-      void refreshConversations();
+      // Fork creates a new conversation (no session, no WS notification).
+      // Fetch and prepend to sidebar list.
+      try {
+        const detail = await getConversation(newId);
+        useAppStore.setState((state) => ({
+          conversations: [
+            {
+              conversation_id: detail.conversation_id,
+              title: detail.title,
+              default_preset_id: detail.default_preset_id,
+              metadata: detail.metadata,
+              status: detail.status,
+              created_at: detail.created_at,
+              updated_at: detail.updated_at,
+            },
+            ...state.conversations,
+          ],
+        }));
+      } catch {
+        // Best effort -- sidebar will catch up on next refresh
+      }
     } catch (err) {
       console.error("Failed to fork conversation:", err);
       toast.error("Failed to fork conversation");
     }
-  }, [id, conversationId, currentWorkspaceId, clearChat, navigate, refreshConversations]);
+  }, [id, conversationId, currentWorkspaceId, clearChat, navigate]);
 
   const handleArchive = useCallback(async () => {
+    const cid = id ?? conversationId;
     await archiveConversation();
+    if (cid) useAppStore.getState().removeConversationFromList(cid);
     clearChat();
     navigate("/");
-    void refreshConversations();
-  }, [archiveConversation, clearChat, navigate, refreshConversations]);
+  }, [id, conversationId, archiveConversation, clearChat, navigate]);
 
   const handleChangePreset = useCallback(
     async (presetId: string) => {
@@ -279,10 +345,12 @@ export default function Chat() {
         <ConversationHeader
           conversationId={id ?? conversationId}
           title={title}
+          summary={summary}
           presetName={convMeta?.default_preset_id}
           projectIds={selectedProjectIds}
           mailboxCount={mailboxCount}
           onTitleChange={handleTitleChange}
+          onSummaryChange={handleSummaryChange}
           onFork={handleFork}
           onArchive={handleArchive}
           onFired={handleFired}
@@ -326,6 +394,11 @@ export default function Chat() {
         </div>
       )}
 
+      {subagents.length > 0 &&
+        (streamingState === "streaming" || streamingState === "connecting") && (
+          <StreamingSubagentPanel subagents={subagents} />
+        )}
+
       <UsageIndicator
         usage={mergeUsage(conversationUsage, usage)}
         streaming={streamingState === "streaming" || streamingState === "connecting"}
@@ -363,6 +436,7 @@ export default function Chat() {
         onInterrupt={handleInterrupt}
         streamingState={streamingState}
         disabled={!currentWorkspaceId}
+        mailboxCount={mailboxCount}
       />
     </div>
   );

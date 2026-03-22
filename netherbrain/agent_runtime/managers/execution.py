@@ -40,7 +40,14 @@ from netherbrain.agent_runtime.managers.mailbox import (
     drain_undelivered,
 )
 from netherbrain.agent_runtime.models.api import ConversationUpdate
-from netherbrain.agent_runtime.models.enums import InputPartType, MailboxSourceType, SessionStatus, Transport
+from netherbrain.agent_runtime.models.enums import (
+    EnvironmentMode,
+    InputPartType,
+    MailboxSourceType,
+    SessionStatus,
+    SessionType,
+    Transport,
+)
 from netherbrain.agent_runtime.models.input import InputPart, ToolResult, UserInteraction
 
 if TYPE_CHECKING:
@@ -239,6 +246,7 @@ class ExecutionManager:
             user_interactions=user_interactions,
             tool_results=tool_results,
             external_tools=external_tools,
+            execution_manager=self,
         )
 
         # Apply metadata to new conversations.
@@ -303,6 +311,7 @@ class ExecutionManager:
             conversation_id=uuid.uuid4().hex,
             user_id=user_id,
             external_tools=external_tools,
+            execution_manager=self,
         )
 
         if metadata:
@@ -522,6 +531,7 @@ class ExecutionManager:
                 user_interactions=user_interactions,
                 tool_results=tool_results,
                 external_tools=external_tools,
+                execution_manager=self,
             )
         except Exception:
             # Revert claim: set delivered_to back to NULL.
@@ -579,6 +589,14 @@ class ExecutionManager:
         transport: Transport = Transport.SSE,
         user_id: str | None = None,
         external_tools: Sequence[ExternalToolSpec] | None = None,
+        # Subagent classification (used by spawn_delegate, not external API)
+        session_type: SessionType = SessionType.AGENT,
+        spawned_by: str | None = None,
+        subagent_name: str | None = None,
+        # Environment inheritance (explicit override for subagent config resolution)
+        parent_environment_mode: EnvironmentMode | None = None,
+        parent_container_id: str | None = None,
+        parent_container_workdir: str | None = None,
     ) -> LaunchResult:
         """Direct session execution with explicit parameters.
 
@@ -608,6 +626,9 @@ class ExecutionManager:
             workspace_id=workspace_id,
             project_ids=project_ids,
             parent_project_ids=parent_project_ids,
+            parent_environment_mode=parent_environment_mode,
+            parent_container_id=parent_container_id,
+            parent_container_workdir=parent_container_workdir,
         )
 
         conversation_id: str | None = None
@@ -630,7 +651,11 @@ class ExecutionManager:
             user_id=user_id,
             user_interactions=user_interactions,
             tool_results=tool_results,
+            session_type=session_type,
+            spawned_by=spawned_by,
+            subagent_name=subagent_name,
             external_tools=external_tools,
+            execution_manager=self,
         )
 
     def interrupt_session(self, session_id: str) -> bool:
@@ -738,6 +763,9 @@ class ExecutionManager:
         workspace_id: str | None,
         project_ids: list[str] | None,
         parent_project_ids: list[str] | None,
+        parent_environment_mode: EnvironmentMode | None = None,
+        parent_container_id: str | None = None,
+        parent_container_workdir: str | None = None,
     ):
         """Resolve execution config. Passes through domain exceptions."""
         override = ConfigOverride(**config_override) if config_override else None
@@ -748,6 +776,9 @@ class ExecutionManager:
             workspace_id=workspace_id,
             project_ids=project_ids,
             parent_project_ids=parent_project_ids,
+            parent_environment_mode=parent_environment_mode,
+            parent_container_id=parent_container_id,
+            parent_container_workdir=parent_container_workdir,
         )
 
     @staticmethod

@@ -225,6 +225,7 @@ from netherbrain.agent_runtime.routers.conversations import router as conversati
 from netherbrain.agent_runtime.routers.files import router as files_router  # noqa: E402
 from netherbrain.agent_runtime.routers.keys import router as keys_router  # noqa: E402
 from netherbrain.agent_runtime.routers.model_presets import router as model_presets_router  # noqa: E402
+from netherbrain.agent_runtime.routers.notifications import router as notifications_router  # noqa: E402
 from netherbrain.agent_runtime.routers.presets import router as presets_router  # noqa: E402
 from netherbrain.agent_runtime.routers.sessions import router as sessions_router  # noqa: E402
 from netherbrain.agent_runtime.routers.shell import router as shell_router  # noqa: E402
@@ -241,6 +242,7 @@ api.include_router(conversations_router)
 api.include_router(sessions_router)
 api.include_router(toolsets_router)
 api.include_router(model_presets_router)
+api.include_router(notifications_router)
 api.include_router(files_router)
 api.include_router(shell_router)
 

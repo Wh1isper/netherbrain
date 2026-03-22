@@ -96,13 +96,33 @@ export interface UsageData {
   modelUsages: Record<string, ModelUsageData>;
 }
 
+/** Info about a dispatched async subagent (from CUSTOM events). */
+export interface SubagentInfo {
+  id: string;
+  name: string;
+  status: "started" | "completed" | "failed";
+  promptPreview?: string;
+  resultPreview?: string;
+}
+
+/** Ordered content block reference for timeline rendering. */
+export type ContentBlock =
+  | { type: "thinking"; index: number }
+  | { type: "text"; index: number }
+  | { type: "tool_call"; id: string };
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
+  /** Joined text content (backward compat; prefer textBlocks for rendering). */
   content: string;
+  /** Individual text segments (for timeline-ordered rendering). */
+  textBlocks: string[];
   /** Array of thinking blocks (one per REASONING_START..REASONING_END cycle). */
   thinkingBlocks: string[];
   toolCalls: ToolCall[];
+  /** Ordered content block references for timeline rendering. */
+  blocks: ContentBlock[];
   isStreaming: boolean;
   /** Non-text input parts (images, files, URLs) for display. */
   attachments: InputPart[];
@@ -110,6 +130,8 @@ export interface ChatMessage {
   sessionId?: string;
   /** True for turns triggered by fire-continuation (mailbox processing). */
   isFireContinuation?: boolean;
+  /** Raw mailbox prompt text for fire-continuation turns (for panel rendering). */
+  fireInputText?: string;
 }
 
 export type StreamingState = "idle" | "connecting" | "streaming" | "error";
@@ -235,8 +257,10 @@ function displayEventsToMessages(sessionId: string, events: DisplayEvent[]): Cha
         id: `${sessionId}-steer-${i}`,
         role: "user",
         content: steerText,
+        textBlocks: [],
         thinkingBlocks: [],
         toolCalls: [],
+        blocks: [],
         isStreaming: false,
         attachments: [],
         sessionId,
@@ -251,27 +275,31 @@ function displayEventsToMessages(sessionId: string, events: DisplayEvent[]): Cha
   return result;
 }
 
-/** Build a single assistant ChatMessage from a segment of display events. */
+/** Build a single assistant ChatMessage from a segment of display events.
+ *  Builds blocks[] in event order for timeline rendering.
+ */
 function buildAssistantFromSegment(
   sessionId: string,
   events: DisplayEvent[],
   segmentIndex: number,
 ): ChatMessage | null {
-  let content = "";
+  const textBlocks: string[] = [];
   const thinkingBlocks: string[] = [];
   const toolCalls: ToolCall[] = [];
+  const blocks: ContentBlock[] = [];
 
   for (const evt of events) {
     switch (evt.type) {
       case "TEXT_MESSAGE_CHUNK": {
         const e = evt as TextMessageChunk;
-        content += e.delta;
+        textBlocks.push(e.delta);
+        blocks.push({ type: "text", index: textBlocks.length - 1 });
         break;
       }
       case "REASONING_MESSAGE_CHUNK": {
         const e = evt as ReasoningMessageChunk;
-        // Each chunk is a separate thinking block (compressed from one REASONING_START..END cycle)
         thinkingBlocks.push(e.delta);
+        blocks.push({ type: "thinking", index: thinkingBlocks.length - 1 });
         break;
       }
       case "TOOL_CALL_CHUNK": {
@@ -282,6 +310,7 @@ function buildAssistantFromSegment(
           args: e.delta,
           status: "complete",
         });
+        blocks.push({ type: "tool_call", id: e.toolCallId });
         break;
       }
       case "TOOL_CALL_RESULT": {
@@ -298,15 +327,17 @@ function buildAssistantFromSegment(
   }
 
   // Skip empty segments (no content at all).
-  if (!content && thinkingBlocks.length === 0 && toolCalls.length === 0) return null;
+  if (textBlocks.length === 0 && thinkingBlocks.length === 0 && toolCalls.length === 0) return null;
 
   const suffix = segmentIndex > 0 ? `-s${segmentIndex}` : "";
   return {
     id: `${sessionId}-assistant${suffix}`,
     role: "assistant",
-    content,
+    content: textBlocks.join(""),
+    textBlocks,
     thinkingBlocks,
     toolCalls,
+    blocks,
     isStreaming: false,
     attachments: [],
     sessionId,
@@ -322,25 +353,31 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   for (const turn of turns) {
-    // Detect fire-continuation turns (no user text input -- triggered by mailbox processing)
-    const hasUserText = turn.input?.some((p) => p.type === "text" && p.text) ?? false;
-    const isFireContinuation = !hasUserText;
+    // Detect fire-continuation turns by checking if input matches the
+    // rendered mailbox prompt pattern (starts with "Async subagent").
+    const textParts = (turn.input ?? [])
+      .filter((p) => p.type === "text" && p.text)
+      .map((p) => p.text!);
+    const firstText = textParts.join("\n");
+    const isFireContinuation = firstText.startsWith("Async subagent");
 
     // User message from input parts
     if (turn.input?.length) {
-      const textParts = turn.input.filter((p) => p.type === "text" && p.text).map((p) => p.text!);
       const attachments = turn.input.filter((p) => p.type !== "text");
       if (textParts.length > 0 || attachments.length > 0) {
         messages.push({
           id: `${turn.session_id}-user`,
           role: "user",
-          content: textParts.join("\n"),
+          content: isFireContinuation ? "" : firstText,
+          textBlocks: [],
           thinkingBlocks: [],
           toolCalls: [],
+          blocks: [],
           isStreaming: false,
-          attachments,
+          attachments: isFireContinuation ? [] : attachments,
           sessionId: turn.session_id,
           isFireContinuation,
+          fireInputText: isFireContinuation ? firstText : undefined,
         });
       }
     }
@@ -357,8 +394,10 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
         id: `${turn.session_id}-assistant`,
         role: "assistant",
         content: turn.final_message,
+        textBlocks: turn.final_message ? [turn.final_message] : [],
         thinkingBlocks: [],
         toolCalls: [],
+        blocks: turn.final_message ? [{ type: "text" as const, index: 0 }] : [],
         isStreaming: false,
         attachments: [],
         sessionId: turn.session_id,
@@ -376,8 +415,10 @@ function makeUserMessage(text: string, attachments: InputPart[] = []): ChatMessa
     id: crypto.randomUUID(),
     role: "user",
     content: text,
+    textBlocks: [],
     thinkingBlocks: [],
     toolCalls: [],
+    blocks: [],
     isStreaming: false,
     attachments,
   };
@@ -389,8 +430,10 @@ function makeAssistantPlaceholder(): ChatMessage {
     id: crypto.randomUUID(),
     role: "assistant",
     content: "",
+    textBlocks: [],
     thinkingBlocks: [],
     toolCalls: [],
+    blocks: [],
     isStreaming: true,
     attachments: [],
   };
@@ -451,24 +494,55 @@ function handleEvent(event: AGUIEvent, _get: StoreGet, set: StoreSet): void {
       break;
     }
 
+    case EventType.TEXT_MESSAGE_START: {
+      // Start a new text block in the timeline
+      set((state) => ({
+        messages: updateLastAssistant(state.messages, (msg) => {
+          const newIndex = msg.textBlocks.length;
+          return {
+            ...msg,
+            textBlocks: [...msg.textBlocks, ""],
+            blocks: [...msg.blocks, { type: "text" as const, index: newIndex }],
+          };
+        }),
+      }));
+      break;
+    }
+
     case EventType.TEXT_MESSAGE_CONTENT: {
       const e = event as TextMessageContentEvent;
       set((state) => ({
-        messages: updateLastAssistant(state.messages, (msg) => ({
-          ...msg,
-          content: msg.content + e.delta,
-        })),
+        messages: updateLastAssistant(state.messages, (msg) => {
+          const textBlocks = [...msg.textBlocks];
+          let blocks = msg.blocks;
+          // If no text block yet (edge case: content without start event), create one
+          if (textBlocks.length === 0) {
+            textBlocks.push("");
+            blocks = [...blocks, { type: "text" as const, index: 0 }];
+          }
+          textBlocks[textBlocks.length - 1] += e.delta;
+          return {
+            ...msg,
+            content: msg.content + e.delta,
+            textBlocks,
+            blocks,
+          };
+        }),
       }));
       break;
     }
 
     case EventType.REASONING_START: {
-      // Start a new thinking block
+      // Start a new thinking block in the timeline
       set((state) => ({
-        messages: updateLastAssistant(state.messages, (msg) => ({
-          ...msg,
-          thinkingBlocks: [...msg.thinkingBlocks, ""],
-        })),
+        messages: updateLastAssistant(state.messages, (msg) => {
+          const newIndex = msg.thinkingBlocks.length;
+          return {
+            ...msg,
+            thinkingBlocks: [...msg.thinkingBlocks, ""],
+            blocks: [...msg.blocks, { type: "thinking" as const, index: newIndex }],
+          };
+        }),
       }));
       break;
     }
@@ -500,6 +574,7 @@ function handleEvent(event: AGUIEvent, _get: StoreGet, set: StoreSet): void {
               status: "running" as const,
             },
           ],
+          blocks: [...msg.blocks, { type: "tool_call" as const, id: e.toolCallId }],
         })),
       }));
       break;
@@ -610,11 +685,35 @@ function handleEvent(event: AGUIEvent, _get: StoreGet, set: StoreSet): void {
           }
           set({ usage: { modelUsages } });
         }
+      } else if (e.name === "subagent_started") {
+        const info: SubagentInfo = {
+          id: (e.value?.sub_agent_id as string) || crypto.randomUUID(),
+          name: (e.value?.sub_agent_name as string) || "unknown",
+          status: "started",
+          promptPreview: (e.value?.prompt_preview as string) || undefined,
+        };
+        set((state) => ({
+          subagents: [...state.subagents.filter((s) => s.name !== info.name), info],
+        }));
+      } else if (e.name === "subagent_completed") {
+        const name = (e.value?.sub_agent_name as string) || "";
+        const success = (e.value?.success as boolean) ?? true;
+        set((state) => ({
+          subagents: state.subagents.map((s) =>
+            s.name === name
+              ? {
+                  ...s,
+                  status: success ? ("completed" as const) : ("failed" as const),
+                  resultPreview: (e.value?.result_preview as string) || undefined,
+                }
+              : s,
+          ),
+        }));
       }
       break;
     }
 
-    // TEXT_MESSAGE_START/END, REASONING_END, TOOL_CALL_END
+    // TEXT_MESSAGE_END, REASONING_END, TOOL_CALL_END
     // are structural/lifecycle events -- no state mutation needed.
     default:
       break;
@@ -792,6 +891,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   projectSelectionSource: "default",
   selectedPresetId: null,
   mailboxCount: 0,
+  subagents: [],
   usage: null,
   conversationUsage: null,
   _abortController: null,
@@ -823,6 +923,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       selectedProjectIds: [],
       projectSelectionSource: "default",
       mailboxCount: 0,
+      subagents: [],
       usage: null,
       conversationUsage: null,
       _abortController: null,
@@ -1059,6 +1160,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       selectedProjectIds: [],
       projectSelectionSource: "default",
       mailboxCount: 0,
+      subagents: [],
       usage: null,
       conversationUsage: null,
       _abortController: null,

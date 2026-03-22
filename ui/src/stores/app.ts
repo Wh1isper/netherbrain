@@ -51,6 +51,11 @@ interface AppState {
   // Auto-fire: automatically fire continuation when mailbox has pending messages
   autoFire: boolean;
   setAutoFire: (enabled: boolean) => void;
+
+  // Active sessions (conversation IDs with running sessions, from WS notifications)
+  activeSessions: Set<string>;
+  addActiveSession: (conversationId: string) => void;
+  removeActiveSession: (conversationId: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -117,6 +122,21 @@ export const useAppStore = create<AppState>()(
       // Auto-fire
       autoFire: true,
       setAutoFire: (enabled) => set({ autoFire: enabled }),
+
+      // Active sessions
+      activeSessions: new Set<string>(),
+      addActiveSession: (conversationId) =>
+        set((state) => {
+          const next = new Set(state.activeSessions);
+          next.add(conversationId);
+          return { activeSessions: next };
+        }),
+      removeActiveSession: (conversationId) =>
+        set((state) => {
+          const next = new Set(state.activeSessions);
+          next.delete(conversationId);
+          return { activeSessions: next };
+        }),
     }),
     {
       name: "netherbrain-app",

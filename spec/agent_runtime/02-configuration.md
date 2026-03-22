@@ -164,6 +164,10 @@ Available toolsets:
 | document   | pdf_convert, office_to_markdown               |
 | task       | task_create, task_update, task_list, task_get |
 | context    | thinking, handoff                             |
+| history    | search_conversations, summarize_conversation  |
+| control    | steer_agent                                   |
+
+`history` and `control` are auto-included for main agent sessions and excluded from async subagent sessions. They are not part of the `core` alias.
 
 ### EnvironmentSpec (JSON)
 
@@ -303,9 +307,10 @@ flowchart LR
 1. Load the referenced preset from PostgreSQL (or default preset if unspecified)
 2. Merge per-request inline overrides (override wins)
 3. Resolve project list: request `workspace_id` / `project_ids` overrides preset default; workspace_id is resolved from PG; for continue/fork, parent session's `project_ids` is the fallback
-4. Merge MCP servers: override replaces preset list entirely (if provided)
-5. Inject environment variable values (API keys into ToolConfig)
-6. Produce resolved config for execution
+4. Resolve environment fields (`mode`, `container_id`, `container_workdir`): override -> preset (if explicitly set in stored JSONB) -> parent session (fallback for async subagents) -> default. This ensures async subagents inherit the spawner's environment when their own preset does not specify one.
+5. Merge MCP servers: override replaces preset list entirely (if provided)
+6. Inject environment variable values (API keys into ToolConfig)
+7. Produce resolved config for execution
 
 ## Security Boundary
 

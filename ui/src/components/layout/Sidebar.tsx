@@ -18,7 +18,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { updateConversation } from "@/api/conversations";
+import { updateConversation, searchConversations } from "@/api/conversations";
+import type { SearchConversationResult } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -144,7 +145,14 @@ function ConversationItem({
           <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
         </span>
       )}
-      <span className="flex-1 truncate">{title}</span>
+      <div className="flex-1 min-w-0">
+        <span className="block truncate">{title}</span>
+        {conv.summary && (
+          <span className="block text-xs text-muted-foreground/60 truncate mt-0.5">
+            {conv.summary}
+          </span>
+        )}
+      </div>
 
       {/* Actions dropdown (visible on hover) */}
       <DropdownMenu>
@@ -219,9 +227,15 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
     s.streamingState === "streaming" || s.streamingState === "connecting" ? s.conversationId : null,
   );
 
+  // Active sessions from WS notifications (includes sessions from other clients)
+  const activeSessions = useAppStore((s) => s.activeSessions);
+
   // Search / filter
   const [searchQuery, setSearchQuery] = useState("");
   const [searchVisible, setSearchVisible] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchConversationResult[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load more state
   const [loadingMore, setLoadingMore] = useState(false);
@@ -274,7 +288,42 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
   // Reset search when workspace changes
   useEffect(() => {
     setSearchQuery("");
+    setSearchResults(null);
   }, [currentWorkspaceId]);
+
+  // Debounced server-side search
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+
+    // Short queries: client-side filter by title/summary (instant)
+    if (q.length < 2) {
+      setSearchResults(null);
+      return;
+    }
+
+    // Longer queries: debounced server-side search
+    setSearchLoading(true);
+    searchTimerRef.current = setTimeout(() => {
+      searchConversations({ q, limit: 30 })
+        .then((res) => setSearchResults(res.conversations))
+        .catch((err) => {
+          console.error("Search failed:", err);
+          setSearchResults(null);
+        })
+        .finally(() => setSearchLoading(false));
+    }, 300);
+
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery]);
 
   const handleLoadMore = useCallback(async () => {
     if (!currentWorkspaceId || loadingMore) return;
@@ -326,13 +375,19 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
     [activeId, navigate, removeConversationFromList],
   );
 
-  // Filter conversations by search query (client-side)
-  const filteredConversations = searchQuery.trim()
-    ? conversations.filter((c) => {
-        const t = (c.title ?? "New conversation").toLowerCase();
-        return t.includes(searchQuery.trim().toLowerCase());
-      })
-    : conversations;
+  // Filter conversations: server-side results or client-side fallback
+  const filteredConversations = (() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return conversations;
+    // If server-side results are available, use them
+    if (searchResults !== null) return searchResults;
+    // Short query fallback: client-side filter by title + summary
+    return conversations.filter((c) => {
+      const t = (c.title ?? "New conversation").toLowerCase();
+      const s = (c.summary ?? "").toLowerCase();
+      return t.includes(q) || s.includes(q);
+    });
+  })();
 
   // -----------------------------------------------------------------------
   // Collapsed sidebar -- slim icon bar
@@ -453,7 +508,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter conversations..."
+            placeholder="Search conversations..."
             className="h-8 text-sm rounded-xl"
             autoFocus
           />
@@ -466,7 +521,11 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
           {filteredConversations.length === 0 ? (
             <p className="px-3 py-6 text-xs text-muted-foreground text-center leading-relaxed">
               {searchQuery.trim() ? (
-                "No matching conversations."
+                searchLoading ? (
+                  "Searching..."
+                ) : (
+                  "No matching conversations."
+                )
               ) : (
                 <>
                   No conversations yet.
@@ -482,7 +541,10 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
                   key={conv.conversation_id}
                   conv={conv}
                   active={conv.conversation_id === activeId}
-                  isStreaming={conv.conversation_id === streamingConversationId}
+                  isStreaming={
+                    conv.conversation_id === streamingConversationId ||
+                    activeSessions.has(conv.conversation_id)
+                  }
                   onNavigate={onNavigate}
                   onArchive={handleArchiveConversation}
                 />

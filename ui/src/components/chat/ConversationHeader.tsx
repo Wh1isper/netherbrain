@@ -25,14 +25,21 @@ import {
   FolderOpen,
   GitFork,
   Inbox,
+  Loader2,
   Menu,
   MoreHorizontal,
   Pencil,
   Settings2,
+  Sparkles,
   X,
   Zap,
 } from "lucide-react";
-import { updateConversation, getMailbox, fireConversation } from "@/api/conversations";
+import {
+  updateConversation,
+  getMailbox,
+  fireConversation,
+  summarizeConversation,
+} from "@/api/conversations";
 import type { MailboxMessageResponse } from "@/api/types";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/stores/app";
@@ -40,10 +47,12 @@ import { useAppStore } from "@/stores/app";
 interface ConversationHeaderProps {
   conversationId: string | null;
   title: string | null;
+  summary?: string | null;
   presetName?: string | null;
   projectIds?: string[];
   mailboxCount?: number;
   onTitleChange?: (title: string) => void;
+  onSummaryChange?: (summary: string) => void;
   onFork?: () => void;
   onArchive?: () => void;
   onFired?: () => void;
@@ -204,10 +213,12 @@ function ChangePresetDialog({
 export default function ConversationHeader({
   conversationId,
   title,
+  summary,
   presetName,
   projectIds,
   mailboxCount = 0,
   onTitleChange,
+  onSummaryChange,
   onFork,
   onArchive,
   onFired,
@@ -220,6 +231,7 @@ export default function ConversationHeader({
   const [editValue, setEditValue] = useState("");
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const displayTitle = title || "New Conversation";
@@ -261,6 +273,19 @@ export default function ConversationHeader({
     },
     [saveTitle, cancelEditing],
   );
+
+  const handleSummarize = useCallback(async () => {
+    if (!conversationId || summarizing) return;
+    setSummarizing(true);
+    try {
+      const result = await summarizeConversation(conversationId);
+      onSummaryChange?.(result.summary ?? "");
+    } catch (err) {
+      console.error("Failed to summarize:", err);
+    } finally {
+      setSummarizing(false);
+    }
+  }, [conversationId, summarizing, onSummaryChange]);
 
   return (
     <div className="flex items-center gap-2 md:gap-3 border-b border-border/60 px-3 md:px-4 py-2.5 min-h-[49px] bg-background/80 backdrop-blur-sm">
@@ -311,7 +336,12 @@ export default function ConversationHeader({
             className="flex items-center gap-1.5 group min-w-0"
             title="Click to edit title"
           >
-            <span className="text-sm font-medium truncate">{displayTitle}</span>
+            <div className="min-w-0">
+              <span className="text-sm font-medium truncate block">{displayTitle}</span>
+              {summary && (
+                <span className="text-xs text-muted-foreground/60 truncate block">{summary}</span>
+              )}
+            </div>
             {conversationId && (
               <Pencil className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
             )}
@@ -391,6 +421,14 @@ export default function ConversationHeader({
               <DropdownMenuItem onClick={onFork} disabled={!onFork}>
                 <GitFork className="h-3.5 w-3.5 mr-2" />
                 Fork conversation
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void handleSummarize()} disabled={summarizing}>
+                {summarizing ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5 mr-2" />
+                )}
+                {summarizing ? "Summarizing..." : "Summarize"}
               </DropdownMenuItem>
               {onChangePreset && (
                 <DropdownMenuItem onClick={() => setPresetDialogOpen(true)}>

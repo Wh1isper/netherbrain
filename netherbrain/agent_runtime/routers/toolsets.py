@@ -28,6 +28,8 @@ _DESCRIPTIONS: dict[str, str] = {
     "shell": "Shell command execution.",
     "web": "Web search, scraping, and file download.",
     "core": "Alias that enables all built-in toolsets.",
+    "history": "Conversation history search and summarization (main agent only, not inherited by subagents).",
+    "control": "Session control tools: steer running agent sessions (main agent only, not inherited by subagents).",
 }
 
 

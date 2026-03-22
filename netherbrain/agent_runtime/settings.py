@@ -70,6 +70,27 @@ class NetherSettings(BaseSettings):
     jwt_expiry_days: int = 7
     """JWT token expiry in days.  Default: 7 (homelab-friendly)."""
 
+    # -- Self-referencing API --------------------------------------------------
+    api_base_url: str | None = None
+    """Base URL for the agent-runtime's own API (self-referencing tool calls).
+
+    When not set, derived as ``http://127.0.0.1:{port}`` at runtime.
+    """
+
+    # -- Summary ---------------------------------------------------------------
+    summary_model: str | None = None
+    """Provider-qualified model name for conversation summaries.
+
+    When not set, the summarize endpoint returns 501 Not Implemented.
+    Example: ``openai:gpt-4.1-mini``, ``anthropic:claude-sonnet-4-20250514``.
+    """
+
+    summary_model_settings: str | None = None
+    """JSON string of ModelSettings overrides for the summary model.
+
+    Example: ``{"temperature": 0.3}``.
+    """
+
     # -- Server ----------------------------------------------------------------
     host: str = "0.0.0.0"  # noqa: S104
     port: int = 9001

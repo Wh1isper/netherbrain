@@ -149,6 +149,7 @@ class ConversationResponse(BaseModel):
     conversation_id: str
     user_id: str
     title: str | None = None
+    summary: str | None = None
     default_preset_id: str | None = None
     metadata: dict | None = Field(default=None, validation_alias="metadata_")
     status: ConversationStatus
@@ -189,6 +190,31 @@ class ConversationUpdate(BaseModel):
     default_preset_id: str | None = None
     metadata: dict | None = None
     status: ConversationStatus | None = None
+
+
+class SummarizeRequest(BaseModel):
+    """Request body for POST /conversations/{id}/summarize."""
+
+    model: str | None = None
+    """Override summary model (provider-qualified name)."""
+
+    model_settings: dict | None = None
+    """Override model settings for this request."""
+
+
+class SearchConversationResult(ConversationResponse):
+    """A conversation search result with match source indicator."""
+
+    match_source: str
+    """Where the best match was found: ``title``, ``summary``, or ``session_content``."""
+
+
+class SearchResponse(BaseModel):
+    """Paginated conversation search results."""
+
+    conversations: list[SearchConversationResult]
+    total: int
+    has_more: bool
 
 
 # ---------------------------------------------------------------------------
