@@ -72,6 +72,8 @@ check-ui: ## Run UI linting and formatting checks
 	@cd ui && pnpm run lint
 	@echo "Checking UI formatting"
 	@cd ui && pnpm run fmt:check
+	@echo "Type checking UI"
+	@cd ui && pnpm run typecheck
 
 .PHONY: fix-ui
 fix-ui: ## Fix UI lint and formatting issues

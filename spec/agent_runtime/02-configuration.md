@@ -74,18 +74,6 @@ Auto-generation behavior: if `AUTH_TOKEN` is not set or empty, the runtime gener
 | `GOOGLE_SEARCH_API_KEY` | Google search        |
 | `GOOGLE_SEARCH_CX`      | Google search engine |
 
-### Observability (Langfuse)
-
-Optional. Uses Langfuse's native env vars (not `NETHER_*` prefixed). Graceful degradation when unconfigured.
-
-| Variable                       | Required | Description                                     |
-| ------------------------------ | -------- | ----------------------------------------------- |
-| `LANGFUSE_SECRET_KEY`          | Yes      | Langfuse secret key                             |
-| `LANGFUSE_PUBLIC_KEY`          | Yes      | Langfuse public key                             |
-| `LANGFUSE_HOST`                | Yes      | Langfuse server URL                             |
-| `LANGFUSE_TRACING_ENVIRONMENT` | No       | Tracing environment tag (default: `dev`)        |
-| `OTEL_SERVICE_NAME`            | No       | Service name in traces (default: `netherbrain`) |
-
 ### Service Options
 
 | Variable     | Default     | Description    |
@@ -136,7 +124,7 @@ The SDK provides built-in presets for common provider configurations (thinking b
 
 ### McpServerSpec (JSON)
 
-Declares external MCP server connections. Each entry creates a pydantic-ai MCP client toolset at runtime. Only network-based transports are supported (no stdio -- subprocess spawning is not appropriate for a service).
+Declares one external MCP server connection. Each entry creates a pydantic-ai MCP client toolset at runtime. Only network-based transports are supported (no stdio -- subprocess spawning is not appropriate for a service).
 
 | Field       | Type    | Default           | Description                                                         |
 | ----------- | ------- | ----------------- | ------------------------------------------------------------------- |
@@ -145,11 +133,12 @@ Declares external MCP server connections. Each entry creates a pydantic-ai MCP c
 | headers     | dict?   | null              | Custom HTTP headers (e.g., auth tokens)                             |
 | tool_prefix | string? | null              | Namespace prefix for tools; doubles as namespace ID for tool search |
 | timeout     | float?  | null              | Connection timeout in seconds (null = pydantic-ai default)          |
+| optional    | bool    | `false`           | Skip this server if it fails to initialize or refresh               |
 | description | string? | null              | Human-readable description for tool search namespace discovery      |
 
-MCP servers are connected at session start and disconnected at session end. At runtime, all MCP servers are wrapped in a `ToolSearchToolSet` for on-demand tool loading. Instead of loading all MCP tool definitions into the model's context window upfront, the model sees a single `tool_search` tool and discovers MCP tools on demand via natural language queries. This reduces context usage significantly when multiple MCP servers are configured.
+MCP servers are connected at session start and disconnected at session end. At runtime, Netherbrain maps the configured `mcp_servers` list into an internal MCP runtime config and then into a `ToolProxyToolset` for on-demand tool loading and invocation. Instead of loading all MCP tool definitions into the model's visible tool list upfront, the model sees two stable tools: `search_tools` for discovery and `call_tool` for invocation. This keeps the model-visible tool list constant and improves prompt cache reuse when MCP namespaces vary between runs.
 
-`tool_prefix` serves as the namespace ID for tool search -- all tools from the same MCP server load atomically when any tool in the namespace is discovered. `description` provides a human-readable summary shown in search results; if omitted, the runtime falls back to the MCP server's instructions or an auto-generated description.
+`tool_prefix` serves as the namespace ID for tool search -- all tools from the same MCP server load atomically when any tool in the namespace is discovered. `description` provides a human-readable summary shown in search results; if omitted, the runtime falls back to the MCP server's instructions or an auto-generated description. When `optional=true`, the runtime skips that namespace if initialization or refresh fails instead of aborting the whole run.
 
 Security note: `headers` may contain bearer tokens for authenticating to the MCP server. These are stored in the preset's JSONB column. For high-security deployments, consider using environment variable references instead of inline tokens.
 
@@ -216,7 +205,7 @@ Non-secret tool configuration. API keys are auto-loaded from environment variabl
 | Field           | Type              | Description                                    |
 | --------------- | ----------------- | ---------------------------------------------- |
 | include_builtin | bool              | Include SDK builtin subagents (debugger, etc.) |
-| async_enabled   | bool              | Enable async_delegate tool                     |
+| async_enabled   | bool              | Enable spawn_delegate tool                     |
 | refs            | list[SubagentRef] | References to other presets                    |
 
 #### SubagentRef
@@ -290,13 +279,14 @@ This avoids storing sensitive data (auth headers) and keeps the caller in contro
 
 ### Relationship to MCP Servers
 
-| Aspect    | MCP Servers                     | External Tools                     |
-| --------- | ------------------------------- | ---------------------------------- |
-| Scope     | Preset-level (persistent)       | Request-level (ephemeral)          |
-| Discovery | ToolSearchToolSet (on-demand)   | Meta tool (always visible)         |
-| Protocol  | MCP (streamable HTTP / SSE)     | Plain HTTP callback                |
-| Auth      | Preset headers                  | Per-request headers                |
-| Use case  | Third-party service integration | Client callback (IM actions, etc.) |
+| Aspect     | MCP Servers                       | External Tools                     |
+| ---------- | --------------------------------- | ---------------------------------- |
+| Scope      | Preset-level (persistent)         | Request-level (ephemeral)          |
+| Discovery  | ToolProxyToolset (`search_tools`) | Meta tool (always visible)         |
+| Invocation | ToolProxyToolset (`call_tool`)    | Meta tool (`call_external`)        |
+| Protocol   | MCP (streamable HTTP / SSE)       | Plain HTTP callback                |
+| Auth       | Preset headers                    | Per-request headers                |
+| Use case   | Third-party service integration   | Client callback (IM actions, etc.) |
 
 ## Config Resolver
 

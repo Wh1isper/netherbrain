@@ -42,6 +42,8 @@ def _to_row_kwargs(data: dict) -> dict:
             data[key] = data[key].model_dump()
     if "toolsets" in data and isinstance(data["toolsets"], list):
         data["toolsets"] = [t.model_dump() if hasattr(t, "model_dump") else t for t in data["toolsets"]]
+    if "mcp_servers" in data and isinstance(data["mcp_servers"], list):
+        data["mcp_servers"] = [s.model_dump() if hasattr(s, "model_dump") else s for s in data["mcp_servers"]]
     return data
 
 

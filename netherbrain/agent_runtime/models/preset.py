@@ -37,10 +37,11 @@ class McpServerSpec(BaseModel):
     headers: dict[str, str] | None = Field(default=None, description="Custom HTTP headers (e.g., auth tokens)")
     tool_prefix: str | None = Field(default=None, description="Namespace prefix for tools")
     timeout: float | None = Field(default=None, description="Connection timeout in seconds")
+    optional: bool = Field(default=False, description="Skip this server if it fails to initialize or refresh")
     description: str | None = Field(
         default=None,
-        description="Human-readable description for tool search namespace discovery. "
-        "Used as namespace description when MCP servers are wrapped in ToolSearchToolSet.",
+        description="Human-readable description for MCP namespace discovery. "
+        "Used as namespace description when MCP servers are wrapped in ToolProxyToolset.",
     )
 
 

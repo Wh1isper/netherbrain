@@ -125,37 +125,37 @@ body,
 
 .dark {
   /* Page */
-  --background: oklch(0.155 0.006 85); /* Warm charcoal, not cold grey */
-  --foreground: oklch(0.92 0.004 85); /* Warm off-white */
+  --background: oklch(0.16 0.006 85); /* Warm charcoal, not cold grey */
+  --foreground: oklch(0.93 0.004 85); /* Warm off-white */
 
   /* Surfaces */
-  --card: oklch(0.195 0.007 85);
-  --card-foreground: oklch(0.92 0.004 85);
-  --popover: oklch(0.195 0.007 85);
-  --popover-foreground: oklch(0.92 0.004 85);
+  --card: oklch(0.21 0.007 85);
+  --card-foreground: oklch(0.93 0.004 85);
+  --popover: oklch(0.21 0.007 85);
+  --popover-foreground: oklch(0.93 0.004 85);
 
   /* Brand / Primary — brighter green for dark bg */
   --primary: oklch(0.62 0.08 145);
   --primary-foreground: oklch(0.13 0.005 85);
 
   /* Secondary */
-  --secondary: oklch(0.23 0.007 85);
-  --secondary-foreground: oklch(0.9 0.004 85);
+  --secondary: oklch(0.25 0.007 85);
+  --secondary-foreground: oklch(0.92 0.004 85);
 
   /* Muted */
-  --muted: oklch(0.23 0.007 85);
-  --muted-foreground: oklch(0.58 0.005 85);
+  --muted: oklch(0.25 0.007 85);
+  --muted-foreground: oklch(0.65 0.005 85);
 
   /* Accent */
-  --accent: oklch(0.23 0.007 85);
-  --accent-foreground: oklch(0.9 0.004 85);
+  --accent: oklch(0.25 0.007 85);
+  --accent-foreground: oklch(0.92 0.004 85);
 
   /* Destructive */
   --destructive: oklch(0.704 0.191 22.216);
 
   /* Borders & inputs */
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 12%);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.62 0.08 145);
 
   /* Charts */
@@ -166,13 +166,13 @@ body,
   --chart-5: oklch(0.65 0.25 16);
 
   /* Sidebar — slightly lighter than page */
-  --sidebar: oklch(0.175 0.007 85);
-  --sidebar-foreground: oklch(0.92 0.004 85);
+  --sidebar: oklch(0.19 0.007 85);
+  --sidebar-foreground: oklch(0.93 0.004 85);
   --sidebar-primary: oklch(0.62 0.08 145);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.24 0.012 145); /* Subtle green tint */
-  --sidebar-accent-foreground: oklch(0.9 0.004 85);
-  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-accent: oklch(0.26 0.012 145); /* Subtle green tint */
+  --sidebar-accent-foreground: oklch(0.92 0.004 85);
+  --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.62 0.08 145);
 }
 

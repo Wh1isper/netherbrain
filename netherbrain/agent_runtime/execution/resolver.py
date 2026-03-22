@@ -26,6 +26,7 @@ from sqlalchemy import select
 
 from netherbrain.agent_runtime.db.tables import Preset as PresetRow
 from netherbrain.agent_runtime.db.tables import Workspace as WorkspaceRow
+from netherbrain.agent_runtime.execution.mcp import McpConfig, build_mcp_config
 from netherbrain.agent_runtime.models.enums import EnvironmentMode
 from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
@@ -105,8 +106,8 @@ class ResolvedConfig(BaseModel):
     container_id: str | None = None
     container_workdir: str | None = None
 
-    # External MCP server connections
-    mcp_servers: list[McpServerSpec] = Field(default_factory=list)
+    # External MCP configuration
+    mcp: McpConfig = Field(default_factory=McpConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +215,7 @@ async def resolve_config(
         project_ids=resolved_projects,
         container_id=container_id,
         container_workdir=container_workdir,
-        mcp_servers=mcp_servers,
+        mcp=build_mcp_config(mcp_servers),
     )
 
 

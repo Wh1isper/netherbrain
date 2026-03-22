@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from netherbrain.agent_runtime.db.tables import Preset, Workspace
+from netherbrain.agent_runtime.execution.mcp import McpConfig
 from netherbrain.agent_runtime.execution.resolver import (
     ConfigOverride,
     NoPresetError,
@@ -17,6 +18,7 @@ from netherbrain.agent_runtime.execution.resolver import (
 from netherbrain.agent_runtime.models.enums import EnvironmentMode
 from netherbrain.agent_runtime.models.preset import (
     EnvironmentSpec,
+    McpServerSpec,
     ModelPreset,
     SubagentSpec,
     ToolsetSpec,
@@ -422,15 +424,16 @@ async def test_preset_env_overrides_parent(db_session: AsyncSession) -> None:
 async def test_mcp_servers_from_preset(db_session: AsyncSession) -> None:
     mcp_servers = [
         {"url": "http://localhost:8080/mcp", "transport": "streamable_http"},
-        {"url": "http://localhost:3001/sse", "transport": "sse", "tool_prefix": "ext"},
+        {"url": "http://localhost:3001/sse", "transport": "sse", "tool_prefix": "ext", "optional": True},
     ]
     await _create_preset(db_session, "p1", is_default=True, mcp_servers=mcp_servers)
 
     cfg = await resolve_config(db_session)
 
-    assert len(cfg.mcp_servers) == 2
-    assert cfg.mcp_servers[0].url == "http://localhost:8080/mcp"
-    assert cfg.mcp_servers[1].tool_prefix == "ext"
+    assert len(cfg.mcp.servers) == 2
+    assert cfg.mcp.servers[0].url == "http://localhost:8080/mcp"
+    assert cfg.mcp.servers[1].tool_prefix == "ext"
+    assert cfg.mcp.optional_namespaces == ["ext"]
 
 
 @pytest.mark.integration
@@ -438,15 +441,13 @@ async def test_mcp_servers_override_replaces_preset(db_session: AsyncSession) ->
     mcp_servers_preset = [{"url": "http://preset-server/mcp"}]
     await _create_preset(db_session, "p1", is_default=True, mcp_servers=mcp_servers_preset)
 
-    from netherbrain.agent_runtime.models.preset import McpServerSpec
-
     override = ConfigOverride(
         mcp_servers=[McpServerSpec(url="http://override-server/mcp")],
     )
     cfg = await resolve_config(db_session, override=override)
 
-    assert len(cfg.mcp_servers) == 1
-    assert cfg.mcp_servers[0].url == "http://override-server/mcp"
+    assert len(cfg.mcp.servers) == 1
+    assert cfg.mcp.servers[0].url == "http://override-server/mcp"
 
 
 @pytest.mark.integration
@@ -455,4 +456,4 @@ async def test_mcp_servers_empty_by_default(db_session: AsyncSession) -> None:
 
     cfg = await resolve_config(db_session)
 
-    assert cfg.mcp_servers == []
+    assert cfg.mcp == McpConfig()

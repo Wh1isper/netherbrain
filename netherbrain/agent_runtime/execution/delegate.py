@@ -1,4 +1,4 @@
-"""Async delegate tool -- enables parent agents to spawn async subagents.
+"""Spawn delegate tool -- enables parent agents to spawn async subagents.
 
 Creates a pydantic-ai ``Tool`` as a closure over runtime infrastructure.
 The tool is injected into the agent when ``SubagentSpec.async_enabled``
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DelegateContext:
-    """Infrastructure context for the async_delegate tool.
+    """Infrastructure context for the spawn_delegate tool.
 
     Bundled into ``AgentContext.metadata`` so the tool closure can access
     runtime services without global state.
@@ -92,8 +92,8 @@ async def _load_parent_state(dc: DelegateContext, name: str) -> tuple[str | None
         return None, None
 
 
-def create_async_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
-    """Create the ``async_delegate`` pydantic-ai Tool.
+def create_spawn_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
+    """Create the ``spawn_delegate`` pydantic-ai Tool.
 
     The returned tool is a closure over ``delegate_ctx`` and resolves
     subagent configs / launches sessions when invoked by the LLM.
@@ -112,16 +112,16 @@ def create_async_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
     available_names = [ref.name for ref in delegate_ctx.subagent_refs]
     names_doc = ", ".join(f"'{n}'" for n in available_names) if available_names else "(none configured)"
 
-    async def async_delegate(ctx: RunContext[Any], name: str, instruction: str) -> str:
-        """Dispatch a task to an async subagent.
+    async def spawn_delegate(ctx: RunContext[Any], name: str, instruction: str) -> str:
+        """Spawn a background subagent to work on a task independently.
 
-        The subagent runs independently in the background. Results are
-        collected in the conversation mailbox and delivered when the
-        caller fires a continuation.
+        The subagent runs in its own session in parallel with the current
+        agent. Results are delivered to the conversation mailbox and
+        become available when the caller fires a continuation.
 
         Args:
             name: Subagent name. Available: {names_doc}
-            instruction: Task description for the subagent.
+            instruction: Task description and context for the subagent.
         """
         dc = delegate_ctx
 
@@ -188,14 +188,15 @@ def create_async_delegate_tool(delegate_ctx: DelegateContext) -> Tool:
         return f"Task dispatched to '{name}' (session: {result.session_id})"
 
     # Update the docstring with actual available names.
-    async_delegate.__doc__ = (async_delegate.__doc__ or "").replace("{names_doc}", names_doc)
+    spawn_delegate.__doc__ = (spawn_delegate.__doc__ or "").replace("{names_doc}", names_doc)
 
     return Tool(
-        function=async_delegate,
-        name="async_delegate",
+        function=spawn_delegate,
+        name="spawn_delegate",
         description=(
-            "Dispatch a task to an async subagent that runs independently. "
-            "Results are collected in the conversation mailbox. "
+            "Spawn a background subagent to work on a task independently. "
+            "The subagent runs in its own session; results are delivered "
+            "to the conversation mailbox. "
             f"Available subagents: {names_doc}"
         ),
     )

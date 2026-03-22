@@ -144,7 +144,7 @@ The runtime supports parallel agent execution within a conversation.
 
 ```mermaid
 flowchart LR
-    S1((main)) -->|spawn via\nasync_delegate| S2((subagent))
+    S1((main)) -->|spawn via\nspawn_delegate| S2((subagent))
     S1 -->|spawn| S3((subagent))
     S2 -.->|result| MB[mailbox]
     S3 -.->|result| MB
@@ -152,7 +152,7 @@ flowchart LR
     S1 -->|parent| S4
 ```
 
-1. The main agent calls the `async_delegate` tool to spawn subagents in parallel.
+1. The main agent calls the `spawn_delegate` tool to spawn subagents in parallel.
 2. Each subagent runs independently with its own session.
 3. When subagents complete, their results are posted to the conversation mailbox.
 4. The caller fires `POST /api/conversations/{id}/fire` to drain the mailbox and create a continuation session, delivering all results back to the main agent.

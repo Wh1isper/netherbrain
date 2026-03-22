@@ -47,6 +47,10 @@ interface AppState {
   // Mobile sidebar sheet
   mobileSidebarOpen: boolean;
   setMobileSidebarOpen: (open: boolean) => void;
+
+  // Auto-fire: automatically fire continuation when mailbox has pending messages
+  autoFire: boolean;
+  setAutoFire: (enabled: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -66,7 +70,7 @@ export const useAppStore = create<AppState>()(
       },
 
       // Theme
-      theme: "dark",
+      theme: "light",
       toggleTheme: () => set((state) => ({ theme: state.theme === "dark" ? "light" : "dark" })),
 
       // Workspace
@@ -109,6 +113,10 @@ export const useAppStore = create<AppState>()(
       // Mobile sidebar
       mobileSidebarOpen: false,
       setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
+
+      // Auto-fire
+      autoFire: true,
+      setAutoFire: (enabled) => set({ autoFire: enabled }),
     }),
     {
       name: "netherbrain-app",
@@ -118,6 +126,7 @@ export const useAppStore = create<AppState>()(
         theme: state.theme,
         currentWorkspaceId: state.currentWorkspaceId,
         sidebarOpen: state.sidebarOpen,
+        autoFire: state.autoFire,
       }),
       onRehydrateStorage: () => (state) => {
         // Sync persisted token into the API client on rehydration

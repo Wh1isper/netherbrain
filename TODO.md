@@ -12,7 +12,6 @@ The agent-runtime (backend) and web UI (frontend) are feature-complete:
 - Async delegate tool, mailbox orchestration
 - Authentication (root token, JWT, API keys, bootstrap admin)
 - File serving, interactive shell (WebSocket PTY, Docker exec)
-- Observability (Langfuse integration)
 - CI/CD (quality checks, tests, Docker image, PyPI release)
 - Web UI: Chat, Settings, Files pages with all features and optimizations
 

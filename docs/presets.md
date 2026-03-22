@@ -187,6 +187,8 @@ Non-secret per-preset tool settings. API keys are always read from environment v
 
 Connect external [Model Context Protocol](https://modelcontextprotocol.io/) servers. Only network-based transports are supported (no stdio).
 
+Server fields:
+
 | Field       | Type   | Default           | Description                                |
 | ----------- | ------ | ----------------- | ------------------------------------------ |
 | url         | string | (required)        | MCP server HTTP endpoint                   |
@@ -194,6 +196,7 @@ Connect external [Model Context Protocol](https://modelcontextprotocol.io/) serv
 | headers     | dict   | null              | Custom HTTP headers (e.g., auth tokens)    |
 | tool_prefix | string | null              | Prefix to namespace tools from this server |
 | timeout     | float  | null              | Connection timeout in seconds              |
+| optional    | bool   | false             | Skip if this server is unavailable         |
 
 Example:
 
@@ -204,13 +207,14 @@ Example:
       "url": "http://localhost:3000/mcp",
       "transport": "streamable_http",
       "tool_prefix": "github",
+      "optional": true,
       "headers": {"Authorization": "Bearer ghp_..."}
     }
   ]
 }
 ```
 
-MCP server tools appear alongside built-in toolset tools during execution.
+MCP server access is exposed through the fixed proxy tools `search_tools` and `call_tool`, which discover and invoke MCP tools on demand. Internally, Netherbrain maps the configured server list into its MCP runtime config before constructing the proxy toolset.
 
 ### Subagents
 
@@ -219,7 +223,7 @@ Configure subagent delegation for this preset.
 | Field           | Type | Description                                    |
 | --------------- | ---- | ---------------------------------------------- |
 | include_builtin | bool | Include SDK built-in subagents (default: true) |
-| async_enabled   | bool | Enable `async_delegate` tool (default: false)  |
+| async_enabled   | bool | Enable `spawn_delegate` tool (default: false)  |
 | refs            | list | References to other presets as named subagents |
 
 Each subagent reference (`refs` entry):

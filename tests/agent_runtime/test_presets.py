@@ -22,7 +22,30 @@ async def test_create_preset(client: AsyncClient) -> None:
     assert data["model"]["name"] == "anthropic:claude-sonnet-4"
     assert data["is_default"] is False
     assert data["toolsets"] == []
+    assert data["mcp_servers"] == []
     assert "created_at" in data
+
+
+@pytest.mark.integration
+async def test_create_preset_with_mcp_servers(client: AsyncClient) -> None:
+    payload = {
+        **PRESET_PAYLOAD,
+        "preset_id": "mcp-preset",
+        "mcp_servers": [
+            {
+                "url": "http://localhost:8080/mcp",
+                "tool_prefix": "files",
+                "optional": True,
+                "description": "File operations",
+            }
+        ],
+    }
+
+    resp = await client.post("/api/presets/create", json=payload)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["mcp_servers"][0]["tool_prefix"] == "files"
+    assert data["mcp_servers"][0]["optional"] is True
 
 
 @pytest.mark.integration

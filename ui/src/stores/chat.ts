@@ -100,13 +100,16 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  thinking: string;
+  /** Array of thinking blocks (one per REASONING_START..REASONING_END cycle). */
+  thinkingBlocks: string[];
   toolCalls: ToolCall[];
   isStreaming: boolean;
   /** Non-text input parts (images, files, URLs) for display. */
   attachments: InputPart[];
   /** Source session ID for pagination cursor (set for history-loaded messages). */
   sessionId?: string;
+  /** True for turns triggered by fire-continuation (mailbox processing). */
+  isFireContinuation?: boolean;
 }
 
 export type StreamingState = "idle" | "connecting" | "streaming" | "error";
@@ -232,7 +235,7 @@ function displayEventsToMessages(sessionId: string, events: DisplayEvent[]): Cha
         id: `${sessionId}-steer-${i}`,
         role: "user",
         content: steerText,
-        thinking: "",
+        thinkingBlocks: [],
         toolCalls: [],
         isStreaming: false,
         attachments: [],
@@ -255,7 +258,7 @@ function buildAssistantFromSegment(
   segmentIndex: number,
 ): ChatMessage | null {
   let content = "";
-  let thinking = "";
+  const thinkingBlocks: string[] = [];
   const toolCalls: ToolCall[] = [];
 
   for (const evt of events) {
@@ -267,7 +270,8 @@ function buildAssistantFromSegment(
       }
       case "REASONING_MESSAGE_CHUNK": {
         const e = evt as ReasoningMessageChunk;
-        thinking += e.delta;
+        // Each chunk is a separate thinking block (compressed from one REASONING_START..END cycle)
+        thinkingBlocks.push(e.delta);
         break;
       }
       case "TOOL_CALL_CHUNK": {
@@ -294,14 +298,14 @@ function buildAssistantFromSegment(
   }
 
   // Skip empty segments (no content at all).
-  if (!content && !thinking && toolCalls.length === 0) return null;
+  if (!content && thinkingBlocks.length === 0 && toolCalls.length === 0) return null;
 
   const suffix = segmentIndex > 0 ? `-s${segmentIndex}` : "";
   return {
     id: `${sessionId}-assistant${suffix}`,
     role: "assistant",
     content,
-    thinking,
+    thinkingBlocks,
     toolCalls,
     isStreaming: false,
     attachments: [],
@@ -318,6 +322,10 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   for (const turn of turns) {
+    // Detect fire-continuation turns (no user text input -- triggered by mailbox processing)
+    const hasUserText = turn.input?.some((p) => p.type === "text" && p.text) ?? false;
+    const isFireContinuation = !hasUserText;
+
     // User message from input parts
     if (turn.input?.length) {
       const textParts = turn.input.filter((p) => p.type === "text" && p.text).map((p) => p.text!);
@@ -327,28 +335,34 @@ function turnsToMessages(turns: TurnResponse[]): ChatMessage[] {
           id: `${turn.session_id}-user`,
           role: "user",
           content: textParts.join("\n"),
-          thinking: "",
+          thinkingBlocks: [],
           toolCalls: [],
           isStreaming: false,
           attachments,
           sessionId: turn.session_id,
+          isFireContinuation,
         });
       }
     }
 
     // Assistant response: prefer display_messages for full detail
     if (turn.display_messages?.length) {
-      messages.push(...displayEventsToMessages(turn.session_id, turn.display_messages));
+      const assistantMsgs = displayEventsToMessages(turn.session_id, turn.display_messages);
+      if (isFireContinuation) {
+        assistantMsgs.forEach((m) => (m.isFireContinuation = true));
+      }
+      messages.push(...assistantMsgs);
     } else if (turn.final_message !== null && turn.final_message !== undefined) {
       messages.push({
         id: `${turn.session_id}-assistant`,
         role: "assistant",
         content: turn.final_message,
-        thinking: "",
+        thinkingBlocks: [],
         toolCalls: [],
         isStreaming: false,
         attachments: [],
         sessionId: turn.session_id,
+        isFireContinuation,
       });
     }
   }
@@ -362,7 +376,7 @@ function makeUserMessage(text: string, attachments: InputPart[] = []): ChatMessa
     id: crypto.randomUUID(),
     role: "user",
     content: text,
-    thinking: "",
+    thinkingBlocks: [],
     toolCalls: [],
     isStreaming: false,
     attachments,
@@ -375,7 +389,7 @@ function makeAssistantPlaceholder(): ChatMessage {
     id: crypto.randomUUID(),
     role: "assistant",
     content: "",
-    thinking: "",
+    thinkingBlocks: [],
     toolCalls: [],
     isStreaming: true,
     attachments: [],
@@ -448,13 +462,26 @@ function handleEvent(event: AGUIEvent, _get: StoreGet, set: StoreSet): void {
       break;
     }
 
-    case EventType.REASONING_MESSAGE_CONTENT: {
-      const e = event as ReasoningMessageContentEvent;
+    case EventType.REASONING_START: {
+      // Start a new thinking block
       set((state) => ({
         messages: updateLastAssistant(state.messages, (msg) => ({
           ...msg,
-          thinking: msg.thinking + e.delta,
+          thinkingBlocks: [...msg.thinkingBlocks, ""],
         })),
+      }));
+      break;
+    }
+
+    case EventType.REASONING_MESSAGE_CONTENT: {
+      const e = event as ReasoningMessageContentEvent;
+      set((state) => ({
+        messages: updateLastAssistant(state.messages, (msg) => {
+          const blocks = [...msg.thinkingBlocks];
+          if (blocks.length === 0) blocks.push("");
+          blocks[blocks.length - 1] += e.delta;
+          return { ...msg, thinkingBlocks: blocks };
+        }),
       }));
       break;
     }
@@ -587,7 +614,7 @@ function handleEvent(event: AGUIEvent, _get: StoreGet, set: StoreSet): void {
       break;
     }
 
-    // TEXT_MESSAGE_START/END, REASONING_START/END, TOOL_CALL_END
+    // TEXT_MESSAGE_START/END, REASONING_END, TOOL_CALL_END
     // are structural/lifecycle events -- no state mutation needed.
     default:
       break;

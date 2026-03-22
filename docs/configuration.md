@@ -147,22 +147,6 @@ Tool API keys are also not `NETHER_`-prefixed. They are loaded automatically fro
 
 ______________________________________________________________________
 
-## Observability (Langfuse)
-
-Optional LLM tracing via [Langfuse](https://langfuse.com). Uses Langfuse's native env vars (not `NETHER_`-prefixed). Gracefully degrades to no-op when unconfigured.
-
-| Variable                       | Required | Default       | Description                |
-| ------------------------------ | -------- | ------------- | -------------------------- |
-| `LANGFUSE_SECRET_KEY`          | Yes      | -             | Langfuse secret key        |
-| `LANGFUSE_PUBLIC_KEY`          | Yes      | -             | Langfuse public key        |
-| `LANGFUSE_HOST`                | Yes      | -             | Langfuse server URL        |
-| `LANGFUSE_TRACING_ENVIRONMENT` | No       | `dev`         | Environment tag for traces |
-| `OTEL_SERVICE_NAME`            | No       | `netherbrain` | Service name in traces     |
-
-When Langfuse is configured, all LLM generations, tool calls, and token costs are traced.
-
-______________________________________________________________________
-
 ## IM Gateway
 
 The IM Gateway has its own configuration, separate from the agent-runtime.
@@ -198,10 +182,5 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 # Tools
 TAVILY_API_KEY=tvly-...
-
-# Observability (optional)
-LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_PUBLIC_KEY=pk-lf-...
-LANGFUSE_HOST=https://cloud.langfuse.com
 
 ```

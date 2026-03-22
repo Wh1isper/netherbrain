@@ -503,6 +503,16 @@ Establishes a PTY session. Authentication via query parameter (`?token=...`). Op
 
 Protocol: binary frames for PTY I/O, JSON text frames for control (resize, exit).
 
+## Notifications
+
+Real-time push notifications for state changes (session lifecycle, mailbox updates, conversation metadata). Separate from AG-UI streaming. Full specification in [10-notifications.md](10-notifications.md).
+
+### WebSocket /api/notifications
+
+Single connection per client. Authentication via query parameter (`?token=...`). Server pushes all notification events for the authenticated user (`session_started`, `session_completed`, `session_failed`, `mailbox_updated`, `conversation_updated`). No subscription management -- all conversation activity is delivered.
+
+Protocol: JSON text frames. Client may send `ping`; server sends notification events.
+
 ## Endpoint Summary
 
 ```mermaid
@@ -581,6 +591,10 @@ flowchart LR
     subgraph Shell["Shell"]
         SH1["WS /api/shell/{id}/connect"]
     end
+
+    subgraph Notif["Notifications"]
+        N1["WS /api/notifications"]
+    end
 ```
 
 | Tier               | Scope                  | Access                    | Description                                     |
@@ -597,4 +611,5 @@ flowchart LR
 | **Discovery**      | `/api/model-presets`   | Any authenticated         | Available model settings and config presets     |
 | **File Serve**     | `/api/files/*`         | Any authenticated         | File browsing, read, write, upload, download    |
 | **Shell**          | `/api/shell/*`         | Any authenticated         | Interactive terminal (WebSocket PTY)            |
+| **Notifications**  | `/api/notifications`   | Any authenticated         | Real-time state change push (WebSocket)         |
 | **UI**             | `/` (root)             | Browser                   | Built-in web UI (static SPA)                    |

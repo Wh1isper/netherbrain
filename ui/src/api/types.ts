@@ -70,6 +70,7 @@ export interface McpServerSpec {
   headers?: Record<string, string> | null;
   tool_prefix?: string | null;
   timeout?: number | null;
+  optional?: boolean;
   description?: string | null;
 }
 

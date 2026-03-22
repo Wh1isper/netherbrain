@@ -125,6 +125,7 @@ interface McpServerDraft {
   headers: string;
   tool_prefix: string;
   timeout: string;
+  optional: boolean;
   description: string;
 }
 
@@ -154,7 +155,6 @@ interface PresetDraft {
   tool_enable_load_document: boolean;
   tool_image_model: string;
   tool_video_model: string;
-  // MCP servers
   mcp_servers: McpServerDraft[];
 }
 
@@ -190,6 +190,7 @@ function presetToDraft(p: PresetResponse): PresetDraft {
       headers: s.headers ? JSON.stringify(s.headers, null, 2) : "",
       tool_prefix: s.tool_prefix ?? "",
       timeout: s.timeout != null ? String(s.timeout) : "",
+      optional: s.optional ?? false,
       description: s.description ?? "",
     })),
   };
@@ -702,6 +703,21 @@ function PresetEditor({
                     />
                   </div>
                 </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={srv.optional}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        mcp_servers: d.mcp_servers.map((s, i) =>
+                          i === idx ? { ...s, optional: e.target.checked } : s,
+                        ),
+                      }))
+                    }
+                  />
+                  Skip if unavailable
+                </label>
                 <div className="space-y-1">
                   <Label className="text-xs">Description</Label>
                   <Input
@@ -751,6 +767,7 @@ function PresetEditor({
                       headers: "",
                       tool_prefix: "",
                       timeout: "",
+                      optional: false,
                       description: "",
                     },
                   ],
@@ -937,10 +954,10 @@ function PresetsTab() {
             headers,
             tool_prefix: s.tool_prefix || null,
             timeout: s.timeout !== "" && Number.isFinite(timeoutVal) ? timeoutVal : null,
+            optional: s.optional,
             description: s.description.trim() || null,
           };
         });
-
       const payload = {
         name: draft.name,
         description: draft.description || null,

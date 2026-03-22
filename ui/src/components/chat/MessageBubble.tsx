@@ -147,7 +147,7 @@ function ImageThumbnail({ data, mime }: { data: string; mime: string }) {
 
 function AssistantMessage({ message }: { message: ChatMessage }) {
   const hasContent = message.content.length > 0;
-  const hasThinking = message.thinking.length > 0;
+  const hasThinking = message.thinkingBlocks.length > 0;
   const hasToolCalls = message.toolCalls.length > 0;
   const isEmpty = !hasContent && !hasThinking && !hasToolCalls;
 
@@ -160,7 +160,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         {/* Thinking section (collapsed by default) */}
         {(hasThinking || message.isStreaming) && (
           <ThinkingBlock
-            content={message.thinking}
+            blocks={message.thinkingBlocks}
             isStreaming={message.isStreaming && !hasContent}
           />
         )}

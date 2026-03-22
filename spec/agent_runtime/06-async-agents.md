@@ -38,7 +38,7 @@ Existing SDK model. Parent calls `delegate` tool; subagent runs inline as nested
 
 ### Async Subagent
 
-Independent execution with its own session. Spawned by the `async_delegate` tool. Result delivered back via conversation mailbox.
+Independent execution with its own session. Spawned by the `spawn_delegate` tool. Result delivered back via conversation mailbox.
 
 | Aspect          | Sync Subagent              | Async Subagent                  |
 | --------------- | -------------------------- | ------------------------------- |
@@ -82,7 +82,7 @@ sequenceDiagram
     C->>RT: POST /conversations/run (transport=stream)
     RT->>RT: R1 starts
 
-    Note over RT: Agent calls async_delegate tool
+    Note over RT: Agent calls spawn_delegate tool
     RT->>RT: Self-call: execute subagent
     Note over RT: R2 (subagent) starts in parallel
 
@@ -181,7 +181,7 @@ Async subagent results:
 Error: {error_2}
 ```
 
-## Async Delegate Tool
+## Spawn Delegate Tool
 
 Available when the agent preset enables async subagents.
 

@@ -270,14 +270,6 @@ Chat-app style web interface served by the agent-runtime at root path (`/`).
 - **Three pages**: Chat (`/`, `/c/:id`), Files (`/files/:projectId`), and Settings (`/settings`).
 - **Theme**: Light (warm beige) and dark (warm charcoal) modes. Brand color is earthy green (`~#55644a`). CSS tokens defined in `src/index.css` using oklch color space.
 
-## Observability
-
-- **Langfuse** integration for LLM tracing (generation spans, tool calls, cost tracking).
-- Configured via Langfuse's native env vars (`LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_HOST`), NOT `NETHER_*` prefixed.
-- Graceful degradation: when Langfuse is unavailable, all tracing becomes no-op.
-- `instrument.py` performs auth_check at import time; `costs/` provides per-model pricing tables.
-- SDK hooks (`model_wrapper`, `global_hooks`, `subagent_wrapper`) are injected via `create_agent` with `inherit_hooks=True`.
-
 ## CI/CD
 
 - Push to main: quality checks, tests, then build and push `dev` image

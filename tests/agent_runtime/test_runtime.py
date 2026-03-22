@@ -5,16 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+# ---------------------------------------------------------------------------
+# MCP server types
+# ---------------------------------------------------------------------------
+from netherbrain.agent_runtime.execution.mcp import McpConfig
 from netherbrain.agent_runtime.execution.runtime import (
     TOOLSET_REGISTRY,
     resolve_model_config,
     resolve_model_settings,
     resolve_tools,
 )
-
-# ---------------------------------------------------------------------------
-# MCP server types
-# ---------------------------------------------------------------------------
 from netherbrain.agent_runtime.models.preset import McpServerSpec, McpTransport, ModelPreset, SubagentSpec, ToolsetSpec
 
 # ---------------------------------------------------------------------------
@@ -196,6 +196,7 @@ def _make_config(**overrides):
         "system_prompt": "You are a helpful assistant.",
         "toolsets": [ToolsetSpec(toolset_name="shell")],
         "subagents": SubagentSpec(),
+        "mcp": McpConfig(),
         "environment_mode": EnvironmentMode.LOCAL,
         "project_ids": ["test-project"],
         "container_id": None,
@@ -303,56 +304,58 @@ def test_create_service_runtime_tools_mapped(mock_create_agent: MagicMock, tmp_p
 
 
 # ---------------------------------------------------------------------------
-# _build_mcp_server_instances
+# MCP runtime mapping
 # ---------------------------------------------------------------------------
 
 
-def test_build_mcp_server_instances_empty() -> None:
-    from netherbrain.agent_runtime.execution.runtime import _build_mcp_server_instances
+def test_build_mcp_servers_empty() -> None:
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_servers
 
-    assert _build_mcp_server_instances([]) == []
+    assert build_mcp_servers(McpConfig()) == []
 
 
-def test_build_mcp_server_instances_streamable_http() -> None:
+def test_build_mcp_servers_streamable_http() -> None:
     from pydantic_ai.mcp import MCPServerStreamableHTTP
 
-    from netherbrain.agent_runtime.execution.runtime import _build_mcp_server_instances
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_servers
 
-    specs = [McpServerSpec(url="http://localhost:8080/mcp")]
-    servers = _build_mcp_server_instances(specs)
+    config = McpConfig(servers=[McpServerSpec(url="http://localhost:8080/mcp")])
+    servers = build_mcp_servers(config)
 
     assert len(servers) == 1
     assert isinstance(servers[0], MCPServerStreamableHTTP)
     assert servers[0].url == "http://localhost:8080/mcp"
 
 
-def test_build_mcp_server_instances_sse() -> None:
+def test_build_mcp_servers_sse() -> None:
     from pydantic_ai.mcp import MCPServerSSE
 
-    from netherbrain.agent_runtime.execution.runtime import _build_mcp_server_instances
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_servers
 
-    specs = [McpServerSpec(url="http://localhost:3001/sse", transport=McpTransport.SSE)]
-    servers = _build_mcp_server_instances(specs)
+    config = McpConfig(servers=[McpServerSpec(url="http://localhost:3001/sse", transport=McpTransport.SSE)])
+    servers = build_mcp_servers(config)
 
     assert len(servers) == 1
     assert isinstance(servers[0], MCPServerSSE)
     assert servers[0].url == "http://localhost:3001/sse"
 
 
-def test_build_mcp_server_instances_with_headers_and_prefix() -> None:
+def test_build_mcp_servers_with_headers_and_prefix() -> None:
     from pydantic_ai.mcp import MCPServerStreamableHTTP
 
-    from netherbrain.agent_runtime.execution.runtime import _build_mcp_server_instances
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_servers
 
-    specs = [
-        McpServerSpec(
-            url="http://mcp.example.com/api",
-            headers={"Authorization": "Bearer secret"},
-            tool_prefix="ext",
-            timeout=30.0,
-        )
-    ]
-    servers = _build_mcp_server_instances(specs)
+    config = McpConfig(
+        servers=[
+            McpServerSpec(
+                url="http://mcp.example.com/api",
+                headers={"Authorization": "Bearer secret"},
+                tool_prefix="ext",
+                timeout=30.0,
+            )
+        ]
+    )
+    servers = build_mcp_servers(config)
 
     assert len(servers) == 1
     server = servers[0]
@@ -363,90 +366,121 @@ def test_build_mcp_server_instances_with_headers_and_prefix() -> None:
     assert server.timeout == 30.0
 
 
-def test_build_mcp_server_instances_multiple() -> None:
-    from netherbrain.agent_runtime.execution.runtime import _build_mcp_server_instances
+def test_build_mcp_servers_multiple() -> None:
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_servers
 
-    specs = [
-        McpServerSpec(url="http://server1/mcp"),
-        McpServerSpec(url="http://server2/sse", transport=McpTransport.SSE),
-    ]
-    servers = _build_mcp_server_instances(specs)
+    config = McpConfig(
+        servers=[
+            McpServerSpec(url="http://server1/mcp"),
+            McpServerSpec(url="http://server2/sse", transport=McpTransport.SSE),
+        ]
+    )
+    servers = build_mcp_servers(config)
     assert len(servers) == 2
 
 
-# ---------------------------------------------------------------------------
-# resolve_mcp_servers (ToolSearchToolSet wrapping)
-# ---------------------------------------------------------------------------
+def test_build_mcp_toolset_empty() -> None:
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_toolset
+
+    assert build_mcp_toolset(McpConfig()) is None
 
 
-def test_resolve_mcp_servers_empty() -> None:
-    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
+def test_build_mcp_toolset_returns_tool_proxy_toolset() -> None:
+    from ya_agent_sdk.toolsets.tool_proxy import ToolProxyToolset
 
-    assert resolve_mcp_servers([]) is None
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_toolset
 
+    config = McpConfig(servers=[McpServerSpec(url="http://localhost:8080/mcp", tool_prefix="myserver")])
+    result = build_mcp_toolset(config)
 
-def test_resolve_mcp_servers_returns_tool_search_toolset() -> None:
-    from ya_agent_sdk.toolsets.tool_search import ToolSearchToolSet
-
-    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
-
-    specs = [
-        McpServerSpec(url="http://localhost:8080/mcp", tool_prefix="myserver"),
-    ]
-    result = resolve_mcp_servers(specs)
-
-    assert isinstance(result, ToolSearchToolSet)
+    assert isinstance(result, ToolProxyToolset)
 
 
-def test_resolve_mcp_servers_extracts_descriptions() -> None:
-    from ya_agent_sdk.toolsets.tool_search import ToolSearchToolSet
+def test_build_mcp_toolset_extracts_descriptions() -> None:
+    from ya_agent_sdk.toolsets.tool_proxy import ToolProxyToolset
 
-    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_toolset
 
-    specs = [
-        McpServerSpec(
-            url="http://localhost:8080/mcp",
-            tool_prefix="files",
-            description="File system operations",
-        ),
-        McpServerSpec(
-            url="http://localhost:3001/sse",
-            transport=McpTransport.SSE,
-            tool_prefix="db",
-            description="Database queries",
-        ),
-    ]
-    result = resolve_mcp_servers(specs)
+    config = McpConfig(
+        servers=[
+            McpServerSpec(
+                url="http://localhost:8080/mcp",
+                tool_prefix="files",
+                description="File system operations",
+            ),
+            McpServerSpec(
+                url="http://localhost:3001/sse",
+                transport=McpTransport.SSE,
+                tool_prefix="db",
+                description="Database queries",
+            ),
+        ]
+    )
+    result = build_mcp_toolset(config)
 
-    assert isinstance(result, ToolSearchToolSet)
-    # Verify namespace descriptions were extracted
+    assert isinstance(result, ToolProxyToolset)
     assert result._namespace_descriptions == {
         "files": "File system operations",
         "db": "Database queries",
     }
 
 
-def test_resolve_mcp_servers_skips_description_without_prefix() -> None:
-    from ya_agent_sdk.toolsets.tool_search import ToolSearchToolSet
+def test_build_mcp_toolset_skips_description_without_prefix() -> None:
+    from ya_agent_sdk.toolsets.tool_proxy import ToolProxyToolset
 
-    from netherbrain.agent_runtime.execution.runtime import resolve_mcp_servers
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_toolset
 
-    specs = [
-        McpServerSpec(
-            url="http://localhost:8080/mcp",
-            description="No prefix, should be skipped",
-        ),
-    ]
-    result = resolve_mcp_servers(specs)
+    config = McpConfig(
+        servers=[
+            McpServerSpec(
+                url="http://localhost:8080/mcp",
+                description="No prefix, should be skipped",
+            ),
+        ]
+    )
+    result = build_mcp_toolset(config)
 
-    assert isinstance(result, ToolSearchToolSet)
-    # No tool_prefix -> description not extracted; constructor normalizes None to {}
+    assert isinstance(result, ToolProxyToolset)
     assert result._namespace_descriptions == {}
+
+
+def test_build_mcp_toolset_passes_proxy_settings() -> None:
+    from ya_agent_sdk.toolsets.tool_proxy import ToolProxyToolset
+
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_toolset
+
+    config = McpConfig(
+        servers=[McpServerSpec(url="http://localhost:8080/mcp", tool_prefix="files")],
+        max_results=9,
+        optional_namespaces=["files"],
+    )
+    result = build_mcp_toolset(config)
+
+    assert isinstance(result, ToolProxyToolset)
+    assert result._max_results == 9
+    assert result._optional_namespaces == {"files"}
+
+
+def test_build_mcp_config_collects_optional_namespaces() -> None:
+    from netherbrain.agent_runtime.execution.mcp import build_mcp_config
+
+    config = build_mcp_config([
+        McpServerSpec(url="http://required.example/mcp", tool_prefix="required"),
+        McpServerSpec(url="http://optional.example/mcp", tool_prefix="optional", optional=True),
+        McpServerSpec(url="http://no-prefix.example/mcp", optional=True),
+    ])
+
+    assert [server.url for server in config.servers] == [
+        "http://required.example/mcp",
+        "http://optional.example/mcp",
+        "http://no-prefix.example/mcp",
+    ]
+    assert config.optional_namespaces == ["optional"]
 
 
 @patch("netherbrain.agent_runtime.execution.runtime.create_agent")
 def test_create_service_runtime_with_mcp_servers(mock_create_agent: MagicMock, tmp_path: Path) -> None:
-    from ya_agent_sdk.toolsets.tool_search import ToolSearchToolSet
+    from ya_agent_sdk.toolsets.tool_proxy import ToolProxyToolset
 
     from netherbrain.agent_runtime.execution.runtime import create_service_runtime
 
@@ -454,24 +488,26 @@ def test_create_service_runtime_with_mcp_servers(mock_create_agent: MagicMock, t
     mock_create_agent.return_value = mock_runtime
 
     config = _make_config(
-        mcp_servers=[
-            McpServerSpec(url="http://localhost:8080/mcp", tool_prefix="srv1"),
-            McpServerSpec(
-                url="http://localhost:3001/sse",
-                transport=McpTransport.SSE,
-                tool_prefix="srv2",
-            ),
-        ],
+        mcp=McpConfig(
+            servers=[
+                McpServerSpec(url="http://localhost:8080/mcp", tool_prefix="srv1"),
+                McpServerSpec(
+                    url="http://localhost:3001/sse",
+                    transport=McpTransport.SSE,
+                    tool_prefix="srv2",
+                ),
+            ]
+        ),
     )
     settings = _make_settings(tmp_path)
 
     create_service_runtime(config, settings)
 
     call_kwargs = mock_create_agent.call_args[1]
-    # Should pass a single-element list containing the ToolSearchToolSet.
+    # Should pass a single-element list containing the ToolProxyToolset.
     assert call_kwargs["toolsets"] is not None
     assert len(call_kwargs["toolsets"]) == 1
-    assert isinstance(call_kwargs["toolsets"][0], ToolSearchToolSet)
+    assert isinstance(call_kwargs["toolsets"][0], ToolProxyToolset)
 
 
 @patch("netherbrain.agent_runtime.execution.runtime.create_agent")

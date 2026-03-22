@@ -30,16 +30,11 @@ from ya_agent_sdk.toolsets.core.shell import tools as shell_tools
 from ya_agent_sdk.toolsets.core.subagent import tools as subagent_tools
 from ya_agent_sdk.toolsets.core.web import tools as web_tools
 
-from netherbrain.agent_runtime.execution.environment import (
-    ProjectPaths,
-    create_environment,
-)
+from netherbrain.agent_runtime.execution.environment import ProjectPaths, create_environment
+from netherbrain.agent_runtime.execution.mcp import build_mcp_toolset
 from netherbrain.agent_runtime.execution.prompt import render_system_prompt
 from netherbrain.agent_runtime.execution.resolver import ResolvedConfig
-from netherbrain.agent_runtime.instrument import create_global_hooks, create_model_wrapper, create_subagent_wrapper
 from netherbrain.agent_runtime.models.preset import (
-    McpServerSpec,
-    McpTransport,
     ModelPreset,
     SubagentSpec,
     ToolConfigSpec,
@@ -50,7 +45,6 @@ from netherbrain.agent_runtime.settings import NetherSettings
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from pydantic_ai.mcp import MCPServer
     from pydantic_ai.messages import ModelMessage
     from pydantic_ai.toolsets.abstract import AbstractToolset
     from y_agent_environment.resources import ResourceRegistryState
@@ -207,103 +201,12 @@ def resolve_subagent_configs(
 
     Synchronous (built-in) subagents are handled by the SDK's native
     subagent infrastructure.  Async subagents are handled separately
-    via the ``async_delegate`` tool injected through ``extra_agent_tools``.
+    via the ``spawn_delegate`` tool injected through ``extra_agent_tools``.
 
     Currently returns an empty list -- all subagent orchestration in
     Netherbrain uses the async delegate pattern.
     """
     return []
-
-
-# ---------------------------------------------------------------------------
-# MCP server mapping
-# ---------------------------------------------------------------------------
-
-
-def _build_mcp_server_instances(
-    specs: list[McpServerSpec],
-) -> list[MCPServer]:
-    """Build raw pydantic-ai MCP server instances from specs.
-
-    Each spec becomes an ``MCPServerStreamableHTTP`` or ``MCPServerSSE``
-    instance.  Returns an empty list if no specs or if the ``mcp``
-    optional dependency is not installed.
-    """
-    if not specs:
-        return []
-
-    try:
-        from pydantic_ai.mcp import MCPServerSSE, MCPServerStreamableHTTP
-    except ImportError:
-        logger.warning("pydantic-ai[mcp] not installed, skipping MCP server configuration")
-        return []
-
-    servers: list[MCPServer] = []
-    for spec in specs:
-        kwargs: dict[str, Any] = {}
-        if spec.headers:
-            kwargs["headers"] = spec.headers
-        if spec.tool_prefix:
-            kwargs["tool_prefix"] = spec.tool_prefix
-        if spec.timeout is not None:
-            kwargs["timeout"] = spec.timeout
-
-        if spec.transport == McpTransport.SSE:
-            server = MCPServerSSE(spec.url, **kwargs)
-        else:
-            server = MCPServerStreamableHTTP(spec.url, **kwargs)
-
-        servers.append(server)
-        logger.info("MCP server configured: %s (%s)", spec.url, spec.transport)
-
-    return servers
-
-
-def resolve_mcp_servers(
-    specs: list[McpServerSpec],
-) -> AbstractToolset[AgentContext] | list[MCPServer] | None:
-    """Wrap MCP servers in ``ToolSearchToolSet`` for on-demand tool loading.
-
-    Each ``McpServerSpec`` becomes a pydantic-ai MCP server instance, then
-    all servers are wrapped in a single ``ToolSearchToolSet``.  The model
-    sees only a ``tool_search`` tool initially and discovers MCP tools
-    on demand, reducing context usage.
-
-    ``tool_prefix`` serves as the namespace ID; ``description`` provides
-    the human-readable namespace description for search.
-
-    Returns ``None`` if no MCP servers are configured or dependencies
-    are missing.
-    """
-    servers = _build_mcp_server_instances(specs)
-    if not servers:
-        return None
-
-    try:
-        from ya_agent_sdk.toolsets.tool_search import ToolSearchToolSet, create_best_strategy
-    except ImportError:
-        logger.warning("ya-agent-sdk tool_search not available, passing MCP servers directly")
-        # Graceful fallback: return raw servers as a list (old behavior).
-        return servers
-
-    # Extract namespace descriptions from specs.
-    descriptions: dict[str, str] = {}
-    for spec in specs:
-        if spec.description and spec.tool_prefix:
-            descriptions[spec.tool_prefix] = spec.description
-
-    toolset = ToolSearchToolSet(
-        toolsets=servers,
-        namespace_descriptions=descriptions or None,
-        search_strategy=create_best_strategy(),
-    )
-
-    logger.info(
-        "Wrapped %d MCP servers in ToolSearchToolSet (descriptions: %d)",
-        len(servers),
-        len(descriptions),
-    )
-    return toolset
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +248,7 @@ def create_service_runtime(
     resource_state:
         Optional resource registry state to restore in the environment.
     extra_agent_tools:
-        Optional pydantic-ai Tool instances to inject (e.g. async_delegate).
+        Optional pydantic-ai Tool instances to inject (e.g. spawn_delegate).
 
     Returns
     -------
@@ -381,15 +284,12 @@ def create_service_runtime(
     tool_config = resolve_tool_config(config.tool_config)
 
     # -- MCP servers -----------------------------------------------------------
-    # ToolSearchToolSet must be the LAST toolset so that dynamically loaded
-    # tools are appended to the end of the model's tool list, keeping all
-    # existing tool positions stable for KV cache reuse.  Within the toolset,
-    # tool_search itself is always the first tool (handled by the SDK).
-    mcp_toolset = resolve_mcp_servers(config.mcp_servers)
+    # ToolProxyToolset exposes a fixed pair of tools (search_tools/call_tool),
+    # so the model-visible tool list stays stable even when MCP namespaces vary.
+    mcp_toolset = build_mcp_toolset(config.mcp)
     toolsets: list[AbstractToolset[AgentContext]] | None = None
     if mcp_toolset is not None:
-        # ToolSearchToolSet (single wrapper) or list[MCPServer] (fallback).
-        toolsets = [mcp_toolset] if not isinstance(mcp_toolset, list) else mcp_toolset  # type: ignore[list-item]
+        toolsets = [mcp_toolset]
 
     # -- Create runtime --------------------------------------------------------
     runtime = create_agent(
@@ -406,10 +306,6 @@ def create_service_runtime(
         subagent_configs=subagent_configs if subagent_configs else None,
         unified_subagents=True,
         agent_name="netherbrain",
-        model_wrapper=create_model_wrapper(),
-        global_hooks=create_global_hooks(),
-        subagent_wrapper=create_subagent_wrapper(),
-        inherit_hooks=True,
         agent_tools=list(extra_agent_tools) if extra_agent_tools else None,
     )
 
@@ -417,7 +313,7 @@ def create_service_runtime(
         "Created service runtime: model=%s, tools=%d, mcp_servers=%d, projects=%d",
         config.model.name,
         len(all_tools),
-        len(config.mcp_servers),
+        len(config.mcp.servers),
         len(config.project_ids),
     )
 

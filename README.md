@@ -20,7 +20,6 @@ ______________________________________________________________________
 - **Web UI** -- Chat interface and settings management, served at `/`.
 - **IM integration** -- IM Gateway for Discord and Telegram (work in progress).
 - **Sandbox mode** -- Run agent shell commands inside a Docker container while keeping file I/O on the host.
-- **Observability** -- Optional Langfuse integration for LLM tracing and cost tracking.
 - **S3-compatible state storage** -- Swap local filesystem for any S3-compatible backend.
 
 ______________________________________________________________________

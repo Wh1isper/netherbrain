@@ -215,15 +215,6 @@ wheels = [
 ]
 
 [[package]]
-name = "backoff"
-version = "2.2.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/47/d7/5bbeb12c44d7c4f2fb5b56abce497eb5ed9f34d85701de869acedd602619/backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba", size = 17001, upload-time = "2022-10-05T19:19:32.061Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8", size = 15148, upload-time = "2022-10-05T19:19:30.546Z" },
-]
-
-[[package]]
 name = "bcrypt"
 version = "5.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1514,27 +1505,6 @@ wheels = [
 ]
 
 [[package]]
-name = "langfuse"
-version = "3.14.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "backoff" },
-    { name = "httpx" },
-    { name = "openai" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-sdk" },
-    { name = "packaging" },
-    { name = "pydantic" },
-    { name = "requests" },
-    { name = "wrapt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ec/6b/7a945e8bc56cbf343b6f6171fd45870b0ea80ea38463b2db8dd5a9dc04a2/langfuse-3.14.5.tar.gz", hash = "sha256:2f543ec1540053d39b08a50ed5992caf1cd54d472a55cb8e5dcf6d4fcb7ff631", size = 235474, upload-time = "2026-02-23T10:42:47.721Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/a1/10f04224542d6a57073c4f339b6763836a0899c98966f1d4ffcf56d2cf61/langfuse-3.14.5-py3-none-any.whl", hash = "sha256:5054b1c705ec69bce2d7077ce7419727ac629159428da013790979ca9cae77d5", size = 421240, upload-time = "2026-02-23T10:42:46.085Z" },
-]
-
-[[package]]
 name = "logfire"
 version = "4.25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2042,7 +2012,6 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jinja2" },
-    { name = "langfuse" },
     { name = "loguru" },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "pydantic" },
@@ -2082,7 +2051,6 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.134.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
-    { name = "langfuse", specifier = ">=3.14.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.1" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -2095,7 +2063,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.52.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41.0" },
     { name = "y-agent-environment", specifier = ">=0.6.0" },
-    { name = "ya-agent-sdk", extras = ["all"], specifier = "==0.32.0" },
+    { name = "ya-agent-sdk", extras = ["all"], specifier = "==0.41.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -4241,7 +4209,7 @@ wheels = [
 
 [[package]]
 name = "ya-agent-sdk"
-version = "0.32.0"
+version = "0.41.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -4258,9 +4226,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "y-agent-environment" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/c9/ec383fcca1d0edd506efe28b05f3d1ca5d6a68b2b886764a8883bd5e8a17/ya_agent_sdk-0.32.0.tar.gz", hash = "sha256:95c8b07bc291466287330e20590ac518e8a24843f29d7d38837e04e4ce108029", size = 789867, upload-time = "2026-03-08T17:08:37.802Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/76/42a526ddfb2f228f9c72b6aafa785d83587c9d05c2b771ece43926bc2ded/ya_agent_sdk-0.41.1.tar.gz", hash = "sha256:d1621f74f8785691f63c54672ae59c30686bce66677b2390c3f4a1a1e217e3b2", size = 832794, upload-time = "2026-03-19T06:01:25.973Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/40/a9/ad72bb3b234d75d9a2a46684309daa0591213ab973af2903e0a9aea673a2/ya_agent_sdk-0.32.0-py3-none-any.whl", hash = "sha256:990147a868ec8ca9cd4fbe126dceb475b65a10b69bc32cc87e63ed39a9b53bf7", size = 268347, upload-time = "2026-03-08T17:08:36.361Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/99/9bae3b59d6180b41f9f80b564900e37224ddefac192e49c83350c3c55ea8/ya_agent_sdk-0.41.1-py3-none-any.whl", hash = "sha256:21d58e2bd2e2d50bc458946a66ebee48d85c38b1ca09a20cab8b85479928a67e", size = 292515, upload-time = "2026-03-19T06:01:24.527Z" },
 ]
 
 [package.optional-dependencies]
