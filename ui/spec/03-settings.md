@@ -68,15 +68,17 @@ Actions: "+ New Workspace" button at top.
 
 ### Workspace Editor
 
-| Section  | Fields                                           |
-| -------- | ------------------------------------------------ |
-| General  | name                                             |
-| Projects | Ordered list of project_ids (add/remove/reorder) |
-| Preset   | Default preset selector (optional)               |
+| Section  | Fields                                                              |
+| -------- | ------------------------------------------------------------------- |
+| General  | name                                                                |
+| Projects | Ordered list of project refs (id + description, add/remove/reorder) |
+| Preset   | Default preset selector (optional)                                  |
 
 Project management:
 
 - Text input to add a new project (project_id = storage directory name)
+- Each project shows an expandable description field (optional, single-line text input)
+- Description is injected into the agent's environment context as an `InstructableResource`
 - Each project maps to a managed directory on the server
 - Drag to reorder (first = default working directory)
 - Click to remove

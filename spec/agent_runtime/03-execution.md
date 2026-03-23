@@ -108,6 +108,36 @@ flowchart TB
 
 When continuing a session, environment resource state is restored from the parent session's `environment_state`.
 
+### Project Description Injection
+
+When a workspace provides project descriptions (via `ProjectRef.description`), they are injected into the agent's context through the SDK Environment's resource system -- not through the Jinja2 system prompt.
+
+```mermaid
+flowchart LR
+    WS["Workspace<br/>(ProjectRef list)"] --> RES["Config Resolver"]
+    RES -->|"project_descriptions"| ENV["Environment Setup"]
+    ENV --> REG["ResourceRegistry<br/>.register_factory()"]
+    REG --> IR["ProjectDescriptionsResource<br/>(InstructableResource)"]
+    IR -->|"get_context_instructions()"| CTX["&lt;environment-context&gt;<br/>&lt;resources&gt;"]
+```
+
+The runtime registers a `ProjectDescriptionsResource` on the Environment's `ResourceRegistry`. This resource implements the SDK's `InstructableResource` protocol. When the SDK calls `Environment.get_context_instructions()`, the resource contributes project descriptions alongside the file tree and shell instructions:
+
+```xml
+<environment-context>
+  <file-system>...</file-system>
+  <shell-execution>...</shell-execution>
+  <resources>
+    <resource name="project-descriptions">
+      - netherbrain: Agent runtime and IM gateway service
+      - data-pipeline: ETL jobs for sensor data
+    </resource>
+  </resources>
+</environment-context>
+```
+
+This approach keeps project context visible to the model at the environment level, co-located with file trees, without coupling it to the system prompt template.
+
 ## SDK Integration
 
 The coordinator maps resolved config to SDK primitives.

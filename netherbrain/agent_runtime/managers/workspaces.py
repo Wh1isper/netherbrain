@@ -32,7 +32,7 @@ async def create_workspace(db: AsyncSession, body: WorkspaceCreate) -> Workspace
     workspace = Workspace(
         workspace_id=workspace_id,
         name=body.name,
-        projects=body.projects,
+        projects=[p.model_dump(exclude_none=True) for p in body.projects],
         metadata_=body.metadata,
     )
     db.add(workspace)
@@ -93,6 +93,10 @@ async def update_workspace(db: AsyncSession, workspace_id: str, body: WorkspaceU
     # Map 'metadata' field to ORM attribute 'metadata_'.
     if "metadata" in changes:
         changes["metadata_"] = changes.pop("metadata")
+
+    # Serialize ProjectRef list to plain dicts for JSONB storage.
+    if "projects" in changes and changes["projects"] is not None:
+        changes["projects"] = [p.model_dump(exclude_none=True) for p in body.projects]  # type: ignore[union-attr]
 
     for key, value in changes.items():
         setattr(workspace, key, value)

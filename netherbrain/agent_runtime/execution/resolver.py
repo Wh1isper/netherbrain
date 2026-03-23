@@ -36,6 +36,7 @@ from netherbrain.agent_runtime.models.preset import (
     ToolConfigSpec,
     ToolsetSpec,
 )
+from netherbrain.agent_runtime.models.workspace import ProjectRef
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -103,6 +104,10 @@ class ResolvedConfig(BaseModel):
     # Resolved environment (flattened from EnvironmentSpec + workspace lookup)
     environment_mode: EnvironmentMode = EnvironmentMode.LOCAL
     project_ids: list[str] = Field(default_factory=list)
+    project_descriptions: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of project_id -> description (from workspace ProjectRef).",
+    )
     container_id: str | None = None
     container_workdir: str | None = None
 
@@ -220,7 +225,7 @@ async def resolve_config(
     )
 
     # -- 3. Resolve project_ids ------------------------------------------------
-    resolved_projects = await _resolve_projects(
+    resolved_projects, resolved_descriptions = await _resolve_projects(
         db,
         request_workspace_id=workspace_id,
         request_project_ids=project_ids,
@@ -245,6 +250,7 @@ async def resolve_config(
         subagents=subagents_raw,
         environment_mode=environment_mode,
         project_ids=resolved_projects,
+        project_descriptions=resolved_descriptions,
         container_id=container_id,
         container_workdir=container_workdir,
         mcp=build_mcp_config(mcp_servers),
@@ -276,15 +282,27 @@ async def _load_preset(db: AsyncSession, preset_id: str | None) -> PresetRow:
     return row
 
 
-async def _resolve_workspace(db: AsyncSession, workspace_id: str) -> list[str]:
-    """Resolve a workspace_id to its project list.
+async def _resolve_workspace(db: AsyncSession, workspace_id: str) -> tuple[list[str], dict[str, str]]:
+    """Resolve a workspace_id to its project list and descriptions.
+
+    Returns ``(project_ids, descriptions)`` where descriptions is a dict
+    mapping project_id -> description for projects that have one.
 
     Raises ``WorkspaceNotFoundError`` if the workspace does not exist.
     """
     row = await db.get(WorkspaceRow, workspace_id)
     if row is None:
         raise WorkspaceNotFoundError(workspace_id)
-    return list(row.projects)
+
+    project_ids: list[str] = []
+    descriptions: dict[str, str] = {}
+    for entry in row.projects:
+        ref = ProjectRef(**entry) if isinstance(entry, dict) else ProjectRef(id=entry)
+        project_ids.append(ref.id)
+        if ref.description:
+            descriptions[ref.id] = ref.description
+
+    return project_ids, descriptions
 
 
 async def _resolve_projects(
@@ -295,8 +313,11 @@ async def _resolve_projects(
     override_env: EnvironmentSpec | None,
     preset_env: EnvironmentSpec,
     parent_project_ids: list[str] | None,
-) -> list[str]:
-    """Walk the priority chain to produce a final project_ids list.
+) -> tuple[list[str], dict[str, str]]:
+    """Walk the priority chain to produce a final project_ids list and descriptions.
+
+    Returns ``(project_ids, descriptions)`` where descriptions is populated
+    only when projects are resolved from a workspace.
 
     Priority (highest first):
     1. Request-level workspace_id / project_ids
@@ -309,7 +330,7 @@ async def _resolve_projects(
     if request_workspace_id is not None:
         return await _resolve_workspace(db, request_workspace_id)
     if request_project_ids is not None:
-        return request_project_ids
+        return request_project_ids, {}
 
     # Level 2: override environment
     if override_env is not None:
@@ -324,19 +345,20 @@ async def _resolve_projects(
 
     # Level 4: parent session fallback
     if parent_project_ids is not None:
-        return parent_project_ids
+        return parent_project_ids, {}
 
     # Level 5: no projects (pure conversation mode)
-    return []
+    return [], {}
 
 
 async def _resolve_env_projects(
     db: AsyncSession,
     env: EnvironmentSpec,
     source: str,
-) -> list[str] | None:
+) -> tuple[list[str], dict[str, str]] | None:
     """Resolve project_ids from an EnvironmentSpec, or return None if unset.
 
+    Returns ``(project_ids, descriptions)`` or ``None``.
     Raises ``ProjectConflictError`` if both workspace_id and project_ids are set.
     """
     has_workspace = env.workspace_id is not None
@@ -348,7 +370,7 @@ async def _resolve_env_projects(
     if has_workspace:
         return await _resolve_workspace(db, env.workspace_id)  # type: ignore[arg-type]
     if has_projects:
-        return list(env.project_ids)  # type: ignore[arg-type]
+        return list(env.project_ids), {}  # type: ignore[arg-type]
 
     return None
 

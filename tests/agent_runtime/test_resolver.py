@@ -59,12 +59,12 @@ async def _create_preset(
 async def _create_workspace(
     db: AsyncSession,
     workspace_id: str = "ws-1",
-    projects: list[str] | None = None,
+    projects: list[dict] | None = None,
 ) -> Workspace:
     """Insert a workspace row for testing."""
     row = Workspace(
         workspace_id=workspace_id,
-        projects=projects or ["proj-a", "proj-b"],
+        projects=projects or [{"id": "proj-a"}, {"id": "proj-b"}],
     )
     db.add(row)
     await db.flush()
@@ -230,7 +230,7 @@ async def test_request_project_ids(db_session: AsyncSession) -> None:
 @pytest.mark.integration
 async def test_request_workspace_id(db_session: AsyncSession) -> None:
     await _create_preset(db_session, "p1", is_default=True)
-    await _create_workspace(db_session, "ws-1", projects=["proj-x", "proj-y"])
+    await _create_workspace(db_session, "ws-1", projects=[{"id": "proj-x"}, {"id": "proj-y"}])
 
     cfg = await resolve_config(db_session, workspace_id="ws-1")
 
@@ -262,7 +262,7 @@ async def test_override_env_workspace(db_session: AsyncSession) -> None:
         is_default=True,
         environment={"project_ids": ["preset-proj"]},
     )
-    await _create_workspace(db_session, "override-ws", projects=["ov-proj"])
+    await _create_workspace(db_session, "override-ws", projects=[{"id": "ov-proj"}])
 
     override = ConfigOverride(environment=EnvironmentSpec(workspace_id="override-ws"))
     cfg = await resolve_config(db_session, override=override)
@@ -296,7 +296,7 @@ async def test_override_env_conflict_raises(db_session: AsyncSession) -> None:
 
 @pytest.mark.integration
 async def test_preset_env_workspace(db_session: AsyncSession) -> None:
-    await _create_workspace(db_session, "preset-ws", projects=["a", "b"])
+    await _create_workspace(db_session, "preset-ws", projects=[{"id": "a"}, {"id": "b"}])
     await _create_preset(
         db_session,
         "p1",

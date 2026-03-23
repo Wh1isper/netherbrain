@@ -581,10 +581,10 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
           <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
             Files
           </p>
-          {currentWorkspace.projects.map((pid) => (
+          {currentWorkspace.projects.map((proj) => (
             <NavLink
-              key={pid}
-              to={`/files/${pid}`}
+              key={proj.id}
+              to={`/files/${proj.id}`}
               onClick={onNavigate}
               className={({ isActive }) =>
                 [
@@ -597,7 +597,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
               }
             >
               <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
-              <span className="truncate">{pid}</span>
+              <span className="truncate">{proj.id}</span>
             </NavLink>
           ))}
         </div>

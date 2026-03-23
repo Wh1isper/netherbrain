@@ -58,7 +58,7 @@ export default function Chat() {
   // Available projects from the current workspace
   const currentWorkspace = workspaces.find((w) => w.workspace_id === currentWorkspaceId);
   const availableProjects = useMemo(
-    () => currentWorkspace?.projects ?? [],
+    () => currentWorkspace?.projects.map((p) => p.id) ?? [],
     [currentWorkspace?.projects],
   );
 
@@ -209,7 +209,7 @@ export default function Chat() {
   const handleCreateProject = useCallback(
     async (name: string) => {
       if (!currentWorkspaceId || !currentWorkspace) return;
-      const updatedProjects = [...currentWorkspace.projects, name];
+      const updatedProjects = [...currentWorkspace.projects, { id: name }];
       await updateWorkspace(currentWorkspaceId, { projects: updatedProjects });
       // Refresh workspace list to pick up the new project
       const all = await listWorkspaces();

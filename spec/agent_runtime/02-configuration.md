@@ -225,16 +225,36 @@ Non-secret tool configuration. API keys are auto-loaded from environment variabl
 
 A workspace is a named, reusable grouping of project references -- analogous to a VS Code `.code-workspace` file. Stored in PostgreSQL for persistence and API management.
 
-| Column       | Type         | Description                          |
-| ------------ | ------------ | ------------------------------------ |
-| workspace_id | string (PK)  | Unique identifier (slug)             |
-| name         | string?      | Human-readable display name          |
-| projects     | list[string] | Ordered project_ids, first = default |
-| metadata     | JSONB        | Client-defined metadata (opaque)     |
-| created_at   | timestamp    | Creation time                        |
-| updated_at   | timestamp    | Last modification time               |
+| Column       | Type             | Description                           |
+| ------------ | ---------------- | ------------------------------------- |
+| workspace_id | string (PK)      | Unique identifier (slug)              |
+| name         | string?          | Human-readable display name           |
+| projects     | list[ProjectRef] | Ordered project refs, first = default |
+| metadata     | JSONB            | Client-defined metadata (opaque)      |
+| created_at   | timestamp        | Creation time                         |
+| updated_at   | timestamp        | Last modification time                |
 
-Workspaces are optional. Callers can always pass `project_ids` directly in the request for ad-hoc use without creating a workspace.
+### ProjectRef (JSON)
+
+Each entry in the workspace `projects` array is a JSON object:
+
+| Field       | Type    | Description                                                      |
+| ----------- | ------- | ---------------------------------------------------------------- |
+| id          | string  | Project identifier (storage mapping key)                         |
+| description | string? | Human-readable project description (injected into agent context) |
+
+Example JSONB value:
+
+```json
+[
+  {"id": "netherbrain", "description": "Agent runtime and IM gateway service"},
+  {"id": "data-pipeline"}
+]
+```
+
+When a description is provided, it is injected into the agent's environment context via an `InstructableResource` on the SDK `Environment`. The agent sees project descriptions inside `<environment-context><resources>` XML, alongside the file tree and shell instructions. This keeps project context visible to the model without polluting the Jinja2 system prompt.
+
+Workspaces are optional. Callers can always pass `project_ids` directly in the request for ad-hoc use without creating a workspace (descriptions are only available through workspaces).
 
 `project_id` is not a registered entity -- it is purely a storage mapping key. Any valid slug used as a `project_id` automatically maps to `{DATA_ROOT}/{DATA_PREFIX}/projects/{project_id}/`, with the directory created on first access.
 

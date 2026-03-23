@@ -64,6 +64,7 @@ import { ApiError } from "@/api/client";
 import type {
   PresetResponse,
   WorkspaceResponse,
+  ProjectRef,
   ToolsetInfo,
   ModelPresetsResponse,
   UserResponse,
@@ -1115,11 +1116,11 @@ function PresetsTab() {
 
 interface WorkspaceDraft {
   name: string;
-  projects: string[];
+  projects: ProjectRef[];
 }
 
 function workspaceToDraft(w: WorkspaceResponse): WorkspaceDraft {
-  return { name: w.name ?? "", projects: [...w.projects] };
+  return { name: w.name ?? "", projects: w.projects.map((p) => ({ ...p })) };
 }
 
 function emptyWorkspaceDraft(): WorkspaceDraft {
@@ -1161,17 +1162,25 @@ function WorkspaceEditor({
       setProjectError("Use letters, numbers, dots, hyphens, underscores only");
       return;
     }
-    if (draft.projects.includes(val)) {
+    if (draft.projects.some((p) => p.id === val)) {
       setProjectError("Project already exists");
       return;
     }
-    setDraft((d) => ({ ...d, projects: [...d.projects, val] }));
+    setDraft((d) => ({ ...d, projects: [...d.projects, { id: val }] }));
     setNewProject("");
     setProjectError(null);
   };
 
-  const removeProject = (p: string) =>
-    setDraft((d) => ({ ...d, projects: d.projects.filter((x) => x !== p) }));
+  const removeProject = (id: string) =>
+    setDraft((d) => ({ ...d, projects: d.projects.filter((p) => p.id !== id) }));
+
+  const updateProjectDescription = (id: string, description: string) =>
+    setDraft((d) => ({
+      ...d,
+      projects: d.projects.map((p) =>
+        p.id === id ? { ...p, description: description || undefined } : p,
+      ),
+    }));
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -1242,18 +1251,26 @@ function WorkspaceEditor({
               <div className="space-y-1.5">
                 {draft.projects.map((p) => (
                   <div
-                    key={p}
-                    className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
+                    key={p.id}
+                    className="rounded-md border border-border px-3 py-2 text-sm space-y-1.5"
                   >
-                    <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="flex-1 font-mono text-xs truncate">{p}</span>
-                    <button
-                      onClick={() => removeProject(p)}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
-                      title="Remove folder"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="flex-1 font-mono text-xs truncate">{p.id}</span>
+                      <button
+                        onClick={() => removeProject(p.id)}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        title="Remove folder"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <Input
+                      value={p.description ?? ""}
+                      onChange={(e) => updateProjectDescription(p.id, e.target.value)}
+                      placeholder="Description (optional, visible to agent)"
+                      className="h-7 text-xs text-muted-foreground"
+                    />
                   </div>
                 ))}
               </div>

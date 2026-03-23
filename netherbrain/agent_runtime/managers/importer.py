@@ -129,7 +129,7 @@ async def _upsert_workspace(db: AsyncSession, raw: dict, result: ImportResult) -
         workspace = Workspace(
             workspace_id=workspace_id,
             name=body.name,
-            projects=body.projects,
+            projects=[p.model_dump(exclude_none=True) for p in body.projects],
             metadata_=body.metadata,
         )
         db.add(workspace)
@@ -139,7 +139,7 @@ async def _upsert_workspace(db: AsyncSession, raw: dict, result: ImportResult) -
         # Update.
         if body.name is not None:
             existing.name = body.name
-        existing.projects = body.projects
+        existing.projects = [p.model_dump(exclude_none=True) for p in body.projects]
         if body.metadata is not None:
             existing.metadata_ = body.metadata
         result.workspaces_updated += 1

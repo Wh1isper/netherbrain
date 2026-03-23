@@ -119,10 +119,15 @@ export interface PresetUpdate {
 
 // -- Workspace ---------------------------------------------------------------
 
+export interface ProjectRef {
+  id: string;
+  description?: string | null;
+}
+
 export interface WorkspaceResponse {
   workspace_id: string;
   name: string | null;
-  projects: string[];
+  projects: ProjectRef[];
   metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -131,13 +136,13 @@ export interface WorkspaceResponse {
 export interface WorkspaceCreate {
   workspace_id?: string;
   name?: string | null;
-  projects?: string[];
+  projects?: ProjectRef[];
   metadata?: Record<string, unknown> | null;
 }
 
 export interface WorkspaceUpdate {
   name?: string | null;
-  projects?: string[];
+  projects?: ProjectRef[];
   metadata?: Record<string, unknown> | null;
 }
 

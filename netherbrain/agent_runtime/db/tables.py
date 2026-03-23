@@ -108,7 +108,21 @@ class Workspace(Base):
 
 class Conversation(Base):
     __tablename__ = "conversations"
-    __table_args__ = (Index("ix_conversations_user_id", "user_id"),)
+    __table_args__ = (
+        Index("ix_conversations_user_id", "user_id"),
+        Index(
+            "ix_conversations_title_trgm",
+            "title",
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_conversations_summary_trgm",
+            "summary",
+            postgresql_using="gin",
+            postgresql_ops={"summary": "gin_trgm_ops"},
+        ),
+    )
 
     conversation_id: Mapped[str] = mapped_column(primary_key=True)
     user_id: Mapped[str] = mapped_column(
@@ -129,6 +143,12 @@ class Session(Base):
     __table_args__ = (
         Index("ix_sessions_conversation_id", "conversation_id"),
         Index("ix_sessions_status", "status"),
+        Index(
+            "ix_sessions_final_message_trgm",
+            "final_message",
+            postgresql_using="gin",
+            postgresql_ops={"final_message": "gin_trgm_ops"},
+        ),
     )
 
     session_id: Mapped[str] = mapped_column(primary_key=True)

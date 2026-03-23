@@ -283,3 +283,4 @@ Presets and workspaces can be imported from a TOML file (`presets.toml`).
 - Removing entries from the file does NOT delete them from the database.
 - **`preset_id` and `workspace_id` are required** in entries (no auto-generation).
 - The file format mirrors the `PresetCreate` / `WorkspaceCreate` API schemas in TOML.
+- Workspace `projects` field uses `ProjectRef` objects (`{id, description?}`), not plain strings. Descriptions are injected into the agent's environment context via `InstructableResource`.

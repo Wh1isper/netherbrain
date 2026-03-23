@@ -36,6 +36,7 @@ from netherbrain.agent_runtime.models.preset import (
     ToolsetSpec,
 )
 from netherbrain.agent_runtime.models.session import DeferredTools, RunSummary, UsageSummary
+from netherbrain.agent_runtime.models.workspace import ProjectRef
 
 # ---------------------------------------------------------------------------
 # Preset
@@ -107,7 +108,7 @@ class WorkspaceCreate(BaseModel):
 
     workspace_id: str | None = Field(default=None, description="Optional; auto-generated UUID if omitted.")
     name: str | None = None
-    projects: list[str] = Field(default_factory=list, description="Ordered project IDs; first = default.")
+    projects: list[ProjectRef] = Field(default_factory=list, description="Ordered project refs; first = default.")
     metadata: dict | None = None
 
 
@@ -115,7 +116,7 @@ class WorkspaceUpdate(BaseModel):
     """Partial workspace update."""
 
     name: str | None = None
-    projects: list[str] | None = None
+    projects: list[ProjectRef] | None = None
     metadata: dict | None = None
 
 
@@ -126,7 +127,7 @@ class WorkspaceResponse(BaseModel):
 
     workspace_id: str
     name: str | None = None
-    projects: list[str]
+    projects: list[ProjectRef]
     metadata: dict | None = Field(default=None, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime

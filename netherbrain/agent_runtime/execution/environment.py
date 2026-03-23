@@ -30,8 +30,10 @@ Three environment modes are supported:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from y_agent_environment import ResourceFactory
+from y_agent_environment.resources import BaseResource
 from ya_agent_sdk.environment.local import LocalEnvironment, VirtualMount
 from ya_agent_sdk.environment.sandbox import SandboxEnvironment
 
@@ -48,6 +50,53 @@ if TYPE_CHECKING:
 
 DEFAULT_CONTAINER_WORKDIR = "/workspace"
 """Default virtual root path presented to the agent in sandbox mode."""
+
+PROJECT_DESCRIPTIONS_RESOURCE_KEY = "project-descriptions"
+"""Resource registry key for project descriptions."""
+
+
+# ---------------------------------------------------------------------------
+# Project descriptions resource
+# ---------------------------------------------------------------------------
+
+
+class ProjectDescriptionsResource(BaseResource):
+    """InstructableResource that injects project descriptions into agent context.
+
+    Registered on the Environment's ResourceRegistry so descriptions appear
+    inside ``<environment-context><resources>`` alongside file trees.
+    """
+
+    def __init__(self, descriptions: dict[str, str]) -> None:
+        self._descriptions = descriptions
+
+    async def close(self) -> None:
+        pass  # Stateless, nothing to clean up.
+
+    async def get_context_instructions(self) -> str | None:
+        if not self._descriptions:
+            return None
+        lines = [f"- {pid}: {desc}" for pid, desc in self._descriptions.items()]
+        return "Project descriptions:\n" + "\n".join(lines)
+
+
+def _build_resource_factories(
+    project_descriptions: dict[str, str] | None,
+) -> dict[str, ResourceFactory] | None:
+    """Build resource factories dict for Environment construction.
+
+    Returns ``None`` if no resources need to be registered.
+    """
+    if not project_descriptions:
+        return None
+
+    # Capture descriptions in closure for the factory.
+    descs = dict(project_descriptions)
+
+    async def _create_descriptions(env: Any) -> ProjectDescriptionsResource:
+        return ProjectDescriptionsResource(descs)
+
+    return {PROJECT_DESCRIPTIONS_RESOURCE_KEY: _create_descriptions}
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +219,11 @@ def create_environment(
     When no projects are configured, returns a ``LocalEnvironment`` with
     only a temporary directory (no project paths, no CWD access).
 
+    Project descriptions from workspace ``ProjectRef`` entries are injected
+    via a ``ProjectDescriptionsResource`` on the Environment's
+    ``ResourceRegistry``.  The agent sees them inside
+    ``<environment-context><resources>``.
+
     Parameters
     ----------
     config:
@@ -184,21 +238,22 @@ def create_environment(
     tuple of (Environment, ProjectPaths)
     """
     paths = resolve_project_paths(config, settings)
+    resource_factories = _build_resource_factories(config.project_descriptions)
 
     if not paths.has_projects:
-        # Pure conversation mode: no project directories.
-        # LocalEnvironment with no default_path relies on the SDK to
-        # handle None gracefully (tmp-dir only, no CWD fallback).
-        env = LocalEnvironment(enable_tmp_dir=True)
+        env = LocalEnvironment(
+            enable_tmp_dir=True,
+            resource_factories=resource_factories,
+        )
         return env, paths
 
     # Ensure project directories exist on disk.
     paths.ensure_directories()
 
     if config.environment_mode == EnvironmentMode.LOCAL:
-        env = _create_local_environment(paths, resource_state)
+        env = _create_local_environment(paths, resource_state, resource_factories)
     else:
-        env = _create_sandbox_environment(config, paths, resource_state)
+        env = _create_sandbox_environment(config, paths, resource_state, resource_factories)
 
     return env, paths
 
@@ -206,6 +261,7 @@ def create_environment(
 def _create_local_environment(
     paths: ProjectPaths,
     resource_state: ResourceRegistryState | None,
+    resource_factories: dict[str, ResourceFactory] | None,
 ) -> LocalEnvironment:
     """Create a local-mode environment.
 
@@ -219,6 +275,7 @@ def _create_local_environment(
         default_path=default_path,
         allowed_paths=extra_paths or None,
         resource_state=resource_state,
+        resource_factories=resource_factories,
     )
 
 
@@ -226,6 +283,7 @@ def _create_sandbox_environment(
     config: ResolvedConfig,
     paths: ProjectPaths,
     resource_state: ResourceRegistryState | None,
+    resource_factories: dict[str, ResourceFactory] | None,
 ) -> SandboxEnvironment:
     """Create a sandbox-mode environment.
 
@@ -261,4 +319,5 @@ def _create_sandbox_environment(
         container_id=config.container_id,
         cleanup_on_exit=False,
         resource_state=resource_state,
+        resource_factories=resource_factories,
     )

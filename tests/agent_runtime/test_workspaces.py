@@ -12,13 +12,16 @@ async def test_workspace_full_crud(client: AsyncClient) -> None:
     # Create
     resp = await client.post(
         "/api/workspaces/create",
-        json={"name": "My Workspace", "projects": ["/proj/a", "/proj/b"]},
+        json={
+            "name": "My Workspace",
+            "projects": [{"id": "proj-a"}, {"id": "proj-b", "description": "Second project"}],
+        },
     )
     assert resp.status_code == 201
     ws = resp.json()
     ws_id = ws["workspace_id"]
     assert ws["name"] == "My Workspace"
-    assert ws["projects"] == ["/proj/a", "/proj/b"]
+    assert ws["projects"] == [{"id": "proj-a", "description": None}, {"id": "proj-b", "description": "Second project"}]
 
     # Get
     resp = await client.get(f"/api/workspaces/{ws_id}/get")
@@ -26,9 +29,9 @@ async def test_workspace_full_crud(client: AsyncClient) -> None:
     assert resp.json()["workspace_id"] == ws_id
 
     # Update (partial -- only projects)
-    resp = await client.post(f"/api/workspaces/{ws_id}/update", json={"projects": ["/proj/c"]})
+    resp = await client.post(f"/api/workspaces/{ws_id}/update", json={"projects": [{"id": "proj-c"}]})
     assert resp.status_code == 200
-    assert resp.json()["projects"] == ["/proj/c"]
+    assert resp.json()["projects"] == [{"id": "proj-c", "description": None}]
     assert resp.json()["name"] == "My Workspace"  # unchanged
 
     # List
