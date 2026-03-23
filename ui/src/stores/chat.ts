@@ -168,6 +168,9 @@ interface ChatState {
   /** Mailbox pending message count for the current conversation. */
   mailboxCount: number;
 
+  /** Live subagent status during streaming. */
+  subagents: SubagentInfo[];
+
   /** Real-time token usage from the current streaming session. */
   usage: UsageData | null;
 
